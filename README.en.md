@@ -9,11 +9,20 @@ control your locally-running AI coding agents (Claude Code / Codex / Gemini) rem
 
 **English** · [简体中文](./README.md)
 
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
-![Platform](https://img.shields.io/badge/platform-HarmonyOS-1C1C1C?logo=huawei&logoColor=white)
-![Language](https://img.shields.io/badge/lang-ArkTS-3178C6.svg)
-![API](https://img.shields.io/badge/API-23%20%7C%20HarmonyOS%206.1-00B386.svg)
-![Upstream](https://img.shields.io/badge/upstream-tiann%2Fhapi-8A2BE2.svg)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-1C1C1C?style=for-the-badge&logo=gnu&logoColor=white)](./LICENSE)
+![Platform](https://img.shields.io/badge/platform-HarmonyOS-1C1C1C?style=for-the-badge&logo=huawei&logoColor=white)
+![Language](https://img.shields.io/badge/lang-ArkTS-1C1C1C?style=for-the-badge)
+
+![API](https://img.shields.io/badge/API-23%20%7C%20HarmonyOS%206.1-1C1C1C?style=for-the-badge)
+![Upstream](https://img.shields.io/badge/upstream-tiann%2Fhapi-1C1C1C?style=for-the-badge)
+
+![GitHub stars](https://img.shields.io/github/stars/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
+![GitHub last commit](https://img.shields.io/github/last-commit/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
+
+![GitHub repo size](https://img.shields.io/github/repo-size/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
+![GitHub issues](https://img.shields.io/github/issues/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
+![GitHub contributors](https://img.shields.io/github/contributors/miuiadmin/hapi-hmos?style=for-the-badge&color=1C1C1C)
 
 `hapi-hmos` = Hapi + **H**armony**OS**
 
