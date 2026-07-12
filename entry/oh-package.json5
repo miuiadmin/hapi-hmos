@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Hapi HarmonyOS client - main module",
+  "main": "",
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@cangjie-tpc/markdown_hybrid": "^1.3.6"
+  }
+}

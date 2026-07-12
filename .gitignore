@@ -1,0 +1,29 @@
+# HarmonyOS / DevEco Studio
+/.idea/
+**/build/
+/.hvigor/
+/.cxx/
+/.test/
+*.hap
+*.hsp
+*.app
+local.properties
+oh_modules/
+/.appanalyzer/
+build-profile.json5.bak
+*.log
+
+# Mac
+.DS_Store
+
+# 通用 IDE
+.vscode/
+*.iml
+
+# Python（retriever skill 运行产物）
+__pycache__/
+*.pyc
+
+# 参考源码：官方 hapi（AGPL）/ chatcube（MIT）的本地对照 clone，自带独立 .git、共 245M。
+#   非本项目源码，整体不入库（对照用，同步上游走 git pull）。
+参考源码/
