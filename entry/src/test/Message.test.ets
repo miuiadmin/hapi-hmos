@@ -12,7 +12,14 @@ import {
   parseMessagesPageResponse,
   MessagesPage,
   mergeMessage,
-  cloneMessage
+  cloneMessage,
+  parseUsage,
+  latestVisibleUsage,
+  getContextBudgetTokens,
+  formatTokenCount,
+  sortQueuedMessages,
+  formatScheduledIn,
+  parseCancelMessageResponse
 } from '../main/ets/models/Message';
 import { NormalizedAgentContent } from '../main/ets/chat/NormalizedContent';
 
@@ -362,6 +369,248 @@ export default function messageTest(): void {
       const agent: ChatMessage = makeMsg('a', '', false, '');
       agent.role = 'agent';
       expect(agent.isQueued).assertFalse();
+    });
+  });
+
+  // —— Token / 上下文用量（对照 web UsageData + reducer calculateContextSize + modelConfig getContextBudgetTokens）——
+  describe('parseUsage', () => {
+    it('returns null when usage is absent', 0, () => {
+      expect(parseUsage(JSON.parse('{}') as Record<string, Object>) === null).assertTrue();
+    });
+    it('returns null when input_tokens is missing', 0, () => {
+      expect(parseUsage(JSON.parse('{"usage":{"output_tokens":10}}') as Record<string, Object>) === null).assertTrue();
+    });
+    it('returns null when output_tokens is missing', 0, () => {
+      expect(parseUsage(JSON.parse('{"usage":{"input_tokens":5}}') as Record<string, Object>) === null).assertTrue();
+    });
+    it('parses required + optional fields', 0, () => {
+      const u = parseUsage(JSON.parse('{"usage":{"input_tokens":100,"output_tokens":50,' +
+        '"cache_creation_input_tokens":20,"cache_read_input_tokens":80,"context_tokens":150,' +
+        '"context_window":200000,"scope_role":"child"}}') as Record<string, Object>);
+      expect(u !== null).assertTrue();
+      if (u !== null) {
+        expect(u.inputTokens).assertEqual(100);
+        expect(u.outputTokens).assertEqual(50);
+        expect(u.cacheCreation).assertEqual(20);
+        expect(u.cacheRead).assertEqual(80);
+        expect(u.contextTokens).assertEqual(150);
+        expect(u.contextWindow).assertEqual(200000);
+        expect(u.scopeRole).assertEqual('child');
+      }
+    });
+    it('defaults optional number fields (cache→0, contextTokens/contextWindow→-1, scopeRole→"")', 0, () => {
+      const u = parseUsage(JSON.parse('{"usage":{"input_tokens":1,"output_tokens":2}}') as Record<string, Object>);
+      expect(u !== null).assertTrue();
+      if (u !== null) {
+        expect(u.cacheCreation).assertEqual(0);
+        expect(u.cacheRead).assertEqual(0);
+        expect(u.contextTokens).assertEqual(-1);
+        expect(u.contextWindow).assertEqual(-1);
+        expect(u.scopeRole).assertEqual('');
+      }
+    });
+  });
+
+  describe('UsageData.contextSize / isVisibleInParent', () => {
+    it('contextSize uses context_tokens when present', 0, () => {
+      const u = parseUsage(JSON.parse(
+        '{"usage":{"input_tokens":10,"output_tokens":0,"context_tokens":999}}') as Record<string, Object>);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.contextSize).assertEqual(999); }
+    });
+    it('contextSize falls back to cache_creation+cache_read+input when context_tokens absent', 0, () => {
+      const u = parseUsage(JSON.parse('{"usage":{"input_tokens":100,"output_tokens":0,' +
+        '"cache_creation_input_tokens":30,"cache_read_input_tokens":70}}') as Record<string, Object>);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.contextSize).assertEqual(200); } // 100+30+70
+    });
+    it('isVisibleInParent is false for child scope, true otherwise', 0, () => {
+      const child = parseUsage(JSON.parse(
+        '{"usage":{"input_tokens":1,"output_tokens":1,"scope_role":"child"}}') as Record<string, Object>);
+      const parent = parseUsage(JSON.parse(
+        '{"usage":{"input_tokens":1,"output_tokens":1}}') as Record<string, Object>);
+      expect(child !== null).assertTrue();
+      expect(parent !== null).assertTrue();
+      if (child !== null) { expect(child.isVisibleInParent).assertFalse(); }
+      if (parent !== null) { expect(parent.isVisibleInParent).assertTrue(); }
+    });
+  });
+
+  describe('latestVisibleUsage', () => {
+    it('returns null for an empty list', 0, () => {
+      const empty: ChatMessage[] = [];
+      expect(latestVisibleUsage(empty) === null).assertTrue();
+    });
+    it('returns the latest visible usage scanning in reverse', 0, () => {
+      const m1 = makeMsg('a', '', false, '');
+      m1.usage = parseUsage(JSON.parse('{"usage":{"input_tokens":10,"output_tokens":0}}') as Record<string, Object>);
+      const m2 = makeMsg('b', '', false, '');
+      m2.usage = parseUsage(JSON.parse('{"usage":{"input_tokens":20,"output_tokens":0}}') as Record<string, Object>);
+      const list: ChatMessage[] = [m1, m2];
+      const u = latestVisibleUsage(list);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.inputTokens).assertEqual(20); } // 最新（m2）
+    });
+    it('skips child-scope usage and returns the latest parent-visible one', 0, () => {
+      const m1 = makeMsg('a', '', false, '');
+      m1.usage = parseUsage(JSON.parse('{"usage":{"input_tokens":10,"output_tokens":0}}') as Record<string, Object>);
+      const m2 = makeMsg('b', '', false, '');
+      m2.usage = parseUsage(JSON.parse(
+        '{"usage":{"input_tokens":99,"output_tokens":0,"scope_role":"child"}}') as Record<string, Object>);
+      const list: ChatMessage[] = [m1, m2];
+      const u = latestVisibleUsage(list);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.inputTokens).assertEqual(10); } // 跳过 m2，取 m1
+    });
+    it('skips messages with null usage', 0, () => {
+      const m1 = makeMsg('a', '', false, '');
+      m1.usage = parseUsage(JSON.parse('{"usage":{"input_tokens":5,"output_tokens":0}}') as Record<string, Object>);
+      const m2 = makeMsg('b', '', false, ''); // usage === null
+      const list: ChatMessage[] = [m1, m2];
+      const u = latestVisibleUsage(list);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.inputTokens).assertEqual(5); }
+    });
+  });
+
+  describe('getContextBudgetTokens', () => {
+    it('returns null for unknown flavor', 0, () => {
+      expect(getContextBudgetTokens('whatever', 'gemini')).assertEqual(null);
+      expect(getContextBudgetTokens('sonnet', '')).assertEqual(null);
+    });
+    it('returns codex budget (minus headroom) for codex regardless of model', 0, () => {
+      expect(getContextBudgetTokens('', 'codex')).assertEqual(248400); // 258400-10000
+    });
+    it('returns 200k-minus-headroom for claude presets without [1m]', 0, () => {
+      expect(getContextBudgetTokens('sonnet', 'claude')).assertEqual(190000); // 200000-10000
+      expect(getContextBudgetTokens('opus', 'claude')).assertEqual(190000);
+    });
+    it('returns 1M-minus-headroom for [1m] presets', 0, () => {
+      expect(getContextBudgetTokens('sonnet[1m]', 'claude')).assertEqual(990000); // 1000000-10000
+      expect(getContextBudgetTokens('opus[1m]', 'claude')).assertEqual(990000);
+    });
+    it('returns 200k-minus-headroom for full claude-* model ids', 0, () => {
+      expect(getContextBudgetTokens('claude-sonnet-4-5', 'claude')).assertEqual(190000);
+    });
+    it('defaults empty model (claude) to 200k', 0, () => {
+      expect(getContextBudgetTokens('', 'claude')).assertEqual(190000);
+    });
+    it('returns null for non-preset non-claude-prefixed model under claude flavor (e.g. haiku)', 0, () => {
+      expect(getContextBudgetTokens('haiku', 'claude')).assertEqual(null);
+    });
+  });
+
+  describe('formatTokenCount', () => {
+    it('formats millions with one decimal + M', 0, () => {
+      expect(formatTokenCount(1000000)).assertEqual('1.0M');
+      expect(formatTokenCount(1200000)).assertEqual('1.2M');
+    });
+    it('formats thousands with rounded k', 0, () => {
+      expect(formatTokenCount(1000)).assertEqual('1k');
+      expect(formatTokenCount(12345)).assertEqual('12k');
+    });
+    it('returns the raw number below 1000', 0, () => {
+      expect(formatTokenCount(0)).assertEqual('0');
+      expect(formatTokenCount(999)).assertEqual('999');
+    });
+  });
+
+  describe('parseMessage — agent usage extraction', () => {
+    it('extracts usage from data.message.usage', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"message":{"content":[{"type":"text","text":"hi"}],' +
+        '"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":200}}}'));
+      expect(m.usage !== null).assertTrue();
+      if (m.usage !== null) {
+        expect(m.usage.inputTokens).assertEqual(100);
+        expect(m.usage.outputTokens).assertEqual(50);
+        expect(m.usage.cacheRead).assertEqual(200);
+        expect(m.usage.contextSize).assertEqual(300); // 无 context_tokens → 100+0+200
+      }
+    });
+    it('leaves usage null when the agent message has none', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1', '{"message":{"content":[{"type":"text","text":"hi"}]}}'));
+      expect(m.usage === null).assertTrue();
+    });
+  });
+
+  describe('cloneMessage — usage', () => {
+    it('preserves the usage reference (shallow copy)', 0, () => {
+      const m = makeMsg('a', '', false, '');
+      m.usage = parseUsage(JSON.parse('{"usage":{"input_tokens":7,"output_tokens":0}}') as Record<string, Object>);
+      const c = cloneMessage(m);
+      expect(c.usage === m.usage).assertTrue();
+    });
+  });
+
+  describe('parseMessage — scheduledAt', () => {
+    it('extracts scheduledAt epoch-ms', 0, () => {
+      const m: ChatMessage = parse('{"id":"u1","content":{"role":"user","content":{"text":"hi"}},"invokedAt":null,"scheduledAt":1700000000000}');
+      expect(m.scheduledAt).assertEqual(1700000000000);
+    });
+    it('defaults to 0 when absent or null', 0, () => {
+      expect(parse('{"id":"u1","content":{"role":"user","content":{"text":"hi"}}}').scheduledAt).assertEqual(0);
+      expect(parse('{"id":"u1","content":{"role":"user","content":{"text":"hi"}},"scheduledAt":null}').scheduledAt).assertEqual(0);
+    });
+  });
+
+  describe('sortQueuedMessages', () => {
+    it('immediate-queued first by createdAt, scheduled after by scheduledAt asc', 0, () => {
+      const imm1: ChatMessage = new ChatMessage(); imm1.id = 'i1'; imm1.role = 'user'; imm1.createdAt = 100; imm1.invokedAt = 0; imm1.scheduledAt = 0;
+      const imm2: ChatMessage = new ChatMessage(); imm2.id = 'i2'; imm2.role = 'user'; imm2.createdAt = 200; imm2.invokedAt = 0; imm2.scheduledAt = 0;
+      const sch1: ChatMessage = new ChatMessage(); sch1.id = 's1'; sch1.role = 'user'; sch1.createdAt = 150; sch1.invokedAt = 0; sch1.scheduledAt = 5000;
+      const sch2: ChatMessage = new ChatMessage(); sch2.id = 's2'; sch2.role = 'user'; sch2.createdAt = 120; sch2.invokedAt = 0; sch2.scheduledAt = 3000;
+      const sorted: ChatMessage[] = sortQueuedMessages([sch1, imm2, sch2, imm1]);
+      expect(sorted[0].id).assertEqual('i1');
+      expect(sorted[1].id).assertEqual('i2');
+      expect(sorted[2].id).assertEqual('s2');
+      expect(sorted[3].id).assertEqual('s1');
+    });
+    it('does not mutate the input array', 0, () => {
+      const imm: ChatMessage = new ChatMessage(); imm.id = 'i1'; imm.role = 'user'; imm.createdAt = 100;
+      const sch: ChatMessage = new ChatMessage(); sch.id = 's1'; sch.role = 'user'; sch.createdAt = 120; sch.scheduledAt = 3000;
+      const input: ChatMessage[] = [imm, sch];
+      sortQueuedMessages(input);
+      expect(input[0].id).assertEqual('i1');
+    });
+  });
+
+  describe('formatScheduledIn', () => {
+    it('empty when no schedule, 已到时间 when past', 0, () => {
+      expect(formatScheduledIn(0, 1000)).assertEqual('');
+      expect(formatScheduledIn(500, 1000)).assertEqual('已到时间');
+    });
+    it('minutes / hours / days buckets', 0, () => {
+      expect(formatScheduledIn(1000 + 5 * 60000, 1000)).assertEqual('5 分钟后发送');
+      expect(formatScheduledIn(1000 + 3 * 3600000, 1000)).assertEqual('3 小时后发送');
+      expect(formatScheduledIn(1000 + 2 * 86400000, 1000)).assertEqual('2 天后发送');
+    });
+  });
+
+  describe('parseCancelMessageResponse', () => {
+    it('cancelled branch sets cancelled + localId', 0, () => {
+      const r = parseCancelMessageResponse('{"status":"cancelled","localId":"local-1"}');
+      expect(r.cancelled).assertTrue();
+      expect(r.localId).assertEqual('local-1');
+      expect(r.invokedMessage === null).assertTrue();
+    });
+    it('invoked branch parses the authoritative message', 0, () => {
+      const r = parseCancelMessageResponse('{"status":"invoked","message":{"id":"m9","content":{"role":"user","content":{"text":"hi"}},"invokedAt":1700000000000}}');
+      expect(r.cancelled).assertFalse();
+      const msg: ChatMessage | null = r.invokedMessage;
+      expect(msg !== null).assertTrue();
+      if (msg !== null) {
+        expect(msg.id).assertEqual('m9');
+        expect(msg.invokedAt).assertEqual(1700000000000);
+      }
+    });
+    it('cancelled with null localId → empty string; invalid JSON → not cancelled', 0, () => {
+      const r1 = parseCancelMessageResponse('{"status":"cancelled","localId":null}');
+      expect(r1.cancelled).assertTrue();
+      expect(r1.localId).assertEqual('');
+      const r2 = parseCancelMessageResponse('not json');
+      expect(r2.cancelled).assertFalse();
+      expect(r2.invokedMessage === null).assertTrue();
     });
   });
 }

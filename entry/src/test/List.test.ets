@@ -12,6 +12,8 @@ import typesTest from './Types.test';
 import sseClientUtilsTest from './SSEClientUtils.test';
 import hubClientUtilsTest from './HubClientUtils.test';
 import chatSearchTest from './ChatSearch.test';
+import slashCommandsTest from './SlashCommands.test';
+import activeWordTest from './ActiveWord.test';
 
 export default function testsuite() {
   diffTest();
@@ -25,4 +27,6 @@ export default function testsuite() {
   sseClientUtilsTest();
   hubClientUtilsTest();
   chatSearchTest();
+  slashCommandsTest();
+  activeWordTest();
 }

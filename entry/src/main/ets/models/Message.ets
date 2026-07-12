@@ -16,12 +16,17 @@ export class ChatMessage {
   role: MessageRole = 'user';
   text: string = '';             // 可显示文本（user.text；agent 各 text 块拼接）
   createdAt: number = 0;
-  invokedAt: number = 0;         // 0 = 未被 CLI 消费（排队中）
+  invokedAt: number = 0;         // 0 = 未被 CLI 消费（排队中）；现代 hub null→0 语义一致
+  scheduledAt: number = 0;       // 0 = 无定时（即时排队或已发出）；>0 = 定时发送 epoch-ms（对照 SendMessageRequest.scheduledAt）
   status: MessageStatus = 'sent';
   isOptimistic: boolean = false;
   // agent 消息的归一化内容块（text/reasoning/tool-call/tool-result）；user/event 为空。
   // reducer 据此把 tool-call + tool-result（按 id=tool_use_id）合并成有状态的工具卡。
   blocks: NormalizedAgentContent[] = [];
+
+  // agent 消息的 Token 用量（对齐 web NormalizedMessage.usage；user/event 为 null）。
+  //   由 parseUsage 从 data.message.usage 提取；ContextStatusBar 据最新可见 usage 显上下文占比/告警。
+  usage: UsageData | null = null;
 
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
@@ -30,9 +35,13 @@ export class ChatMessage {
 }
 
 // 发送消息请求体（对齐 shared SendMessageRequestSchema）
+//   scheduledAt：>0 = 定时发送（epoch-ms，须 >0、≤7 天、须带 localId、禁附件）；0 = 省略（即时）。
+//   注：实际请求体由 HubClient 构建 Record，scheduledAt===0 时**不序列化**（上游 refine：scheduledAt==null 放行，
+//   若发 0 会撞 positive 校验 → 400）。本类仅作类型文档。
 export class SendMessageRequest {
   text: string = '';
   localId: string = '';
+  scheduledAt: number = 0;
 }
 
 // 拷贝（用于不可变更新：改状态时复制再替换，避免就地改 @Trace）
@@ -45,10 +54,168 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.text = m.text;
   c.createdAt = m.createdAt;
   c.invokedAt = m.invokedAt;
+  c.scheduledAt = m.scheduledAt;
   c.status = m.status;
   c.isOptimistic = m.isOptimistic;
   c.blocks = m.blocks;            // 浅拷贝引用：blocks 解析后不可变，无需深拷
+  c.usage = m.usage;              // 浅拷贝引用：UsageData 解析后不可变，无需深拷
   return c;
+}
+
+// —— Token / 上下文用量（对齐 web/src/chat/types.ts UsageData + reducer.ts calculateContextSize）——
+// ArkTS 无 optional number：可选数值字段用 -1 哨兵表示缺省（< 0）。input/output 上游必填——
+//   解析时缺任一则整条 usage 视为无（parseUsage 返 null，对照 web normalizeAssistant「inputTokens !== null」门）。
+export class UsageData {
+  inputTokens: number = 0;
+  outputTokens: number = 0;
+  cacheCreation: number = 0;
+  cacheRead: number = 0;
+  contextTokens: number = -1;     // < 0 = 缺省（context_tokens）
+  contextWindow: number = -1;     // < 0 = 缺省（context_window；缺则按 model/flavor 静态回退）
+  scopeRole: string = '';         // 'child' = 子链不并入父上下文（对照 isUsageVisibleInParentContext）
+
+  // 父上下文是否可见（对照 reducer.ts:18 isUsageVisibleInParentContext：scope_role !== 'child'）
+  get isVisibleInParent(): boolean {
+    return this.scopeRole !== 'child';
+  }
+
+  // 上下文用量（对照 reducer.ts:11 calculateContextSize：有 context_tokens 用之，否则 cache_creation+cache_read+input）
+  get contextSize(): number {
+    if (this.contextTokens >= 0) { return this.contextTokens; }
+    return this.cacheCreation + this.cacheRead + this.inputTokens;
+  }
+}
+
+// 从 data.message.usage 提取用量（input/output 必填，缺任一返 null；对照 normalizeAgent.ts:258-279）
+export function parseUsage(message: Record<string, Object>): UsageData | null {
+  const usageRaw: Record<string, Object> | null = pickObj(message, 'usage');
+  if (usageRaw === null) { return null; }
+  const inVal: Object = usageRaw['input_tokens'];
+  if (typeof inVal !== 'number') { return null; }   // input_tokens 必填（Object→number 单变量收窄，同 parseTodoList idVal 模式）
+  const outVal: Object = usageRaw['output_tokens'];
+  if (typeof outVal !== 'number') { return null; }  // output_tokens 必填
+  const u: UsageData = new UsageData();
+  u.inputTokens = inVal;
+  u.outputTokens = outVal;
+  const cc: Object = usageRaw['cache_creation_input_tokens'];
+  if (typeof cc === 'number') { u.cacheCreation = cc; }
+  const cr: Object = usageRaw['cache_read_input_tokens'];
+  if (typeof cr === 'number') { u.cacheRead = cr; }
+  const ct: Object = usageRaw['context_tokens'];
+  if (typeof ct === 'number') { u.contextTokens = ct; }
+  const cw: Object = usageRaw['context_window'];
+  if (typeof cw === 'number') { u.contextWindow = cw; }
+  const sr: string = pickStr(usageRaw, 'scope_role');
+  if (sr !== '') { u.scopeRole = sr; }
+  return u;
+}
+
+// 反向遍历消息，取最新「父上下文可见」的 usage（对照 reducer.ts:164-180 latestUsage 循环）。
+//   messages 每次整体重赋值（刷新策略）→ 由 ChatPage getter 读 this.messages 派生，无需手动维护。
+export function latestVisibleUsage(messages: ChatMessage[]): UsageData | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const u: UsageData | null = messages[i].usage;
+    if (u !== null && u.isVisibleInParent) {
+      return u;
+    }
+  }
+  return null;
+}
+
+// 上下文预算上限（对照 web/src/chat/modelConfig.ts getContextBudgetTokens）。
+//   仅 claude/codex 有静态回退（其余返 null → UI 只显 ctx {size}，不算百分比/告警）。
+//   headroom 10000 留余量，避免临近上限虚高自信（系统提示/工具开销等隐藏 token）。
+const CONTEXT_HEADROOM_TOKENS: number = 10000;
+const DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS: number = 200000;
+const LARGE_CLAUDE_CONTEXT_WINDOW_TOKENS: number = 1000000;
+const DEFAULT_CODEX_CONTEXT_WINDOW_TOKENS: number = 258400;
+export function getContextBudgetTokens(model: string, flavor: string): number | null {
+  if (flavor === 'codex') {
+    return Math.max(1, DEFAULT_CODEX_CONTEXT_WINDOW_TOKENS - CONTEXT_HEADROOM_TOKENS);
+  }
+  if (flavor !== 'claude') {
+    return null;
+  }
+  const trimmed: string = model.trim();
+  let windowTokens: number = -1;
+  if (trimmed === '') {
+    windowTokens = DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS;
+  } else if (trimmed.endsWith('[1m]')) {
+    windowTokens = LARGE_CLAUDE_CONTEXT_WINDOW_TOKENS;   // sonnet[1m] / opus[1m] 预设
+  } else if (trimmed === 'sonnet' || trimmed === 'opus') {
+    windowTokens = DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS; // claude 预设（无前缀）
+  } else if (trimmed.startsWith('claude-')) {
+    windowTokens = DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS; // 完整 model id（claude-sonnet-4-…）
+  } else {
+    return null;
+  }
+  return Math.max(1, windowTokens - CONTEXT_HEADROOM_TOKENS);
+}
+
+// token 数紧凑显示（对照 StatusBar.tsx:120 formatTokenCount：≥1M→1.2M / ≥1k→12k / 原值）
+export function formatTokenCount(value: number): string {
+  if (value >= 1000000) { return `${(value / 1000000).toFixed(1)}M`; }
+  if (value >= 1000) { return `${Math.round(value / 1000)}k`; }
+  return String(value);
+}
+
+// —— 定时 / 排队消息（对照 web QueuedMessagesBar + sortQueuedMessages + lib/messages isQueuedForInvocation）——
+//   isQueued 已在 ChatMessage getter：role==='user' && invokedAt===0 && status!=='failed'（即时排队 + 定时共用此态）。
+//   排序：即时排队（无未来 scheduledAt）在前按 createdAt 升序；定时（scheduledAt>0）在后按 scheduledAt 升序。
+export function sortQueuedMessages(list: ChatMessage[]): ChatMessage[] {
+  const copy: ChatMessage[] = list.slice();
+  copy.sort((a: ChatMessage, b: ChatMessage): number => {
+    const aScheduled: boolean = a.scheduledAt > 0;
+    const bScheduled: boolean = b.scheduledAt > 0;
+    if (aScheduled !== bScheduled) { return aScheduled ? 1 : -1; }   // 即时在前、定时在后
+    if (aScheduled) { return a.scheduledAt - b.scheduledAt; }
+    return a.createdAt - b.createdAt;
+  });
+  return copy;
+}
+
+// 定时剩余时间紧凑显示（纯函数：传 now 便于测试）。对照 web「Scheduled for …」——移动端用相对时间更直观。
+//   ≤0 = 已到时间（成熟/即将被发出）；<1h→N 分钟后；<1d→N 小时后；否则→N 天后。
+export function formatScheduledIn(scheduledAt: number, now: number): string {
+  if (scheduledAt <= 0) { return ''; }
+  const diff: number = scheduledAt - now;
+  if (diff <= 0) { return '已到时间'; }
+  const mins: number = Math.round(diff / 60000);
+  if (mins < 60) { return `${mins} 分钟后发送`; }
+  const hours: number = Math.round(mins / 60);
+  if (hours < 24) { return `${hours} 小时后发送`; }
+  const days: number = Math.round(hours / 24);
+  return `${days} 天后发送`;
+}
+
+// 取消排队消息响应（对照 shared CancelMessageResponse：cancelled | invoked 竞态分支）。
+//   cancelled：已取消（含 localId，可能 null）；invoked：竞态失败——CLI 已消费，返回权威行（应恢复入 thread）。
+export class CancelMessageResult {
+  cancelled: boolean = false;
+  localId: string = '';
+  invokedMessage: ChatMessage | null = null;   // invoked 分支的权威消息（已 invokedAt，并入 thread）
+}
+
+export function parseCancelMessageResponse(json: string): CancelMessageResult {
+  const r: CancelMessageResult = new CancelMessageResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return r;
+  }
+  const status: string = pickStr(raw, 'status');
+  if (status === 'cancelled') {
+    r.cancelled = true;
+    r.localId = pickStr(raw, 'localId');
+  } else if (status === 'invoked') {
+    r.cancelled = false;
+    const msgRaw: Record<string, Object> | null = pickObj(raw, 'message');
+    if (msgRaw !== null) {
+      r.invokedMessage = parseMessage(msgRaw);
+    }
+  }
+  return r;
 }
 
 // 从对象尽力提取文本（Anthropic 风格 content 数组的 text 块 / 直接 text 字段 / 嵌套 message）
@@ -200,6 +367,17 @@ function extractAgentBlocks(inner: Record<string, Object> | null): NormalizedAge
   return blocks;
 }
 
+// 从 agent content（inner → data → message.usage）提取 Token 用量（导航同 extractAgentBlocks，
+//   对照 normalizeAgent.ts:258 读 message.usage）。缺 usage 或必填字段 → null。
+function extractAgentUsage(inner: Record<string, Object> | null): UsageData | null {
+  if (inner === null) { return null; }
+  const data: Record<string, Object> | null = pickObj(inner, 'data');
+  if (data === null) { return null; }
+  const message: Record<string, Object> | null = pickObj(data, 'message');
+  if (message === null) { return null; }
+  return parseUsage(message);
+}
+
 // 解析单条 DecryptedMessage（content 信封解包 + role 分流）
 export function parseMessage(raw: Record<string, Object>): ChatMessage {
   const m = new ChatMessage();
@@ -211,6 +389,8 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
   m.createdAt = pickNum(raw, 'createdAt');
   const invokedVal = raw['invokedAt'];
   m.invokedAt = typeof invokedVal === 'number' ? invokedVal : 0;
+  const scheduledVal = raw['scheduledAt'];
+  m.scheduledAt = typeof scheduledVal === 'number' ? scheduledVal : 0;
 
   // 解包角色信封 { role, content, meta? }（兼容 { message: { role, content } }）
   const contentRaw = raw['content'];
@@ -245,6 +425,7 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
   } else if (normalizedRole === 'agent') {
     m.text = extractAgentText(inner);
     m.blocks = extractAgentBlocks(inner);
+    m.usage = extractAgentUsage(inner);   // Token 用量（data.message.usage；缺必填字段则 null）
     m.status = 'sent';
   } else {
     // event 消息：MVP 不渲染（api-error/ready 等），文本留空被列表过滤

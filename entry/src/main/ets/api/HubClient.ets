@@ -1,9 +1,9 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest } from '../models/Types';
-import { ChatMessage, MessagesPage, parseMessagesPageResponse, SendMessageRequest } from '../models/Message';
-import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, categorizeAuthFailure } from './HubClientUtils';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse } from '../models/Types';
+import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
+import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 
 // ApproveOptions 从 HubClientUtils（纯逻辑模块）再导出，保持外部 `import { ApproveOptions } from '../api/HubClient'` 不破。
 export { ApproveOptions } from './HubClientUtils';
@@ -190,6 +190,51 @@ export class HubClient {
 
   // 拉取会话列表（GET /api/sessions → { sessions: SessionSummary[] }，对照 web client.getSessions）
   // 失败抛 Error（UI 层 try/catch 显示错误态）
+  // 列机器（GET /api/machines → { machines }，对照 web getMachines）——新建会话选 machine 用
+  async getMachines(): Promise<Machine[]> {
+    const resp = await this.request(http.RequestMethod.GET, '/api/machines', undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `加载机器失败 (${resp.statusCode})`);
+    }
+    return parseMachinesResponse(resp.data);
+  }
+
+  // 浏览远端目录（POST /api/machines/:id/list-directory body { path } → { entries }，对照 web listMachineDirectory）
+  //   新建会话「选择文件夹」树浏览用；entry 无绝对 path，UI 拼 currentPath + '/' + name 进入子目录。
+  async listMachineDirectory(machineId: string, path: string): Promise<DirEntry[]> {
+    const body = new ListDirectoryRequest();
+    body.path = path;
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/machines/${machineId}/list-directory`, body, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `浏览目录失败 (${resp.statusCode})`);
+    }
+    return parseListDirectoryResponse(resp.data);
+  }
+
+  // 新建会话：spawn agent（POST /api/machines/:id/spawn → { type, sessionId }，对照 web spawnSession）
+  //   在指定 machine 的 directory 上启动 agent 产生新 session。body 由 buildSpawnBody 条件化：
+  //   model/effort 'auto' 省略、yolo 恒发、sessionType 恒发（默认 simple）、worktreeName 仅 worktree 时发。
+  //   成功返回 sessionId；HTTP 失败或业务 error 抛 Error。
+  async spawnSession(
+    machineId: string,
+    directory: string,
+    agent: string,
+    model: string = 'auto',
+    effort: string = 'auto',
+    yolo: boolean = false,
+    sessionType: string = 'simple',
+    worktreeName: string = ''
+  ): Promise<string> {
+    const body: Record<string, Object> = buildSpawnBody(directory, agent, model, effort, yolo, sessionType, worktreeName);
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/machines/${machineId}/spawn`, body, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `启动会话失败 (${resp.statusCode})`);
+    }
+    return parseSpawnResponse(resp.data);   // 业务 error（type:'error'）在此抛
+  }
+
   async fetchSessions(): Promise<SessionSummary[]> {
     const resp = await this.request(http.RequestMethod.GET, '/api/sessions', undefined, 'jwt');
     if (!resp.success) {
@@ -219,15 +264,31 @@ export class HubClient {
     return page.messages;
   }
 
-  // 发送用户消息（POST /api/sessions/:id/messages body { text, localId } → { ok:true }）
-  // 真实消息靠 SSE message-received 回推（用 localId 匹配并替换乐观行）
-  async sendMessage(sessionId: string, text: string, localId: string): Promise<boolean> {
-    const body = new SendMessageRequest();
-    body.text = text;
-    body.localId = localId;
+  // 发送用户消息（POST /api/sessions/:id/messages body { text, localId, scheduledAt? } → { ok:true }）
+  // 真实消息靠 SSE message-received 回推（用 localId 匹配并替换乐观行）。
+  // scheduledAt：>0 = 定时发送（epoch-ms，上游 refine 须 >0、≤7 天、带 localId、禁附件）；0/省略 = 即时。
+  //   注意 body 用 Record 手建：scheduledAt===0 时**不发该键**——上游 refine scheduledAt==null 放行，
+  //   若序列化 0 会撞 positive 校验 → 400（SendMessageRequest 类仅作类型文档，不直接序列化）。
+  async sendMessage(sessionId: string, text: string, localId: string, scheduledAt: number = 0): Promise<boolean> {
+    const body: Record<string, Object> = { text: text, localId: localId };
+    if (scheduledAt > 0) {
+      body['scheduledAt'] = scheduledAt;
+    }
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/messages`, body, 'jwt');
     return resp.success;
+  }
+
+  // 取消排队消息（DELETE /api/sessions/:id/messages/:messageId → CancelMessageResponse，对照 web cancelMessage）
+  //   响应 cancelled | invoked 竞态分支：cancelled=已取消；invoked=CLI 已消费（竞态失败，invokedMessage 为权威行）。
+  //   网络层失败（statusCode 0）→ 返回 cancelled=false 的空结果，UI 据此提示「取消失败」而非误判已取消。
+  async cancelMessage(sessionId: string, messageId: string): Promise<CancelMessageResult> {
+    const resp = await this.request(http.RequestMethod.DELETE,
+      `/api/sessions/${sessionId}/messages/${messageId}`, undefined, 'jwt');
+    if (resp.statusCode === 0) {
+      return new CancelMessageResult();   // 网络错误：保守判未取消
+    }
+    return parseCancelMessageResponse(resp.data);
   }
 
   // 中止会话运行（POST /api/sessions/:id/abort，对照 web abortSession）——「停止生成」
@@ -293,6 +354,51 @@ export class HubClient {
     const body: Record<string, string> = buildDenyBody(decision);
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/permissions/${requestId}/deny`, body, 'jwt');
+    return resp.success;
+  }
+
+  // —— 会话内即时配置（对照 web client.ts:366-399，均 POST，body {key:value}）——
+  //   5 端点：permission-mode（全 flavor）/ collaboration-mode（仅 codex）/ model（全）/ effort（claude）/ model-reasoning-effort（codex）。
+  //   model/effort/reasoning 上游 schema .min(1).nullable()：空串非法，''(=默认/auto) 须发 null 复位 → body 用 string|null 联合类型。
+  //   permission/collaboration mode 必填非空（'default' 即字面默认模式，非「复位」）。
+
+  // 权限模式（POST /sessions/:id/permission-mode {mode}）
+  async setPermissionMode(sessionId: string, mode: string): Promise<boolean> {
+    const body: Record<string, string> = { mode: mode };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/permission-mode`, body, 'jwt');
+    return resp.success;
+  }
+
+  // 协作模式（POST /sessions/:id/collaboration-mode {mode}，仅 codex）
+  async setCollaborationMode(sessionId: string, mode: string): Promise<boolean> {
+    const body: Record<string, string> = { mode: mode };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/collaboration-mode`, body, 'jwt');
+    return resp.success;
+  }
+
+  // 模型（POST /sessions/:id/model {model}；'' → null 复位为 agent 默认）
+  async setModel(sessionId: string, model: string): Promise<boolean> {
+    const body: Record<string, string | null> = { model: model !== '' ? model : null };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/model`, body, 'jwt');
+    return resp.success;
+  }
+
+  // 努力度（POST /sessions/:id/effort {effort}，claude；'' → null 复位 auto）
+  async setEffort(sessionId: string, effort: string): Promise<boolean> {
+    const body: Record<string, string | null> = { effort: effort !== '' ? effort : null };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/effort`, body, 'jwt');
+    return resp.success;
+  }
+
+  // 推理努力（POST /sessions/:id/model-reasoning-effort {modelReasoningEffort}，codex；'' → null 复位）
+  async setModelReasoningEffort(sessionId: string, effort: string): Promise<boolean> {
+    const body: Record<string, string | null> = { modelReasoningEffort: effort !== '' ? effort : null };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/model-reasoning-effort`, body, 'jwt');
     return resp.success;
   }
 }

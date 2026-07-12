@@ -78,6 +78,11 @@ export class SSEClient {
     return SSEClient.instance;
   }
 
+  // 当前连接状态（供 UI 横幅等在挂载时读当前态，而非只靠 onStateChange 转换）
+  getState(): SSEConnectionState {
+    return this.state;
+  }
+
   // 注册监听者，返回 id（用于注销）
   addListener(listener: SSEListener): number {
     const id = this.nextListenerId;

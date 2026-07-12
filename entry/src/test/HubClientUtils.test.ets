@@ -1,5 +1,6 @@
 // HubClientUtils 纯逻辑单测 —— 对照 web/src/api/client.ts + 原 HubClient 抽出的纯函数
-// 覆盖 resolveBaseUrl（去尾斜杠）、buildApproveBody（仅序列化非空字段）、buildDenyBody、categorizeAuthFailure（登录失败归类）。
+// 覆盖 resolveBaseUrl（去尾斜杠）、buildApproveBody（仅序列化非空字段）、buildDenyBody、
+//       buildSpawnBody（spawn 请求体条件化字段）、categorizeAuthFailure（登录失败归类）。
 
 import { describe, it, expect } from '@ohos/hypium';
 import {
@@ -7,6 +8,7 @@ import {
   ApproveOptions,
   buildApproveBody,
   buildDenyBody,
+  buildSpawnBody,
   categorizeAuthFailure
 } from '../main/ets/api/HubClientUtils';
 
@@ -118,6 +120,65 @@ export default function hubClientUtilsTest(): void {
     });
     it('returns the default message otherwise', 0, () => {
       expect(categorizeAuthFailure(503, '', '')).assertEqual('登录失败 (503)');
+    });
+  });
+
+  // buildSpawnBody：directory/yolo/sessionType 恒发；agent 非空发；model/effort 非 'auto' 发；
+  //   worktreeName 仅 sessionType==='worktree' 且 trim 非空发。对照上游 NewSession 提交解析。
+  describe('buildSpawnBody', () => {
+    it('always sends directory/agent/yolo/sessionType (defaults)', 0, () => {
+      const body = buildSpawnBody('/proj', 'claude', 'auto', 'auto', false, 'simple', '');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,yolo');
+      expect(body['directory']).assertEqual('/proj');
+      expect(body['agent']).assertEqual('claude');
+      expect(body['yolo']).assertEqual(false);
+      expect(body['sessionType']).assertEqual('simple');
+    });
+    it('omits model when "auto"', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'high', true, 'simple', '');
+      expect(keys(body)).assertEqual('agent,directory,effort,sessionType,yolo');
+    });
+    it('omits effort when "auto"', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'sonnet', 'auto', true, 'simple', '');
+      expect(keys(body)).assertEqual('agent,directory,model,sessionType,yolo');
+      expect(body['model']).assertEqual('sonnet');
+    });
+    it('includes model+effort when both set', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'opus', 'max', true, 'simple', '');
+      expect(keys(body)).assertEqual('agent,directory,effort,model,sessionType,yolo');
+    });
+    it('omits agent when empty', 0, () => {
+      const body = buildSpawnBody('/p', '', 'auto', 'auto', false, 'simple', '');
+      expect(keys(body)).assertEqual('directory,sessionType,yolo');
+    });
+    it('defaults sessionType to "simple" when empty', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, '', '');
+      expect(body['sessionType']).assertEqual('simple');
+    });
+    it('omits worktreeName for simple even if provided', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, 'simple', 'feat-x');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,yolo');
+    });
+    it('includes worktreeName for worktree when non-empty', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, 'worktree', 'feat-x');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,worktreeName,yolo');
+      expect(body['worktreeName']).assertEqual('feat-x');
+    });
+    it('trims worktreeName', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, 'worktree', '  feat-x  ');
+      expect(body['worktreeName']).assertEqual('feat-x');
+    });
+    it('omits worktreeName when blank (whitespace only)', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, 'worktree', '   ');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,yolo');
+    });
+    it('omits worktreeName when empty for worktree', 0, () => {
+      const body = buildSpawnBody('/p', 'claude', 'auto', 'auto', false, 'worktree', '');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,yolo');
+    });
+    it('passes yolo=true through', 0, () => {
+      const body = buildSpawnBody('/p', 'codex', 'auto', 'auto', true, 'simple', '');
+      expect(body['yolo']).assertEqual(true);
     });
   });
 }

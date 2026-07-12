@@ -46,6 +46,33 @@ export function buildDenyBody(decision?: string): Record<string, string> {
   return body;
 }
 
+// spawn 请求体：对照上游 web NewSession 提交解析（index.tsx:341-358）条件化字段。
+//   directory 恒发；agent 非空发；model/effort 仅非 'auto' 发（agent 用自身默认）；yolo 恒发；
+//   sessionType 恒发（默认 'simple'）；worktreeName 仅 sessionType==='worktree' 且 trim 非空发。
+//   上游 SpawnSessionRequestSchema 全 optional 无 default，省略 = 用 undefined（服务端按 agent 默认）。
+export function buildSpawnBody(
+  directory: string,
+  agent: string,
+  model: string,
+  effort: string,
+  yolo: boolean,
+  sessionType: string,
+  worktreeName: string
+): Record<string, Object> {
+  const body: Record<string, Object> = {};
+  body['directory'] = directory;
+  if (agent !== '') { body['agent'] = agent; }
+  if (model !== 'auto' && model !== '') { body['model'] = model; }
+  if (effort !== 'auto' && effort !== '') { body['effort'] = effort; }
+  body['yolo'] = yolo;
+  body['sessionType'] = sessionType !== '' ? sessionType : 'simple';
+  if (sessionType === 'worktree') {
+    const wt: string = worktreeName.trim();
+    if (wt !== '') { body['worktreeName'] = wt; }
+  }
+  return body;
+}
+
 // 登录失败错误归类（对照原 HubClient.authenticate 的 !success 分支）
 //   - 401 → 「Access Token 无效」
 //   - data 非空 → 尝试解析 {error}，有则用之，否则落到默认「登录失败 (code)」

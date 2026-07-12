@@ -1,17 +1,25 @@
 import { getHubClient } from '../api/HubClient';
 import { getSSEClient } from '../api/SSEClient';
-import { ChatMessage, MessageStatus, parseMessage, mergeMessage, cloneMessage } from '../models/Message';
+import { ChatMessage, MessageStatus, parseMessage, mergeMessage, cloneMessage, UsageData, latestVisibleUsage, getContextBudgetTokens, formatTokenCount, sortQueuedMessages, formatScheduledIn } from '../models/Message';
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { MarkdownText } from '../components/MarkdownText';
 import { ToolCard } from '../components/ToolCard';
 import { ReasoningBubble } from '../components/ReasoningBubble';
 import { SessionActionMenu } from '../components/SessionActionMenu';
+import { TeamPanel } from '../components/TeamPanel';
+import { TodoPanel } from '../components/TodoPanel';
+import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
+import { ConnectionBanner } from '../components/ConnectionBanner';
 import { DateDivider } from '../components/DateDivider';
 import { ChatBlock } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
 import { blockMatchesQuery } from '../chat/ChatSearch';
+import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands } from '../chat/SlashCommands';
+import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
+import { SlashMenu } from '../components/SlashMenu';
+import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session } from '../models/Types';
+import { Session, TeamState, parseTeamState, TodoItem, parseTodoList } from '../models/Types';
 import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -52,6 +60,15 @@ struct ChatPage {
   // 会话生命周期（标题栏 ⋯ 菜单：重命名 / 归档 / 删除；委托 SessionActionMenu 组件，与 Index 长按菜单复用）
   @Local sessionTitle: string = '';              // 标题栏显示标题（aboutToAppear 取种子，重命名/SSE 更新）
   @Local isActive: boolean = true;               // 会话活跃态（归档/删除二选一：active→归档，否则→删除）
+  @Local teamState: TeamState | null = null;     // 会话内多 agent 团队态（agent 自治上报；非 null 时消息列表上方渲染 TeamPanel）
+  @Local todos: TodoItem[] = [];                 // 会话内待办清单（agent TodoWrite 上报；非空时消息列表上方渲染 TodoPanel）
+  @Local model: string = '';                     // 会话 model（ContextStatusBar 算预算上限用；首屏/SSE 播种）
+  @Local flavor: string = '';                    // 会话 flavor（claude/codex/…；getContextBudgetTokens 门控 + 配置 overlay 门控）
+  @Local effort: string = '';                    // claude 努力度（/effort；首屏/SSE 播种；SessionConfigOverlay 用）
+  @Local modelReasoningEffort: string = '';      // codex/opencode 推理努力（/model-reasoning-effort；首屏/SSE 播种）
+  @Local permissionMode: string = '';            // 权限模式（/permission-mode；首屏/SSE 播种）
+  @Local collaborationMode: string = '';         // codex 协作模式（/collaboration-mode；首屏/SSE 播种）
+  @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改）
   @Local menuOpen: boolean = false;              // ⋯ 动作面板显隐（组件 @Param open；逻辑全在 SessionActionMenu）
 
   // 消息长按菜单（复制 / 重发[仅失败] / 分享）——底部动作 sheet，复用 SessionActionMenu 的 bindSheet 模式
@@ -59,6 +76,13 @@ struct ChatPage {
   @Local messageMenuOpen: boolean = false;            // 动作 sheet 显隐
   @Local searchMode: boolean = false;                 // 🔍 对话内搜索栏显隐（标题栏 🔍/✕ 切换）
   @Local searchQuery: string = '';                     // 搜索查询（纯客户端过滤，对照 Index filteredSessions）
+  @Local pendingSchedule: number = 0;                  // 待发定时（0=无/>0=epoch-ms；发送时拼 scheduledAt，对照 PendingSchedule）
+  @Local scheduleSheetOpen: boolean = false;           // 定时选择 sheet 显隐
+  @Local inputCursorStart: number = 0;                 // TextArea 光标区起点（onTextSelectionChange；活动词定位用）
+  @Local inputCursorEnd: number = 0;                   // TextArea 光标区终点
+  @Local slashSuggestions: SlashCommand[] = [];        // 斜杠补全建议（输入 / 触发；findActiveWord→slashCommandSuggestions）
+  @Local slashSelectedIndex: number = 0;               // 补全高亮项（tap 即选；预留键盘扩展）
+  private textAreaController: TextAreaController = new TextAreaController();   // 光标定位（applySuggestion 后 caretPosition 复位）
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -101,7 +125,10 @@ struct ChatPage {
   }
 
   private recomputeBlocks(): void {
-    const reduced: ChatBlock[] = reduceChatBlocks(this.messages, this.agentState);
+    // 排队消息（isQueued：已发未被 CLI 消费，含即时排队 + 定时）不进 thread——对照 web SessionChat 过滤
+    //   isQueuedForInvocation 行，仅由 QueuedMessagesBar 承载。thread 仅留已生效消息 + 失败行（可重发）。
+    const visible: ChatMessage[] = this.messages.filter((m: ChatMessage): boolean => !m.isQueued);
+    const reduced: ChatBlock[] = reduceChatBlocks(visible, this.agentState);
     // 盖「日期分隔」渲染标记：首条或与前一块不同日 → dividerBefore（纯序列判定，无 now 依赖）。
     //   盖在 block 自身字段（同 userOptimistic/userStatus 渲染提示），避免在 ForEach 闭包里依赖捕获的
     //   index/prev——后者在「加载更旧」prepend 重排后可能因 key 复用而不刷新（对齐 ArkUI ForEach 文档：
@@ -137,6 +164,77 @@ struct ChatPage {
   // 是否处于「实际过滤」态（searchMode 且有非空查询）—— 决定压制日期分隔（过滤视图是非连续子集，分隔会误导）
   private isFiltering(): boolean {
     return this.searchMode && this.searchQuery.trim() !== '';
+  }
+
+  // 排队消息视图（对照 web sortQueuedMessages）：isQueued 行 + 排序（即时在前按 createdAt，定时在后按 scheduledAt）。
+  //   getter 读 this.messages，messages 每次整体重赋值 → V2 自动重算；非空时 InputBar 上方渲染 QueuedMessagesBar。
+  private get queuedMessages(): ChatMessage[] {
+    const queued: ChatMessage[] = this.messages.filter((m: ChatMessage): boolean => m.isQueued);
+    return sortQueuedMessages(queued);
+  }
+
+  // 待发定时标签（pendingSchedule>0 才显）
+  private get pendingScheduleLabel(): string {
+    if (this.pendingSchedule <= 0) { return ''; }
+    return formatScheduledIn(this.pendingSchedule, Date.now());
+  }
+
+  // —— Token / 上下文用量（对照 web AssistantChat/StatusBar：ctx {size}/{max} (pct%) + cache 命中）——
+  // 最新可见用量（反序取首条父上下文可见的 agent usage；对照 reducer latestUsage）。
+  //   getter 读 this.messages，messages 每次整体重赋值（刷新策略）→ V2 观察引用变化即重算，无需手动维护。
+  get latestUsage(): UsageData | null {
+    return latestVisibleUsage(this.messages);
+  }
+
+  // 上下文预算上限：优先 usage.context_window，否则按 model/flavor 静态回退（getContextBudgetTokens）。
+  //   < 0 = 无可用上限 → ContextStatusBar 只显 ctx {size}，不算百分比/告警（对照 StatusBar !maxContextSize 分支）。
+  private get maxContextTokens(): number {
+    const u = this.latestUsage;
+    if (u !== null && u.contextWindow >= 0) { return u.contextWindow; }
+    const budget = getContextBudgetTokens(this.model, this.flavor);
+    return budget !== null ? budget : -1;
+  }
+
+  // 用量标签：有上限 → ctx {size}/{max} (pct%)；无上限 → ctx {size}（对照 contextUsageLabel）
+  private get contextLabel(): string {
+    const u = this.latestUsage;
+    if (u === null) { return ''; }
+    const size: number = u.contextSize;
+    const max: number = this.maxContextTokens;
+    if (max < 0) { return `ctx ${formatTokenCount(size)}`; }
+    const pct: number = Math.min(100, Math.round((size / max) * 100));
+    return `ctx ${formatTokenCount(size)}/${formatTokenCount(max)} (${pct}%)`;
+  }
+
+  // 告警配色：剩余 ≤5% 红 / ≤10% 琥珀 / 否则弱化灰（对照 getContextWarning 阈值）
+  private get contextColor(): string {
+    const u = this.latestUsage;
+    if (u === null) { return this.c.textTertiary; }
+    const max: number = this.maxContextTokens;
+    if (max < 0) { return this.c.textTertiary; }
+    const pctLeft: number = Math.max(0, 100 - (u.contextSize / max) * 100);
+    if (pctLeft <= 5) { return this.c.error; }
+    if (pctLeft <= 10) { return this.c.warning; }
+    return this.c.textTertiary;
+  }
+
+  // 缓存命中标签：cache_read > 0 才显（对照 cacheHitLabel）
+  private get cacheLabel(): string {
+    const u = this.latestUsage;
+    if (u === null || u.cacheRead <= 0) { return ''; }
+    return `cache ${formatTokenCount(u.cacheRead)}`;
+  }
+
+  @Builder ContextStatusBar() {
+    Row({ space: 8 }) {
+      Text(this.contextLabel).fontSize(11).fontColor(this.contextColor)
+      if (this.cacheLabel !== '') {
+        Text(this.cacheLabel).fontSize(11).fontColor(this.c.textTertiary)
+      }
+    }
+    .width('100%')
+    .padding({ left: 14, right: 14, top: 6, bottom: 4 })
+    .justifyContent(FlexAlign.Start)
   }
 
   private toggleSearch(): void {
@@ -184,6 +282,14 @@ struct ChatPage {
     setTimeout(() => {
       getHubClient().fetchSession(this.sessionId).then((session: Session) => {
         this.setAgentState(parseAgentState(session.agentStateRaw));
+        this.teamState = session.teamState;
+        this.todos = session.todos;
+        this.model = session.model;
+        this.flavor = session.flavor;
+        this.effort = session.effort;
+        this.permissionMode = session.permissionMode;
+        this.collaborationMode = session.collaborationMode;
+        this.modelReasoningEffort = session.modelReasoningEffort;
       }).catch(() => {});
     }, 200);
   }
@@ -209,6 +315,14 @@ struct ChatPage {
         this.setAgentState(parseAgentState(session.agentStateRaw));
         this.isActive = session.active;
         this.isThinking = session.thinking;   // 首屏播种：打开「正在生成」的会话即显停止按钮（对照上游立即 patch thinking）
+        this.teamState = session.teamState;   // 首屏播种团队态（非 null 时消息列表上方渲染 TeamPanel）
+        this.todos = session.todos;           // 首屏播种待办清单（非空时消息列表上方渲染 TodoPanel）
+        this.model = session.model;            // 首屏播种 model/flavor（ContextStatusBar 算预算上限）
+        this.flavor = session.flavor;
+        this.effort = session.effort;
+        this.permissionMode = session.permissionMode;        // 首屏播种会话内配置（SessionConfigOverlay 用）
+        this.collaborationMode = session.collaborationMode;
+        this.modelReasoningEffort = session.modelReasoningEffort;
       } catch (e) {
         this.agentState = null;
       }
@@ -299,6 +413,9 @@ struct ChatPage {
       this.handleSessionUpdated(event);
     } else if (t === SyncEventType.MESSAGES_INVALIDATED) {
       this.loadMessages();
+    } else if (t === SyncEventType.SCHEDULED_MATURED) {
+      // 定时消息成熟（到达预定时间被发出）→ 重拉本会话消息，补入这条新消息
+      this.loadMessages();
     }
   }
 
@@ -321,10 +438,44 @@ struct ChatPage {
       }
       const metaVal = sessionObj['metadata'];
       if (metaVal !== null && metaVal !== undefined && typeof metaVal === 'object') {
-        const nameVal = (metaVal as Record<string, Object>)['name'];
+        const meta = metaVal as Record<string, Object>;
+        const nameVal = meta['name'];
         if (typeof nameVal === 'string' && nameVal !== '') {
           this.sessionTitle = nameVal;
         }
+        // flavor 实时同步（ContextStatusBar 算预算上限门控）
+        const flavorVal = meta['flavor'];
+        if (typeof flavorVal === 'string') {
+          this.flavor = flavorVal;
+        }
+      }
+      // model 实时同步（ContextStatusBar 算预算上限：claude-/[1m]/codex 分档）
+      const modelVal = sessionObj['model'];
+      if (typeof modelVal === 'string') {
+        this.model = modelVal;
+      }
+      // 会话内配置实时同步（SessionConfigOverlay 高亮）：本端 set 后服务端回推；null/缺省保留当前。
+      const permVal = sessionObj['permissionMode'];
+      if (typeof permVal === 'string') { this.permissionMode = permVal; }
+      const collabVal = sessionObj['collaborationMode'];
+      if (typeof collabVal === 'string') { this.collaborationMode = collabVal; }
+      const reasoningVal = sessionObj['modelReasoningEffort'];
+      if (typeof reasoningVal === 'string') { this.modelReasoningEffort = reasoningVal; }
+      const effortVal = sessionObj['effort'];
+      if (typeof effortVal === 'string') { this.effort = effortVal; }
+      // teamState：会话内团队态实时更新（agent 自治上报；含 null 显式清除已解散团队）
+      const teamVal = sessionObj['teamState'];
+      if (teamVal !== null && teamVal !== undefined && typeof teamVal === 'object') {
+        this.teamState = parseTeamState(teamVal as Record<string, Object>);
+      } else if (teamVal === null) {
+        this.teamState = null;
+      }
+      // todos：会话内待办清单实时更新（agent TodoWrite 上报；含 [] 显式清空）
+      const todosVal = sessionObj['todos'];
+      if (Array.isArray(todosVal)) {
+        this.todos = parseTodoList(todosVal);
+      } else if (todosVal === null) {
+        this.todos = [];
       }
       // agentState：会话态实时更新（权限请求队列）
       const asVal = sessionObj['agentState'];
@@ -391,6 +542,7 @@ struct ChatPage {
     }
     this.localIdCounter = this.localIdCounter + 1;
     const localId = `local-${Date.now()}-${this.localIdCounter}`;
+    const schedule = this.pendingSchedule;   // 捕获待发定时（发送后清空）
 
     const optimistic = new ChatMessage();
     optimistic.id = localId;
@@ -400,15 +552,22 @@ struct ChatPage {
     optimistic.status = 'sending';
     optimistic.isOptimistic = true;
     optimistic.createdAt = Date.now();
+    optimistic.scheduledAt = schedule;       // 定时乐观行：QueuedMessagesBar 显「⏰ X 后发送」
 
     this.setMessages(this.messages.concat([optimistic]));
     this.inputText = '';
+    this.pendingSchedule = 0;                // 已捕获到 schedule，清空待发态
+    this.slashSuggestions = [];               // 发送后清空残留补全（按钮发送不触发 recompute）
+    this.inputCursorStart = 0;
+    this.inputCursorEnd = 0;
     this.isSending = true;
-    this.isThinking = true;
+    if (schedule <= 0) {
+      this.isThinking = true;                // 即时发送才显生成中（定时未触发，agent 未跑）
+    }
     this.scrollToBottom();
 
     try {
-      const ok = await getHubClient().sendMessage(this.sessionId, text, localId);
+      const ok = await getHubClient().sendMessage(this.sessionId, text, localId, schedule);
       this.updateOptimisticStatus(localId, ok ? 'queued' : 'failed');
     } catch (e) {
       this.updateOptimisticStatus(localId, 'failed');
@@ -437,6 +596,126 @@ struct ChatPage {
       // 忽略
     }
     this.isThinking = false;
+  }
+
+  // —— 排队消息：编辑 / 取消（对照 web QueuedMessagesBar edit + useCancelQueuedMessage）——
+
+  // 编辑 = 回填 composer（文本 + 恢复定时）+ 移除本行。有服务端 id 则顺带 cancel（服务器删）。
+  private async editQueued(m: ChatMessage): Promise<void> {
+    this.inputText = m.text;
+    this.pendingSchedule = (m.scheduledAt > 0 && m.scheduledAt > Date.now()) ? m.scheduledAt : 0;
+    this.slashSuggestions = [];               // 回填后清残留补全（光标未定位，不重算）
+    this.inputCursorStart = m.text.length;
+    this.inputCursorEnd = m.text.length;
+    if (!m.isOptimistic && m.id !== '') {
+      try { await getHubClient().cancelMessage(this.sessionId, m.id); } catch (e) { /* 乐观移除不阻塞 */ }
+    }
+    this.removeMessageLocal(m.id, m.localId);
+  }
+
+  // 取消排队消息：DELETE → cancelled 分支移除；invoked 分支（竞态：CLI 已消费）用权威行替换并入 thread。
+  private async cancelQueued(m: ChatMessage): Promise<void> {
+    if (m.isOptimistic || m.id === '') { return; }
+    try {
+      const result = await getHubClient().cancelMessage(this.sessionId, m.id);
+      if (result.cancelled) {
+        this.removeMessageLocal(m.id, m.localId);
+      } else if (result.invokedMessage !== null) {
+        this.setMessages(mergeMessage(this.messages, result.invokedMessage));
+      }
+    } catch (e) {
+      this.toast('取消失败');
+    }
+  }
+
+  // 本地移除一条消息（按 id 或 localId 匹配）
+  private removeMessageLocal(id: string, localId: string): void {
+    const next = this.messages.filter((m: ChatMessage): boolean => {
+      if (id !== '' && m.id === id) { return false; }
+      if (localId !== '' && m.localId === localId) { return false; }
+      return true;
+    });
+    if (next.length !== this.messages.length) {
+      this.setMessages(next);
+    }
+  }
+
+  // —— 定时消息预设（对照 web ScheduleTimePicker：+5m/+30m/+1h/+4h）——
+  //   skills/$ 等高级选择暂缓；绝对时间选择后续按需加（TimePicker+DatePicker）。
+  private chooseSchedule(offsetMs: number): void {
+    const now: number = Date.now();
+    const max: number = now + 7 * 24 * 3600 * 1000;   // 上游 refine 7 天上限（预设最大 4h，此处为防御）
+    const target: number = now + offsetMs;
+    this.pendingSchedule = target <= max ? target : max;
+    this.scheduleSheetOpen = false;
+  }
+
+  private clearSchedule(): void {
+    this.pendingSchedule = 0;
+    this.scheduleSheetOpen = false;
+  }
+
+  // —— 斜杠命令补全（对照 web useActiveWord + useSlashCommands.getSuggestions）——
+  //   onTextSelectionChange / onChange 触发：以光标选区在 inputText 回溯找 '/' 前缀活动词，
+  //   命中则按 flavor 取内置命令评分（精确/前缀/包含/Levenshtein），取前 6 条；否则清空。
+  private recomputeSlash(): void {
+    const aw = findActiveWord(this.inputText, this.inputCursorStart, this.inputCursorEnd, ['/']);
+    if (aw === null || !aw.activeWord.startsWith('/')) {
+      this.slashSuggestions = [];
+      this.slashSelectedIndex = 0;
+      return;
+    }
+    const all: SlashCommand[] = getBuiltinSlashCommands(this.flavor);
+    const ranked: SlashCommand[] = slashCommandSuggestions(all, aw.activeWord);
+    this.slashSuggestions = ranked.length > 6 ? ranked.slice(0, 6) : ranked;
+    this.slashSelectedIndex = 0;
+  }
+
+  // 选中某建议：applySuggestion 把活动词替换为 '/name '，复位光标到新位置（TextAreaController.caretPosition）。
+  private selectSlash(cmd: SlashCommand): void {
+    const applied = applySuggestion(this.inputText, this.inputCursorStart, this.inputCursorEnd,
+      `/${cmd.name}`, ['/'], true);
+    this.inputText = applied.text;
+    this.inputCursorStart = applied.cursorPosition;
+    this.inputCursorEnd = applied.cursorPosition;
+    this.slashSuggestions = [];
+    this.slashSelectedIndex = 0;
+    this.textAreaController.caretPosition(applied.cursorPosition);
+  }
+
+  // —— 会话内即时配置（对照 web setPermissionMode/setModel/...，5 端点）——
+  //   每 tap 即发：乐观更新本地 @Local（overlay 立即高亮新值）→ 调 REST → 失败回滚 + toast。
+  //   model/effort/reasoning '' 即发 null 复位（HubClient 内部转 null）。
+
+  private async applyModel(model: string): Promise<void> {
+    const prev = this.model;
+    this.model = model;
+    const ok = await getHubClient().setModel(this.sessionId, model);
+    if (!ok) { this.model = prev; this.toast('修改模型失败'); }
+  }
+  private async applyPermissionMode(mode: string): Promise<void> {
+    const prev = this.permissionMode;
+    this.permissionMode = mode;
+    const ok = await getHubClient().setPermissionMode(this.sessionId, mode);
+    if (!ok) { this.permissionMode = prev; this.toast('修改权限模式失败'); }
+  }
+  private async applyCollaborationMode(mode: string): Promise<void> {
+    const prev = this.collaborationMode;
+    this.collaborationMode = mode;
+    const ok = await getHubClient().setCollaborationMode(this.sessionId, mode);
+    if (!ok) { this.collaborationMode = prev; this.toast('修改协作模式失败'); }
+  }
+  private async applyEffort(effort: string): Promise<void> {
+    const prev = this.effort;
+    this.effort = effort;
+    const ok = await getHubClient().setEffort(this.sessionId, effort);
+    if (!ok) { this.effort = prev; this.toast('修改努力度失败'); }
+  }
+  private async applyReasoningEffort(effort: string): Promise<void> {
+    const prev = this.modelReasoningEffort;
+    this.modelReasoningEffort = effort;
+    const ok = await getHubClient().setModelReasoningEffort(this.sessionId, effort);
+    if (!ok) { this.modelReasoningEffort = prev; this.toast('修改推理努力失败'); }
   }
 
   // —— 消息长按菜单（复制 / 重发 / 分享）——
@@ -736,40 +1015,149 @@ struct ChatPage {
     .justifyContent(FlexAlign.Center)
   }
 
-  // 输入栏（TextArea 多行 + 发送/停止按钮）
+  // 输入栏（定时按钮 + TextArea 多行 + 发送/停止按钮）
   @Builder
   private InputBar() {
-    Row({ space: 8 }) {
-      TextArea({ text: this.inputText, placeholder: '输入消息…' })
-        .layoutWeight(1)
-        .fontSize(15)
-        .fontColor(this.c.textPrimary)
-        .placeholderColor(this.c.textTertiary)
-        .constraintSize({ minHeight: 40, maxHeight: 100 })
-        .backgroundColor(this.c.surface)
-        .borderRadius(20)
-        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-        .onChange((v: string) => { this.inputText = v; })
-
-      Button(this.isThinking ? '停止' : '发送')
-        .fontSize(15)
-        .height(40)
-        .backgroundColor(this.isThinking ? this.c.surface : this.c.primary)
-        .fontColor(this.isThinking ? this.c.error : this.c.bubbleUserText)
-        .borderRadius(20)
-        .enabled(!this.isSending && (this.isThinking || this.inputText.trim() !== ''))
-        .onClick(() => {
-          if (this.isThinking) {
-            this.handleStop();
-          } else {
-            this.handleSend();
-          }
+    Column({ space: 4 }) {
+      // 待发定时 chip（pendingSchedule>0 显形；点 ✕ 清除，对照 web PendingSchedule 徽标）
+      if (this.pendingSchedule > 0) {
+        Row({ space: 6 }) {
+          Text(`⏰ ${this.pendingScheduleLabel}`)
+            .fontSize(12)
+            .fontColor(this.c.warning)
+            .layoutWeight(1)
+          Text('✕')
+            .fontSize(13)
+            .fontColor(this.c.textTertiary)
+            .onClick(() => { this.pendingSchedule = 0; })
+        }
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 4 })
+      }
+      // 斜杠补全浮层（输入 / 触发；挂输入行正上方，对照 web 建议列表）
+      if (this.slashSuggestions.length > 0) {
+        SlashMenu({
+          suggestions: this.slashSuggestions,
+          selectedIndex: this.slashSelectedIndex,
+          onSelect: (cmd: SlashCommand): void => { this.selectSlash(cmd); }
         })
+      }
+      Row({ space: 8 }) {
+        // 定时按钮：开 ScheduleSheet 选预设；已设定时显 ⏰+警告色
+        Text(this.pendingSchedule > 0 ? '⏰' : '🕖')
+          .fontSize(18)
+          .fontColor(this.pendingSchedule > 0 ? this.c.warning : this.c.textSecondary)
+          .width(36)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.scheduleSheetOpen = true; })
+
+        TextArea({ text: this.inputText, placeholder: '输入消息…', controller: this.textAreaController })
+          .layoutWeight(1)
+          .fontSize(15)
+          .fontColor(this.c.textPrimary)
+          .placeholderColor(this.c.textTertiary)
+          .constraintSize({ minHeight: 40, maxHeight: 100 })
+          .backgroundColor(this.c.surface)
+          .borderRadius(20)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onChange((v: string) => {
+            this.inputText = v;
+            this.recomputeSlash();
+          })
+          .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+            this.inputCursorStart = selectionStart;
+            this.inputCursorEnd = selectionEnd;
+            this.recomputeSlash();
+          })
+
+        Button(this.isThinking ? '停止' : '发送')
+          .fontSize(15)
+          .height(40)
+          .backgroundColor(this.isThinking ? this.c.surface : this.c.primary)
+          .fontColor(this.isThinking ? this.c.error : this.c.bubbleUserText)
+          .borderRadius(20)
+          .enabled(!this.isSending && (this.isThinking || this.inputText.trim() !== ''))
+          .onClick(() => {
+            if (this.isThinking) {
+              this.handleStop();
+            } else {
+              this.handleSend();
+            }
+          })
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.c.bg)
+      .alignItems(VerticalAlign.Top)
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
     .backgroundColor(this.c.bg)
-    .alignItems(VerticalAlign.Top)
+  }
+
+  // 定时选择 sheet（对照 web ScheduleTimePicker 预设：+5m/+30m/+1h/+4h；MVP 仅预设，绝对时间后续加）
+  @Builder
+  private scheduleOption(label: string, offsetMs: number) {
+    Row() {
+      Text(label)
+        .fontSize(15)
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(48)
+    .padding({ left: 20, right: 20 })
+    .onClick(() => { this.chooseSchedule(offsetMs); })
+  }
+
+  @Builder
+  private ScheduleSheet() {
+    Column() {
+      Text('定时发送')
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 16, bottom: 4 })
+
+      this.scheduleOption('+5 分钟', 5 * 60 * 1000)
+      this.scheduleOption('+30 分钟', 30 * 60 * 1000)
+      this.scheduleOption('+1 小时', 60 * 60 * 1000)
+      this.scheduleOption('+4 小时', 4 * 60 * 60 * 1000)
+
+      if (this.pendingSchedule > 0) {
+        Row() {
+          Text('清除定时')
+            .fontSize(15)
+            .fontColor(this.c.error)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(48)
+        .padding({ left: 20, right: 20 })
+        .onClick(() => { this.clearSchedule(); })
+      }
+    }
+    .width('100%')
+    .backgroundColor(this.c.bg)
+  }
+
+  // 会话配置 sheet（包 SessionConfigOverlay；当前值/回调全接本页 @Local 与 applyXxx）
+  @Builder
+  private ConfigSheet() {
+    SessionConfigOverlay({
+      flavor: this.flavor,
+      model: this.model,
+      effort: this.effort,
+      modelReasoningEffort: this.modelReasoningEffort,
+      permissionMode: this.permissionMode,
+      collaborationMode: this.collaborationMode,
+      onSetModel: (m: string): void => { this.applyModel(m); },
+      onSetEffort: (e: string): void => { this.applyEffort(e); },
+      onSetReasoningEffort: (e: string): void => { this.applyReasoningEffort(e); },
+      onSetPermissionMode: (m: string): void => { this.applyPermissionMode(m); },
+      onSetCollaborationMode: (m: string): void => { this.applyCollaborationMode(m); }
+    })
   }
 
   // 标题栏右侧菜单（NavDestination.menus CustomBuilder，对照 chatcube SettingsNavigationMenus）：
@@ -791,6 +1179,14 @@ struct ChatPage {
         .height(40)
         .textAlign(TextAlign.Center)
         .onClick(() => { this.exportConversation(); })
+      // 会话内配置（模型/权限/effort 即时改；对照 web FloatingOverlay）
+      Text('🎛')
+        .fontSize(18)
+        .fontColor(this.c.textSecondary)
+        .width(36)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.configSheetOpen = true; })
       Text('⋯')
         .fontSize(22)
         .fontColor(this.c.textSecondary)
@@ -871,6 +1267,8 @@ struct ChatPage {
   build() {
     NavDestination() {
       Column() {
+        // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
+        ConnectionBanner()
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
@@ -895,6 +1293,14 @@ struct ChatPage {
           this.EmptyState()
         } else {
           Column() {
+            if (this.teamState !== null) {
+              TeamPanel({ teamState: this.teamState as TeamState })
+                .margin({ left: 12, right: 12, top: 8 })
+            }
+            if (this.todos.length > 0) {
+              TodoPanel({ todos: this.todos })
+                .margin({ left: 12, right: 12, top: 8 })
+            }
             if (this.searchMode) {
               this.SearchBar()
             }
@@ -957,7 +1363,29 @@ struct ChatPage {
           .layoutWeight(1)
         }
 
-        this.InputBar()
+        // Token / 上下文用量条（对照 web AssistantChat/StatusBar：仅在有可见 usage 时显形）
+        if (this.latestUsage !== null) {
+          this.ContextStatusBar()
+        }
+
+        // 排队消息条（已发未被 CLI 消费：即时排队 + 定时；对照 web QueuedMessagesBar，挂 InputBar 正上方）
+        if (this.queuedMessages.length > 0) {
+          QueuedMessagesBar({
+            queued: this.queuedMessages,
+            onEdit: (m: ChatMessage): void => { this.editQueued(m); },
+            onCancel: (m: ChatMessage): void => { this.cancelQueued(m); }
+          })
+        }
+
+        Column() {
+          this.InputBar()
+        }
+        .bindSheet(this.scheduleSheetOpen, this.ScheduleSheet(), {
+          detents: [SheetSize.FIT_CONTENT],
+          dragBar: true,
+          showClose: true,
+          onDisappear: (): void => { this.scheduleSheetOpen = false; }
+        })
 
         // 标题栏 ⋯ 菜单：重命名/归档/删除全委托 SessionActionMenu（与 Index 长按复用同一组件）
         //   重命名成功 → 更新本页标题；归档成功 → isActive 置 false（菜单翻删除，不离开页）；删除成功 → pop 回列表
@@ -980,6 +1408,12 @@ struct ChatPage {
         dragBar: true,
         showClose: false,
         onDisappear: (): void => { this.closeMessageMenu(); }
+      })
+      .bindSheet(this.configSheetOpen, this.ConfigSheet(), {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        dragBar: true,
+        showClose: true,
+        onDisappear: (): void => { this.configSheetOpen = false; }
       })
     }
     .title(this.sessionTitle !== '' ? this.sessionTitle : '对话')

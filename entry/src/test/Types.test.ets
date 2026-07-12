@@ -10,7 +10,19 @@ import {
   pickObj,
   parseSessionSummary,
   parseSessionsResponse,
-  parseSessionDetail
+  parseSessionDetail,
+  parseMachinesResponse,
+  parseListDirectoryResponse,
+  parseSpawnResponse,
+  parseTeamState,
+  parseTodoList,
+  AGENT_FLAVORS,
+  agentDisplayName,
+  permissionModesForFlavor,
+  reasoningEffortsForFlavor,
+  permissionModeDisplayName,
+  collaborationModeDisplayName,
+  reasoningEffortDisplayName
 } from '../main/ets/models/Types';
 
 function rec(json: string): Record<string, Object> {
@@ -155,6 +167,7 @@ export default function typesTest(): void {
       const s = parseSessionDetail(
         '{"session":{"id":"s1","namespace":"ns","seq":5,"createdAt":1,"updatedAt":2,' +
         '"active":true,"activeAt":3,"thinking":true,"model":"m","effort":"low","agentStateVersion":9,' +
+        '"permissionMode":"plan","collaborationMode":"default","modelReasoningEffort":"xhigh",' +
         '"agentState":{"controlledByUser":true,"requests":{}}}}');
       expect(s.id).assertEqual('s1');
       expect(s.namespace).assertEqual('ns');
@@ -167,6 +180,9 @@ export default function typesTest(): void {
       expect(s.model).assertEqual('m');
       expect(s.effort).assertEqual('low');
       expect(s.agentStateVersion).assertEqual(9);
+      expect(s.permissionMode).assertEqual('plan');
+      expect(s.collaborationMode).assertEqual('default');
+      expect(s.modelReasoningEffort).assertEqual('xhigh');
       expect(s.agentStateRaw !== null).assertTrue();
       if (s.agentStateRaw !== null) {
         expect(s.agentStateRaw['controlledByUser']).assertTrue();
@@ -190,8 +206,344 @@ export default function typesTest(): void {
       expect(s.id).assertEqual('s1');
       expect(s.model).assertEqual('');
       expect(s.effort).assertEqual('');
+      expect(s.permissionMode).assertEqual('');
+      expect(s.collaborationMode).assertEqual('');
+      expect(s.modelReasoningEffort).assertEqual('');
       expect(s.seq).assertEqual(0);
       expect(s.agentStateRaw === null).assertTrue();
+    });
+  });
+
+  describe('parseMachinesResponse', () => {
+    it('parses machines with all fields and displayName from metadata.displayName', 0, () => {
+      const list = parseMachinesResponse(
+        '{"machines":[' +
+        '{"id":"m1","namespace":"ns","active":true,"activeAt":100,"updatedAt":200,"metadata":{"displayName":"My Mac"}}' +
+        ']}');
+      expect(list.length).assertEqual(1);
+      expect(list[0].id).assertEqual('m1');
+      expect(list[0].namespace).assertEqual('ns');
+      expect(list[0].active).assertTrue();
+      expect(list[0].activeAt).assertEqual(100);
+      expect(list[0].updatedAt).assertEqual(200);
+      expect(list[0].displayName).assertEqual('My Mac');
+    });
+
+    it('falls back to metadata.host when displayName is empty', 0, () => {
+      const list = parseMachinesResponse(
+        '{"machines":[{"id":"m2","metadata":{"displayName":"","host":"host-42"}}]}');
+      expect(list[0].displayName).assertEqual('host-42');
+    });
+
+    it('leaves displayName empty when metadata is absent', 0, () => {
+      const list = parseMachinesResponse('{"machines":[{"id":"m3"}]}');
+      expect(list[0].displayName).assertEqual('');
+    });
+
+    it('returns an empty array for invalid JSON', 0, () => {
+      expect(parseMachinesResponse('not json').length).assertEqual(0);
+    });
+
+    it('returns an empty array when machines is missing or not an array', 0, () => {
+      expect(parseMachinesResponse('{"foo":1}').length).assertEqual(0);
+      expect(parseMachinesResponse('{"machines":"nope"}').length).assertEqual(0);
+    });
+
+    it('filters out non-object entries', 0, () => {
+      const list = parseMachinesResponse('{"machines":["str",null,{"id":"ok"}]}');
+      expect(list.length).assertEqual(1);
+      expect(list[0].id).assertEqual('ok');
+    });
+  });
+
+  describe('parseListDirectoryResponse', () => {
+    it('parses entries with name/type/isGitRepo', 0, () => {
+      const list = parseListDirectoryResponse(
+        '{"entries":[' +
+        '{"name":"src","type":"directory","isGitRepo":true},' +
+        '{"name":"readme.md","type":"file","isGitRepo":false}' +
+        ']}');
+      expect(list.length).assertEqual(2);
+      expect(list[0].name).assertEqual('src');
+      expect(list[0].type).assertEqual('directory');
+      expect(list[0].isGitRepo).assertTrue();
+      expect(list[1].name).assertEqual('readme.md');
+      expect(list[1].type).assertEqual('file');
+      expect(list[1].isGitRepo).assertFalse();
+    });
+
+    it('defaults type to empty and isGitRepo to false when missing', 0, () => {
+      const list = parseListDirectoryResponse('{"entries":[{"name":"x"}]}');
+      expect(list[0].type).assertEqual('');
+      expect(list[0].isGitRepo).assertFalse();
+    });
+
+    it('returns an empty array for invalid JSON', 0, () => {
+      expect(parseListDirectoryResponse('not json').length).assertEqual(0);
+    });
+
+    it('returns an empty array when entries is missing or not an array', 0, () => {
+      expect(parseListDirectoryResponse('{"foo":1}').length).assertEqual(0);
+      expect(parseListDirectoryResponse('{"entries":"nope"}').length).assertEqual(0);
+    });
+
+    it('filters out non-object entries', 0, () => {
+      const list = parseListDirectoryResponse('{"entries":["a",null,{"name":"ok"}]}');
+      expect(list.length).assertEqual(1);
+      expect(list[0].name).assertEqual('ok');
+    });
+  });
+
+  describe('parseSpawnResponse', () => {
+    it('returns sessionId on success', 0, () => {
+      expect(parseSpawnResponse('{"type":"success","sessionId":"s-new"}')).assertEqual('s-new');
+    });
+
+    it('throws on error type and surfaces the message', 0, () => {
+      let msg: string = '';
+      try {
+        parseSpawnResponse('{"type":"error","message":"machine offline"}');
+      } catch (e) {
+        msg = e instanceof Error ? e.message : '';
+      }
+      expect(msg).assertEqual('machine offline');
+    });
+
+    it('throws a generic message on error with empty message', 0, () => {
+      let msg: string = '';
+      try {
+        parseSpawnResponse('{"type":"error","message":""}');
+      } catch (e) {
+        msg = e instanceof Error ? e.message : '';
+      }
+      expect(msg).assertEqual('启动会话失败');
+    });
+
+    it('throws when sessionId is missing on success', 0, () => {
+      let threw: boolean = false;
+      try {
+        parseSpawnResponse('{"type":"success"}');
+      } catch (e) {
+        threw = true;
+      }
+      expect(threw).assertTrue();
+    });
+
+    it('throws on invalid JSON', 0, () => {
+      let threw: boolean = false;
+      try {
+        parseSpawnResponse('not json');
+      } catch (e) {
+        threw = true;
+      }
+      expect(threw).assertTrue();
+    });
+  });
+
+  describe('AGENT_FLAVORS / agentDisplayName', () => {
+    it('AGENT_FLAVORS matches the upstream list', 0, () => {
+      expect(AGENT_FLAVORS.length).assertEqual(6);
+      expect(AGENT_FLAVORS[0]).assertEqual('claude');
+      expect(AGENT_FLAVORS[5]).assertEqual('opencode');
+    });
+
+    it('maps known flavors to display names and passes unknown through', 0, () => {
+      expect(agentDisplayName('claude')).assertEqual('Claude Code');
+      expect(agentDisplayName('codex')).assertEqual('Codex');
+      expect(agentDisplayName('gemini')).assertEqual('Gemini CLI');
+      expect(agentDisplayName('unknown')).assertEqual('unknown');
+    });
+  });
+
+  describe('session config helpers (permission / collaboration / reasoning)', () => {
+    it('permissionModesForFlavor routes each flavor to its domain', 0, () => {
+      expect(permissionModesForFlavor('claude')[0]).assertEqual('default');
+      expect(permissionModesForFlavor('claude')[1]).assertEqual('acceptEdits');
+      expect(permissionModesForFlavor('claude').length).assertEqual(4);
+      expect(permissionModesForFlavor('codex')[3]).assertEqual('yolo');
+      expect(permissionModesForFlavor('gemini')[1]).assertEqual('read-only');
+      expect(permissionModesForFlavor('kimi')[1]).assertEqual('read-only');
+      expect(permissionModesForFlavor('opencode').length).assertEqual(3);
+      expect(permissionModesForFlavor('opencode')[2]).assertEqual('yolo');
+      expect(permissionModesForFlavor('cursor')[2]).assertEqual('ask');
+      expect(permissionModesForFlavor('whatever')[0]).assertEqual('default'); // 未知回退 claude 域
+    });
+
+    it('reasoningEffortsForFlavor picks opencode (max) vs others (xhigh)', 0, () => {
+      expect(reasoningEffortsForFlavor('opencode')[3]).assertEqual('max');
+      expect(reasoningEffortsForFlavor('codex')[3]).assertEqual('xhigh');
+      expect(reasoningEffortsForFlavor('claude')[3]).assertEqual('xhigh'); // 非展示项，仍按 codex 域取
+    });
+
+    it('permissionModeDisplayName maps known modes and passes unknown through', 0, () => {
+      expect(permissionModeDisplayName('default')).assertEqual('默认');
+      expect(permissionModeDisplayName('acceptEdits')).assertEqual('接受编辑');
+      expect(permissionModeDisplayName('bypassPermissions')).assertEqual('跳过权限 (Yolo)');
+      expect(permissionModeDisplayName('plan')).assertEqual('计划模式');
+      expect(permissionModeDisplayName('read-only')).assertEqual('只读');
+      expect(permissionModeDisplayName('safe-yolo')).assertEqual('安全 Yolo');
+      expect(permissionModeDisplayName('yolo')).assertEqual('Yolo');
+      expect(permissionModeDisplayName('ask')).assertEqual('询问模式');
+      expect(permissionModeDisplayName('weird')).assertEqual('weird');
+    });
+
+    it('collaborationModeDisplayName and reasoningEffortDisplayName', 0, () => {
+      expect(collaborationModeDisplayName('default')).assertEqual('默认');
+      expect(collaborationModeDisplayName('plan')).assertEqual('计划');
+      expect(collaborationModeDisplayName('zzz')).assertEqual('zzz');
+      expect(reasoningEffortDisplayName('low')).assertEqual('Low');
+      expect(reasoningEffortDisplayName('xhigh')).assertEqual('XHigh');
+      expect(reasoningEffortDisplayName('max')).assertEqual('Max');
+      expect(reasoningEffortDisplayName('unknown')).assertEqual('unknown');
+    });
+  });
+
+  describe('parseTeamState', () => {
+    it('returns null when raw is null', 0, () => {
+      expect(parseTeamState(null) === null).assertTrue();
+    });
+
+    it('returns null when teamName is empty (no team)', 0, () => {
+      expect(parseTeamState(rec('{"teamName":""}')) === null).assertTrue();
+      expect(parseTeamState(rec('{}')) === null).assertTrue();
+    });
+
+    it('parses teamName, description, updatedAt with empty sub-arrays when absent', 0, () => {
+      const t = parseTeamState(rec('{"teamName":"Squad","description":"a team","updatedAt":99}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.teamName).assertEqual('Squad');
+        expect(t.description).assertEqual('a team');
+        expect(t.updatedAt).assertEqual(99);
+        expect(t.members.length).assertEqual(0);
+        expect(t.tasks.length).assertEqual(0);
+        expect(t.messages.length).assertEqual(0);
+      }
+    });
+
+    it('parses members with name/agentType/status', 0, () => {
+      const t = parseTeamState(rec(
+        '{"teamName":"T","members":[' +
+        '{"name":"lead","agentType":"claude","status":"active"},' +
+        '{"name":"dev"}' +
+        ']}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.members.length).assertEqual(2);
+        expect(t.members[0].name).assertEqual('lead');
+        expect(t.members[0].agentType).assertEqual('claude');
+        expect(t.members[0].status).assertEqual('active');
+        expect(t.members[1].name).assertEqual('dev');
+        expect(t.members[1].agentType).assertEqual('');
+        expect(t.members[1].status).assertEqual('');
+      }
+    });
+
+    it('parses tasks with id/title/description/status/owner', 0, () => {
+      const t = parseTeamState(rec(
+        '{"teamName":"T","tasks":[' +
+        '{"id":"t1","title":"do thing","status":"in_progress","owner":"dev"},' +
+        '{"id":"t2","title":"done","status":"completed"}' +
+        ']}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.tasks.length).assertEqual(2);
+        expect(t.tasks[0].id).assertEqual('t1');
+        expect(t.tasks[0].title).assertEqual('do thing');
+        expect(t.tasks[0].status).assertEqual('in_progress');
+        expect(t.tasks[0].owner).assertEqual('dev');
+        expect(t.tasks[1].description).assertEqual('');
+        expect(t.tasks[1].owner).assertEqual('');
+      }
+    });
+
+    it('parses messages with from/to/summary/type/timestamp', 0, () => {
+      const t = parseTeamState(rec(
+        '{"teamName":"T","messages":[' +
+        '{"from":"lead","to":"dev","summary":"hi","type":"message","timestamp":123}' +
+        ']}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.messages.length).assertEqual(1);
+        expect(t.messages[0].from).assertEqual('lead');
+        expect(t.messages[0].to).assertEqual('dev');
+        expect(t.messages[0].summary).assertEqual('hi');
+        expect(t.messages[0].type).assertEqual('message');
+        expect(t.messages[0].timestamp).assertEqual(123);
+      }
+    });
+
+    it('treats non-array members/tasks/messages as empty arrays', 0, () => {
+      const t = parseTeamState(rec('{"teamName":"T","members":"x","tasks":5,"messages":{}}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.members.length).assertEqual(0);
+        expect(t.tasks.length).assertEqual(0);
+        expect(t.messages.length).assertEqual(0);
+      }
+    });
+
+    it('filters out non-object entries in sub-arrays', 0, () => {
+      const t = parseTeamState(rec(
+        '{"teamName":"T","members":["str",null,{"name":"ok"}]}'));
+      expect(t !== null).assertTrue();
+      if (t !== null) {
+        expect(t.members.length).assertEqual(1);
+        expect(t.members[0].name).assertEqual('ok');
+      }
+    });
+  });
+
+  describe('parseTodoList', () => {
+    it('returns empty for null or non-array', 0, () => {
+      expect(parseTodoList(JSON.parse('null')).length).assertEqual(0);
+      expect(parseTodoList(JSON.parse('"notarray"')).length).assertEqual(0);
+      expect(parseTodoList(JSON.parse('5')).length).assertEqual(0);
+      expect(parseTodoList(JSON.parse('{}')).length).assertEqual(0);
+    });
+
+    it('parses full fields content/status/priority/id/activeForm', 0, () => {
+      const list = parseTodoList(JSON.parse(
+        '[{"content":"重构认证","status":"in_progress","priority":"high","id":"t1","activeForm":"正在重构认证"}]'));
+      expect(list.length).assertEqual(1);
+      expect(list[0].content).assertEqual('重构认证');
+      expect(list[0].status).assertEqual('in_progress');
+      expect(list[0].priority).assertEqual('high');
+      expect(list[0].id).assertEqual('t1');
+      expect(list[0].activeForm).assertEqual('正在重构认证');
+    });
+
+    it('requires string content (skips non-string content entries)', 0, () => {
+      const list = parseTodoList(JSON.parse(
+        '[{"content":"ok","status":"completed"},{"content":5},{"content":null}]'));
+      expect(list.length).assertEqual(1);
+      expect(list[0].content).assertEqual('ok');
+      expect(list[0].status).assertEqual('completed');
+    });
+
+    it('defaults priority to medium and normalizes unknown status to pending', 0, () => {
+      const list = parseTodoList(JSON.parse(
+        '[{"content":"a","priority":"low"},{"content":"b","status":"weird"},{"content":"c"}]'));
+      expect(list.length).assertEqual(3);
+      expect(list[0].priority).assertEqual('low');
+      expect(list[0].status).assertEqual('pending');
+      expect(list[1].status).assertEqual('pending');
+      expect(list[1].priority).assertEqual('medium');
+      expect(list[2].priority).assertEqual('medium');
+      expect(list[2].status).assertEqual('pending');
+    });
+
+    it('optional id/activeForm default to empty string', 0, () => {
+      const list = parseTodoList(JSON.parse('[{"content":"x"}]'));
+      expect(list.length).assertEqual(1);
+      expect(list[0].id).assertEqual('');
+      expect(list[0].activeForm).assertEqual('');
+    });
+
+    it('filters out non-object entries in the array', 0, () => {
+      const list = parseTodoList(JSON.parse('["str",null,5,{"content":"keep"}]'));
+      expect(list.length).assertEqual(1);
+      expect(list[0].content).assertEqual('keep');
     });
   });
 }

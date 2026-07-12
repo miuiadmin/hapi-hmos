@@ -4,6 +4,7 @@ import { SessionSummary } from '../models/Types';
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { ChatPageRouteParams } from './ChatPage';
 import { SessionActionMenu } from '../components/SessionActionMenu';
+import { ConnectionBanner } from '../components/ConnectionBanner';
 import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 会话列表页（已登录首屏）
@@ -21,6 +22,7 @@ struct Index {
   @Local sseState: SSEConnectionState = 'idle';
   @Local searchQuery: string = '';              // 会话搜索查询（纯客户端过滤，对照 web SessionListSearch）
   @Local isRefreshing: boolean = false;          // 下拉刷新中（Refresh 容器 refreshing 双向绑定）
+  @Local sessionFilter: 'all' | 'active' | 'archived' = 'all';   // 列表 Tab 筛选：archived = 非活跃（hapi 归档即 active=false）
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -84,15 +86,38 @@ struct Index {
   }
 
   // SSE 事件：会话结构性变更 → 重新拉列表（低频）。
-  // message-* 高频事件不刷列表（后续在对话页处理 / 局部更新角标时间）。
+  // message-* 高频事件不刷列表（在对话页处理 / 局部更新角标时间）。
+  //   scheduled-matured：定时消息成熟 → 会话摘要/updatedAt 变，并入重拉。
+  //   toast：服务端推 Toast（后台通知；仅 Index 处理，root 恒在栈避免与对话页双监听者重复弹）。
+  //   machine-updated：无 machine UI 可消费（机器在 NewSessionPage 实时拉取），留 no-op hook。
   private onSSEEvent(event: SyncEvent): void {
     const t: string = event.type;
     if (t === SyncEventType.SESSION_ADDED
       || t === SyncEventType.SESSION_UPDATED
       || t === SyncEventType.SESSION_REMOVED
-      || t === SyncEventType.SESSION_ENDED) {
+      || t === SyncEventType.SESSION_ENDED
+      || t === SyncEventType.SCHEDULED_MATURED) {
       this.loadSessions();
+    } else if (t === SyncEventType.TOAST) {
+      this.showServerToast(event);
     }
+  }
+
+  // 服务端 Toast（data:{title,body,sessionId,url}）→ 全局提示。showToast 是窗口级，任何页在前都显形。
+  private showServerToast(event: SyncEvent): void {
+    const data = event.getObject('data');
+    if (data === null) {
+      return;
+    }
+    const titleVal = data['title'];
+    const bodyVal = data['body'];
+    const title: string = typeof titleVal === 'string' ? titleVal : '';
+    const body: string = typeof bodyVal === 'string' ? bodyVal : '';
+    const message: string = body !== '' ? `${title}：${body}` : title;
+    if (message === '') {
+      return;
+    }
+    this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
   }
 
   // 点击进入对话页（NavPathStack.pushPath，对照 chatcube openChatRoute）
@@ -106,6 +131,11 @@ struct Index {
   // 打开设置页（NavPathStack.pushPath）
   private openSettings(): void {
     this.navStack.pushPath({ name: 'SettingsPage' });
+  }
+
+  // 打开新建会话页（spawn 流程，对照上游列表头「+」→ /sessions/new）
+  private openNewSession(): void {
+    this.navStack.pushPath({ name: 'NewSessionPage' });
   }
 
   // 长按会话 → 记目标快照 + 开动作面板（重命名/归档/删除逻辑在 SessionActionMenu 组件内）
@@ -124,20 +154,77 @@ struct Index {
     return hay.includes(q);
   }
 
-  // 过滤后的可见列表：空查询 → 全量。getter 在 build 中被读取，V2 细粒度观察追踪
-  // sessions/searchQuery 的读取 → 任一变化自动重渲染（同 theme `c` getter / chatcube getFilteredSessions 模式）。
+  // 过滤后的可见列表：先按 Tab 筛选（archived=非活跃），再按搜索词过滤。
+  // getter 在 build 中被读取，V2 细粒度观察追踪 sessions/sessionFilter/searchQuery → 任一变化自动重渲染
+  // （同 theme `c` getter / chatcube getFilteredSessions 模式）。
   get filteredSessions(): SessionSummary[] {
-    const q: string = this.searchQuery.trim().toLowerCase();
-    if (q === '') {
-      return this.sessions;
-    }
-    const out: SessionSummary[] = [];
-    for (let i = 0; i < this.sessions.length; i++) {
-      if (this.sessionMatches(this.sessions[i], q)) {
-        out.push(this.sessions[i]);
+    // 1. Tab 筛选
+    let scoped: SessionSummary[] = this.sessions;
+    if (this.sessionFilter === 'active') {
+      const a: SessionSummary[] = [];
+      for (let i = 0; i < this.sessions.length; i++) {
+        if (this.sessions[i].active) { a.push(this.sessions[i]); }
       }
+      scoped = a;
+    } else if (this.sessionFilter === 'archived') {
+      const a: SessionSummary[] = [];
+      for (let i = 0; i < this.sessions.length; i++) {
+        if (!this.sessions[i].active) { a.push(this.sessions[i]); }
+      }
+      scoped = a;
+    }
+    // 2. 搜索过滤
+    const q: string = this.searchQuery.trim().toLowerCase();
+    if (q === '') { return scoped; }
+    const out: SessionSummary[] = [];
+    for (let i = 0; i < scoped.length; i++) {
+      if (this.sessionMatches(scoped[i], q)) { out.push(scoped[i]); }
     }
     return out;
+  }
+
+  // 筛选 Tab 文案与图标（按 tab+搜索词；filteredSessions===0 时用）
+  private emptyMessage(): string {
+    if (this.searchQuery.trim() !== '') { return '没有匹配的会话。'; }
+    if (this.sessionFilter === 'active') { return '没有活跃会话。'; }
+    if (this.sessionFilter === 'archived') { return '没有已归档会话。'; }
+    return '没有匹配的会话。';
+  }
+  private emptyIcon(): string {
+    if (this.searchQuery.trim() !== '') { return '🔍'; }
+    if (this.sessionFilter === 'active') { return '💬'; }
+    if (this.sessionFilter === 'archived') { return '📦'; }
+    return '🔍';
+  }
+  private countByActive(active: boolean): number {
+    let n: number = 0;
+    for (let i = 0; i < this.sessions.length; i++) {
+      if (this.sessions[i].active === active) { n = n + 1; }
+    }
+    return n;
+  }
+
+  // 列表筛选 Tab（全部/活跃/已归档，附计数；archived=非活跃）
+  @Builder
+  private FilterTab(label: string, mode: 'all' | 'active' | 'archived', count: number) {
+    Text(`${label} ${count}`)
+      .fontSize(13)
+      .fontWeight(this.sessionFilter === mode ? FontWeight.Medium : FontWeight.Regular)
+      .fontColor(this.sessionFilter === mode ? this.c.primary : this.c.textTertiary)
+      .decoration({ type: this.sessionFilter === mode ? TextDecorationType.Underline : TextDecorationType.None })
+      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+      .margin({ right: 8 })
+      .onClick(() => { this.sessionFilter = mode; })
+  }
+  @Builder
+  private FilterTabs() {
+    Row() {
+      this.FilterTab('全部', 'all', this.sessions.length)
+      this.FilterTab('活跃', 'active', this.countByActive(true))
+      this.FilterTab('已归档', 'archived', this.countByActive(false))
+    }
+    .width('100%')
+    .margin({ top: 8 })
   }
 
   // 相对时间（对照 chatcube RelativeTimeText 分档）
@@ -215,6 +302,16 @@ struct Index {
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+          // todo 进度（对照上游 SessionList getTodoProgress：有未完成 todo 时显 💡 done/total；
+          //   无 todo 或全部完成则隐藏——todoTotal=0 或 done===total 都不显，仅在进行中提示）
+          if (session.todoTotal > 0 && session.todoCompleted !== session.todoTotal) {
+            Row({ space: 3 }) {
+              Text('💡').fontSize(10)
+              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(11)
+            }
+            .fontColor(this.c.textTertiary)
+            .margin({ right: 6 })
+          }
           if (session.pendingRequestsCount > 0) {
             Text(`${session.pendingRequestsCount}`)
               .fontSize(11)
@@ -222,6 +319,18 @@ struct Index {
               .backgroundColor(this.c.error)
               .borderRadius(10)
               .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+          }
+          // 后台任务角标（backgroundTaskCount>0；agent 后台跑的待办任务数，中性样式区别于待审批红角标）
+          if (session.backgroundTaskCount > 0) {
+            Row({ space: 3 }) {
+              Text('⚙').fontSize(10)
+              Text(`${session.backgroundTaskCount}`).fontSize(11)
+            }
+            .fontColor(this.c.textSecondary)
+            .backgroundColor(this.c.surface)
+            .borderRadius(8)
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .margin({ left: 6 })
           }
         }
         .width('100%')
@@ -243,18 +352,24 @@ struct Index {
       Text('📭').fontSize(48)
       Text('暂无会话').fontSize(16).fontColor(this.c.textSecondary)
       Text('在终端启动 hapi 后，会话会出现在这里').fontSize(13).fontColor(this.c.textTertiary)
+      Button('新建会话')
+        .margin({ top: 12 })
+        .backgroundColor(this.c.primary)
+        .fontColor(this.c.bubbleUserText)
+        .borderRadius(10)
+        .onClick(() => this.openNewSession())
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
   }
 
-  // 搜索无结果（与「无会话」空态区分；对照 web sessions.search.noResults「没有匹配的会话。」）
+  // 列表筛选/搜索无结果空态（icon + message 由 emptyIcon/emptyMessage 按 tab+搜索词给出）
   @Builder
-  private SearchEmptyState() {
+  private SearchEmptyState(icon: string, message: string) {
     Column({ space: 8 }) {
-      Text('🔍').fontSize(40)
-      Text('没有匹配的会话。').fontSize(15).fontColor(this.c.textSecondary)
+      Text(icon).fontSize(40)
+      Text(message).fontSize(15).fontColor(this.c.textSecondary)
     }
     .width('100%')
     .height('100%')
@@ -289,6 +404,15 @@ struct Index {
           }
           .layoutWeight(1)
 
+          // 新建会话入口
+          Text('+')
+            .fontSize(26)
+            .fontColor(this.c.textSecondary)
+            .width(40)
+            .height(40)
+            .textAlign(TextAlign.Center)
+            .onClick(() => this.openNewSession())
+
           // 设置入口
           Text('⚙')
             .fontSize(22)
@@ -309,10 +433,14 @@ struct Index {
               .backgroundColor(this.c.surface)
               .placeholderColor(this.c.textTertiary)
               .onChange((value: string) => { this.searchQuery = value; })
+            this.FilterTabs()
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 8 })
         }
+
+        // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
+        ConnectionBanner()
 
         if (this.isLoading) {
           Column() {
@@ -326,7 +454,7 @@ struct Index {
         } else if (this.sessions.length === 0) {
           this.EmptyState()
         } else if (this.filteredSessions.length === 0) {
-          this.SearchEmptyState()
+          this.SearchEmptyState(this.emptyIcon(), this.emptyMessage())
         } else {
           // 下拉刷新（Refresh 包 List；refreshing !! 双向绑定 + onRefreshing 触发拉取）
           Refresh({ refreshing: this.isRefreshing!! }) {
