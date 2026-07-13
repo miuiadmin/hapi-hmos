@@ -2,7 +2,8 @@ import { getConnectionService } from '../services/ConnectionService';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
 import { window } from '@kit.ArkUI';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { showToast } from '../utils/Toast';
 
 // 登录页：填 Hub 地址 + CLI_API_TOKEN，「测试连接」「登录」
 // UI 写法/样式对照 chatcube（WebDAVSyncPage 表单 + OnboardingStepProvider 内联错误），V2 状态管理
@@ -32,10 +33,6 @@ struct LoginPage {
     return this.hubUrl.trim().length > 0 && this.apiToken.length > 0;
   }
 
-  private showHint(message: string, duration: number = 2000): void {
-    this.getUIContext().getPromptAction().showToast({ message: message, duration: duration });
-  }
-
   // 测试连接：GET /health，仅验证 Hub 地址可达（无需 token）
   private async testConnection(): Promise<void> {
     if (this.isTesting) { return; }
@@ -48,7 +45,7 @@ struct LoginPage {
     try {
       const ok = await getHubClient().health(this.hubUrl.trim());
       if (ok) {
-        this.showHint('Hub 地址可达', 2000);
+        showToast('Hub 地址可达', 2000);
       } else {
         this.lastError = '无法连接到 Hub，请检查地址';
       }
@@ -98,12 +95,12 @@ struct LoginPage {
     onChange: (text: string) => void) {
     Column() {
       Text(label)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(this.c.textSecondary)
         .margin({ bottom: 6, left: 4 })
       TextInput({ text: value, placeholder: placeholder })
         .type(isPassword ? InputType.Password : InputType.Normal)
-        .fontSize(15)
+        .fontSize(fs(15))
         .fontColor(this.c.textPrimary)
         .height(48)
         .backgroundColor(this.c.surface)
@@ -120,12 +117,12 @@ struct LoginPage {
     Column() {
       // 标题区
       Text('Hapi')
-        .fontSize(40)
+        .fontSize(fs(40))
         .fontWeight(FontWeight.Bold)
         .fontColor(this.c.textPrimary)
         .margin({ top: 80 })
       Text('连接到你的 Hub')
-        .fontSize(16)
+        .fontSize(fs(16))
         .fontColor(this.c.textSecondary)
         .margin({ top: 8 })
 
@@ -139,7 +136,7 @@ struct LoginPage {
         // 内联错误行（条件渲染，对照 OnboardingStepProvider）
         if (this.lastError !== '') {
           Text(this.lastError)
-            .fontSize(12)
+            .fontSize(fs(12))
             .fontColor(this.c.error)
             .width('100%')
             .margin({ top: 2, left: 4 })
@@ -147,7 +144,7 @@ struct LoginPage {
 
         // 帮助文本
         Text('启动 Hub：npx @twsxtd/hapi hub --relay。地址填 Hub 监听地址，Token 为 CLI_API_TOKEN。')
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
           .margin({ top: 12 })
       }
@@ -159,7 +156,7 @@ struct LoginPage {
         Button(this.isTesting ? '测试中…' : '测试连接')
           .layoutWeight(1)
           .height(44)
-          .fontSize(15)
+          .fontSize(fs(15))
           .backgroundColor(this.c.surface)
           .fontColor(this.c.primary)
           .borderRadius(10)
@@ -169,7 +166,7 @@ struct LoginPage {
         Button(this.isSubmitting ? '登录中…' : '登录')
           .layoutWeight(1)
           .height(44)
-          .fontSize(15)
+          .fontSize(fs(15))
           .backgroundColor(this.c.primary)
           .fontColor(this.c.bubbleUserText)
           .borderRadius(10)

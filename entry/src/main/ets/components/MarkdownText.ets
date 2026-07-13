@@ -6,7 +6,16 @@ import {
 } from '@cangjie-tpc/markdown_hybrid'
 import { Want, common } from '@kit.AbilityKit'
 import { pasteboard } from '@kit.BasicServicesKit'
-import { paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
+import { fs, paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
+import { showToast } from '../utils/Toast';
+import {
+  classifyScheme,
+  hasScheme,
+  extractScheme,
+  isAllowedScheme,
+  loadAllowedSchemes,
+  saveAllowedScheme
+} from '../utils/ExternalLink';
 
 // 极简 Markdown 渲染组件：封装 @cangjie-tpc/markdown_hybrid（Apache-2.0）的 CJMarkdown
 // 参考 chatcube ChatMarkdownHybridRenderer（MIT），裁掉其 AppUiState 主题系统 / 排版工具 / 媒体图标依赖：
@@ -139,7 +148,7 @@ export struct MarkdownText {
     theme.setIsDark(isDark);
 
     config.setMarkdownTheme(theme);
-    // 链接点击 → 系统浏览器（仅 http/https，对照 chatcube HelpMarkdownView.openExternalLink）
+    // 链接点击 → scheme 分类策略（IANA 安全直接开 / deny 阻止 / custom 确认），见 openExternal
     config.setLinkCallback((url: string): void => { this.openExternal(url); });
     // 图片点击 → 应用内全屏预览（http(s)/data:，对照 chatcube setImageCallback → onImageClick → handleImagePreview）
     config.setImageCallback((src: string, _sources: Array<string>): void => { this.openImagePreview(src); });
@@ -153,44 +162,80 @@ export struct MarkdownText {
     return config;
   }
 
-  // 打开 http/https 外链：交系统浏览器（隐式 Want，对照 chatcube HelpMarkdownView.openExternalLink）。
-  //   仅放行 http/https，防任意 scheme（intent:/market:/app:）借 markdown 触发 ability；mailto/tel/锚点暂不支持。
-  //   startAbility 返回 Promise 必须 catch（berry3 经验：否则系统弹默认「无可用打开方式」且丢日志）。
+  // 外链点击策略（对照 web markdown-text.tsx URI scheme policy；行为对齐上游）：
+  //   相对/锚点链接（无 scheme）→ 忽略；
+  //   deny scheme（javascript:/data:/vbscript:/file:）→ 永久阻止；
+  //   IANA 安全 scheme（http/https/irc/ircs/mailto/xmpp）→ 直接系统打开；
+  //   其余 custom scheme → 查 allowlist，已确认过直接开；首次弹确认（仅本次 / 始终允许）。
+  //   归一化 + 控制符剥离在 utils/ExternalLink，防 j%2561vascript / java\nscript 绕过。
   private openExternal(rawUrl: string): void {
-    const url = rawUrl.trim();
-    if (url === '' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
-      return;   // 非外链（锚点/mailto/相对链接/data:）静默忽略
-    }
-    const hostContext = this.getUIContext().getHostContext();
-    if (hostContext === undefined || hostContext === null) {
-      this.toast('无法打开链接');
+    const url: string = rawUrl.trim();
+    if (url === '' || !hasScheme(url)) { return; }     // 相对/锚点忽略
+    const klass = classifyScheme(url);
+    if (klass === 'deny') { return; }                  // javascript:/data: 等永久阻止
+    if (klass === 'iana') {
+      this.openSafeLink(url);
       return;
     }
-    const want: Want = {
-      action: 'ohos.want.action.viewData',
-      entities: ['entity.system.browsable'],
-      uri: url
-    };
-    (hostContext as common.UIAbilityContext).startAbility(want)
-      .catch((): void => { this.toast('未找到可打开链接的应用'); });
+    // custom scheme：查 allowlist
+    const scheme: string = extractScheme(url);
+    loadAllowedSchemes()
+      .then((allowed: string[]): void => {
+        if (isAllowedScheme(scheme, allowed)) {
+          this.openSafeLink(url);
+        } else {
+          this.confirmCustomScheme(url, scheme);
+        }
+      })
+      .catch((): void => { this.confirmCustomScheme(url, scheme); });
   }
 
-  private toast(msg: string): void {
-    this.getUIContext().getPromptAction().showToast({ message: msg });
+  // 系统级打开：http/https 走 viewData + browsable（唤浏览器，原已验证）；其余 scheme 走纯隐式 Want 让系统按 uri 匹配。
+  //   startAbility 返回 Promise 必须 catch（否则系统弹默认「无可用打开方式」且丢日志）。
+  private openSafeLink(url: string): void {
+    const hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined || hostContext === null) {
+      showToast('无法打开链接');
+      return;
+    }
+    const lower: string = url.toLowerCase();
+    const isWeb: boolean = lower.startsWith('http://') || lower.startsWith('https://');
+    const want: Want = isWeb
+      ? { action: 'ohos.want.action.viewData', entities: ['entity.system.browsable'], uri: url }
+      : { uri: url };
+    (hostContext as common.UIAbilityContext).startAbility(want)
+      .catch((): void => { showToast('未找到可打开链接的应用'); });
+  }
+
+  // custom scheme 首次确认弹窗（对齐上游「仅 custom scheme 才确认」）：
+  //   取消（autoCancel）= 不打开；打开 = 仅本次；始终允许 = 持久化该 scheme 后再开（后续免确认）。
+  private confirmCustomScheme(url: string, scheme: string): void {
+    this.getUIContext().showAlertDialog({
+      title: '打开外部链接',
+      message: `「${scheme}」协议将打开外部应用：\n${url}`,
+      autoCancel: true,
+      buttons: [
+        { text: '取消', color: this.c.textSecondary },
+        { text: '打开', color: this.c.primary, action: (): void => { this.openSafeLink(url); } },
+        { text: '始终允许', color: this.c.primary, action: (): void => {
+          saveAllowedScheme(scheme).then((): void => { this.openSafeLink(url); });
+        } }
+      ]
+    });
   }
 
   // 写系统剪贴板（@ohos.pasteboard；API 形态对照 berry3 ClipboardUtils，实现自写）。复制成功/失败 toast 反馈。
   private copyToClipboard(text: string): void {
     const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
     pasteboard.getSystemPasteboard().setData(data)
-      .then((): void => { this.toast('已复制'); })
-      .catch((): void => { this.toast('复制失败'); });
+      .then((): void => { showToast('已复制'); })
+      .catch((): void => { showToast('复制失败'); });
   }
 
   // 打开代码全屏预览（对照 chatcube openCodePreviewFromHybrid）
   private openCodePreview(code: string, codeType: string): void {
     if (code.trim().length === 0) {
-      this.toast('代码还在生成中');
+      showToast('代码还在生成中');
       return;
     }
     this.previewCode = code;
@@ -249,7 +294,7 @@ export struct MarkdownText {
     Column() {
       Scroll() {
         Text(this.previewCode)
-          .fontSize(13)
+          .fontSize(fs(13))
           .fontColor(this.c.codeText)
           .fontFamily('monospace')
           .copyOption(CopyOptions.LocalDevice)

@@ -1,6 +1,6 @@
 import { getSSEClient, SSEConnectionState } from '../api/SSEClient';
 import { SyncEvent } from '../models/SyncEvent';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 连接状态横幅：SSE 重连 / 断开时顶部细条提示（对照上游 ReconnectingBanner/OfflineBanner）。
 // 自注册一条独立 SSE onStateChange 监听者（与宿主页的监听者互不影响）；aboutToAppear 先读 getState()
@@ -35,12 +35,12 @@ export struct ConnectionBanner {
       if (this.sseState === 'reconnecting') {
         LoadingProgress().width(14).height(14).color(this.c.textSecondary)
         Text('正在重新连接…')
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.textSecondary)
       } else {
-        Text('⚠').fontSize(12).fontColor(this.c.bubbleUserText)
+        Text('⚠').fontSize(fs(12)).fontColor(this.c.bubbleUserText)
         Text('连接已断开，实时更新暂停')
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.bubbleUserText)
       }
     }

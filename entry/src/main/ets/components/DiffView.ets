@@ -4,7 +4,7 @@
 // V2：@Param oldString/newString/filePath/size/scrollY/maxHeight；@Computed diffLines/stats/lineNumberWidth。
 
 import { DiffLine, computeDiff, computeDiffStats, DiffStats, splitDiffLines } from '../chat/Diff';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 const DEFAULT_SCROLL_HEIGHT: number = 420;
 
@@ -70,7 +70,7 @@ struct DiffView {
       // header：filePath / "DIFF" + +N -M 角标
       Row() {
         Text(this.filePath !== '' ? this.filePath : 'DIFF')
-          .fontSize(10)
+          .fontSize(fs(10))
           .fontColor(this.c.codeMuted)
           .layoutWeight(1)
           .maxLines(1)
@@ -104,7 +104,7 @@ struct DiffView {
   @Builder
   StatBadge(added: boolean, value: number) {
     Text((added ? '+' : '-') + value)
-      .fontSize(10)
+      .fontSize(fs(10))
       .fontColor(added ? this.c.diffAdd : this.c.diffDelete)
       .backgroundColor(added ? this.c.successBg : this.c.errorBg)
       .borderRadius(8)
@@ -118,18 +118,18 @@ struct DiffView {
       ForEach(this.diffLines, (dl: DiffLine) => {
         Row() {
           Text(dl.oldLine > 0 ? String(dl.oldLine) : '')
-            .fontSize(10)
+            .fontSize(fs(10))
             .fontColor(this.c.codeMuted)
             .width(this.numColWidth())
             .textAlign(TextAlign.End)
           Text(dl.newLine > 0 ? String(dl.newLine) : '')
-            .fontSize(10)
+            .fontSize(fs(10))
             .fontColor(this.c.codeMuted)
             .width(this.numColWidth())
             .textAlign(TextAlign.End)
             .margin({ left: 6 })
           Text((dl.type === 'added' ? '+' : dl.type === 'removed' ? '-' : ' ') + (dl.text.length > 0 ? dl.text : ' '))
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.lineFg(dl))
             .layoutWeight(1)
             .maxLines(1)

@@ -110,6 +110,58 @@ export function parseUsage(message: Record<string, Object>): UsageData | null {
   return u;
 }
 
+// 从 Record 按候选 key 顺序取首个数值；无命中返 -1（哨兵=缺省）。
+function pickFirstNum(r: Record<string, Object>, keys: string[]): number {
+  for (let i = 0; i < keys.length; i++) {
+    const v: Object = r[keys[i]];
+    if (typeof v === 'number') { return v; }
+  }
+  return -1;
+}
+
+// Codex token_count 事件用量（对照 normalizeAgent.ts:54 normalizeCodexTokenUsage）。
+//   info.last = 本回合用量（优先，匹配实时上下文条），info.total = 会话累计（百万级，旧负载回退）；
+//   input/output 必填（缺则 null）；cache_read 可选；context_tokens 缺则回退 inputTokens；
+//   context_window / scope_role 可选。cache_creation 恒 0（codex inputTokens 已含 cached，不重复计）。
+export function normalizeCodexTokenUsage(info: Record<string, Object> | null,
+  data: Record<string, Object> | null): UsageData | null {
+  if (info === null) { return null; }
+  // usageSource：last → lastTokenUsage → last_token_usage → total → totalTokenUsage → total_token_usage → info
+  let usageSource: Record<string, Object> = info;
+  const candidates: string[] = ['last', 'lastTokenUsage', 'last_token_usage',
+    'total', 'totalTokenUsage', 'total_token_usage'];
+  for (let i = 0; i < candidates.length; i++) {
+    const o: Record<string, Object> | null = pickObj(info, candidates[i]);
+    if (o !== null) { usageSource = o; break; }
+  }
+  const inputTokens: number = pickFirstNum(usageSource, ['inputTokens', 'input_tokens']);
+  const outputTokens: number = pickFirstNum(usageSource, ['outputTokens', 'output_tokens']);
+  if (inputTokens < 0 || outputTokens < 0) { return null; }   // 必填缺失 → 整条 usage 视为无
+  const u: UsageData = new UsageData();
+  u.inputTokens = inputTokens;
+  u.outputTokens = outputTokens;
+  u.cacheCreation = 0;
+  const cacheRead: number = pickFirstNum(usageSource,
+    ['cachedInputTokens', 'cached_input_tokens', 'cacheReadInputTokens', 'cache_read_input_tokens']);
+  if (cacheRead >= 0) { u.cacheRead = cacheRead; }
+  let contextTokens: number = pickFirstNum(info, ['contextTokens', 'context_tokens']);
+  if (contextTokens < 0) { contextTokens = pickFirstNum(usageSource, ['contextTokens', 'context_tokens']); }
+  u.contextTokens = contextTokens < 0 ? inputTokens : contextTokens;   // 缺则回退 inputTokens
+  const contextWindow: number = pickFirstNum(info, ['modelContextWindow', 'model_context_window']);
+  if (contextWindow >= 0) { u.contextWindow = contextWindow; }
+  let scopeRole: string = '';
+  if (data !== null) {
+    scopeRole = pickStr(data, 'scope_role');
+    if (scopeRole === '') { scopeRole = pickStr(data, 'scopeRole'); }
+    if (scopeRole === '') {
+      const scope: Record<string, Object> | null = pickObj(data, 'scope');
+      if (scope !== null) { scopeRole = pickStr(scope, 'role'); }
+    }
+  }
+  if (scopeRole !== '') { u.scopeRole = scopeRole; }
+  return u;
+}
+
 // 反向遍历消息，取最新「父上下文可见」的 usage（对照 reducer.ts:164-180 latestUsage 循环）。
 //   messages 每次整体重赋值（刷新策略）→ 由 ChatPage getter 读 this.messages 派生，无需手动维护。
 export function latestVisibleUsage(messages: ChatMessage[]): UsageData | null {
@@ -428,9 +480,15 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     m.usage = extractAgentUsage(inner);   // Token 用量（data.message.usage；缺必填字段则 null）
     m.status = 'sent';
   } else {
-    // event 消息：MVP 不渲染（api-error/ready 等），文本留空被列表过滤
+    // event 消息：文本留空被列表过滤；token_count（codex 用量）提取 usage 供 ContextStatusBar。
+    //   其余 event（api-error/ready/task_complete 等）无 usage。type 兼容下划线(token_count)/连字符(token-count)。
     m.text = '';
     m.status = 'sent';
+    const innerType: string = inner !== null ? pickStr(inner, 'type') : '';
+    if (innerType === 'token_count' || innerType === 'token-count') {
+      const infoObj: Record<string, Object> | null = inner !== null ? pickObj(inner, 'info') : null;
+      m.usage = normalizeCodexTokenUsage(infoObj, inner);
+    }
   }
   return m;
 }

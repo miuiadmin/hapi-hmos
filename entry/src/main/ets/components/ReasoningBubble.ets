@@ -1,5 +1,5 @@
 import { MarkdownText } from './MarkdownText';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // ReasoningBubble —— agent 思考过程块
 // 对照上游 web/src/components/assistant-ui/reasoning.tsx（ReasoningGroup 折叠容器 + Reasoning markdown 体）
@@ -27,11 +27,11 @@ export struct ReasoningBubble {
       // header：箭头 + 标签 + 流式指示
       Row() {
         Text(this.expanded || this.isStreaming ? '▾' : '▸')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .margin({ right: 6 })
         Text('思考过程')
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.textSecondary)
           .layoutWeight(1)
         if (this.isStreaming) {

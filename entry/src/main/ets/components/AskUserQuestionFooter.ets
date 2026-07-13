@@ -14,7 +14,7 @@ import {
 } from '../chat/AskUserQuestion';
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { MarkdownText } from './MarkdownText';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 @ComponentV2
 struct AskUserQuestionFooter {
@@ -268,13 +268,13 @@ struct AskUserQuestionFooter {
       // 头：问题 badge + 进度
       Row() {
         Text('问题')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
           .backgroundColor(this.c.surfaceSelected)
           .borderRadius(8)
         Text(`[${this.clampedStep + 1}/${this.total}]`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .margin({ left: 8 })
       }
@@ -283,7 +283,7 @@ struct AskUserQuestionFooter {
 
       if (this.error !== '') {
         Text(this.error)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.error)
           .width('100%')
           .margin({ top: 6 })
@@ -292,12 +292,12 @@ struct AskUserQuestionFooter {
       if (this.questions.length === 0) {
         // 兜底纯文本（questions 解析为空）
         Text('请输入你的回答')
-          .fontSize(13)
+          .fontSize(fs(13))
           .fontColor(this.c.textSecondary)
           .width('100%')
           .margin({ top: 8 })
         TextArea({ text: this.fallbackText, placeholder: '请输入…' })
-          .fontSize(13)
+          .fontSize(fs(13))
           .fontColor(this.c.textPrimary)
           .placeholderColor(this.c.textTertiary)
           .constraintSize({ minHeight: 72 })
@@ -344,7 +344,7 @@ struct AskUserQuestionFooter {
       if (this.questions.length > 0) {
         if (this.current.header !== '') {
           Text(this.current.header)
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
             .backgroundColor(this.c.surfaceSelected)
@@ -358,15 +358,15 @@ struct AskUserQuestionFooter {
         ForEach(this.current.options, (opt: AskUserQuestionOption, optIdx: number) => {
           Row({ space: 8 }) {
             Text(this.optionGlyph(this.isOptionSelected(optIdx)))
-              .fontSize(15)
+              .fontSize(fs(15))
               .fontColor(this.isOptionSelected(optIdx) ? this.c.success : this.c.textSecondary)
             Column() {
               Text(opt.label)
-                .fontSize(13)
+                .fontSize(fs(13))
                 .fontColor(this.c.textPrimary)
               if (opt.description !== '') {
                 Text(opt.description)
-                  .fontSize(11)
+                  .fontSize(fs(11))
                   .fontColor(this.c.textSecondary)
                   .margin({ top: 2 })
               }
@@ -388,14 +388,14 @@ struct AskUserQuestionFooter {
         // 「其他」行
         Row({ space: 8 }) {
           Text(this.optionGlyph(this.currentOtherSelected()))
-            .fontSize(15)
+            .fontSize(fs(15))
             .fontColor(this.currentOtherSelected() ? this.c.success : this.c.textSecondary)
           Column() {
             Text('其他')
-              .fontSize(13)
+              .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
             Text('自定义回答')
-              .fontSize(11)
+              .fontSize(fs(11))
               .fontColor(this.c.textSecondary)
               .margin({ top: 2 })
           }
@@ -415,7 +415,7 @@ struct AskUserQuestionFooter {
         // Other 自填文本框
         if (this.currentOtherSelected()) {
           TextArea({ text: this.currentOtherText(), placeholder: '请输入自定义回答…' })
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)
             .constraintSize({ minHeight: 72 })
@@ -438,7 +438,7 @@ struct AskUserQuestionFooter {
   NavButton(label: string, color: string, loading: boolean, disabled: boolean, kind: string) {
     Row() {
       Text(label)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(disabled ? this.c.textTertiary : color)
       if (loading) {
         LoadingProgress()

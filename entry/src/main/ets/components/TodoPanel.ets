@@ -1,7 +1,7 @@
 import { TodoItem } from '../models/Types';
 import { ChecklistItem } from '../chat/Checklist';
 import { ChecklistList } from './ChecklistList';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 会话内待办清单面板（鸿蒙端增值：上游 web 不独立渲染 session.todos，仅列表项显 todoProgress
 //   摘要 + 工具卡显 TodoWrite。本面板在对话页内提供「进度+折叠清单」一体化查看）。
@@ -53,17 +53,17 @@ export struct TodoPanel {
     Column() {
       // 折叠头（点击展开/收起，对照 TeamPanel header）
       Row({ space: 6 }) {
-        Text('📋').fontSize(14)
+        Text('📋').fontSize(fs(14))
         Text('待办')
-          .fontSize(13)
+          .fontSize(fs(13))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .layoutWeight(1)
         Text(`${this.completedCount()}/${this.todos.length}`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
         Text('▾')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .rotate({ angle: this.expanded ? 180 : 0 })
       }

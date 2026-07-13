@@ -1,5 +1,5 @@
 import { ChatMessage, formatScheduledIn } from '../models/Message';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 排队消息条（对照 web AssistantChat/QueuedMessagesBar.tsx）：渲染在 composer/InputBar 正上方，
 //   列出所有「已发但未被 CLI 消费」的用户消息（即时排队 + 定时共用 invokedAt=0 状态）。
@@ -30,9 +30,9 @@ export struct QueuedMessagesBar {
     Column({ space: 6 }) {
       // 头：排队计数
       Row({ space: 6 }) {
-        Text('🕓').fontSize(12)
+        Text('🕓').fontSize(fs(12))
         Text(`排队中 ${this.queued.length}`)
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
         Blank()
       }
@@ -42,7 +42,7 @@ export struct QueuedMessagesBar {
         Row({ space: 8 }) {
           Column({ space: 3 }) {
             Text(m.text)
-              .fontSize(13)
+              .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
               .maxLines(3)
               .textOverflow(TextOverflow.Ellipsis)
@@ -50,7 +50,7 @@ export struct QueuedMessagesBar {
               .width('100%')
             if (this.scheduleLabel(m) !== '') {
               Text(`⏰ ${this.scheduleLabel(m)}`)
-                .fontSize(11)
+                .fontSize(fs(11))
                 .fontColor(this.c.warning)
             }
           }
@@ -59,7 +59,7 @@ export struct QueuedMessagesBar {
 
           // 编辑（回填 composer + 恢复定时 + 移除本行）
           Text('✎')
-            .fontSize(16)
+            .fontSize(fs(16))
             .fontColor(this.c.textSecondary)
             .width(30)
             .height(30)
@@ -69,7 +69,7 @@ export struct QueuedMessagesBar {
 
           // 取消（DELETE 排队消息；乐观行未落地时禁用）
           Text('✕')
-            .fontSize(15)
+            .fontSize(fs(15))
             .fontColor(this.canCancel(m) ? this.c.error : this.c.textTertiary)
             .width(30)
             .height(30)

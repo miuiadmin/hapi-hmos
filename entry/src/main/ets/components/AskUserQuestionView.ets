@@ -11,7 +11,7 @@ import {
   parseAskUserQuestionInput
 } from '../chat/AskUserQuestion';
 import { MarkdownText } from './MarkdownText';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 @ComponentV2
 struct AskUserQuestionView {
@@ -105,7 +105,7 @@ struct AskUserQuestionView {
           Column({ space: 6 }) {
             if (q.header !== '') {
               Text(q.header)
-                .fontSize(11)
+                .fontSize(fs(11))
                 .fontColor(this.c.textSecondary)
             }
             if (q.question !== '') {
@@ -122,7 +122,7 @@ struct AskUserQuestionView {
                 Column({ space: 2 }) {
                   this.AnswerRow(answer, true)
                   Text('（自定义回答）')
-                    .fontSize(10)
+                    .fontSize(fs(10))
                     .fontColor(this.c.textSecondary)
                 }
                 .width('100%')
@@ -143,10 +143,10 @@ struct AskUserQuestionView {
   AnswerRow(label: string, selected: boolean) {
     Row({ space: 8 }) {
       Text(selected ? '☑' : '☐')
-        .fontSize(15)
+        .fontSize(fs(15))
         .fontColor(selected ? this.c.success : this.c.textSecondary)
       Text(label)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(this.c.textPrimary)
         .layoutWeight(1)
     }

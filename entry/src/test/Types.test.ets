@@ -22,7 +22,14 @@ import {
   reasoningEffortsForFlavor,
   permissionModeDisplayName,
   collaborationModeDisplayName,
-  reasoningEffortDisplayName
+  reasoningEffortDisplayName,
+  FileSearchItem,
+  parseFileSearchResponse,
+  parseCommandResponse,
+  parseFileReadResponse,
+  SessionDirEntry,
+  parseSessionDirectoryResponse,
+  parseUploadFileResponse
 } from '../main/ets/models/Types';
 
 function rec(json: string): Record<string, Object> {
@@ -544,6 +551,104 @@ export default function typesTest(): void {
       const list = parseTodoList(JSON.parse('["str",null,5,{"content":"keep"}]'));
       expect(list.length).assertEqual(1);
       expect(list[0].content).assertEqual('keep');
+    });
+  });
+
+  describe('Files 浏览 parse', () => {
+    it('parseFileSearchResponse parses items + filters non-objects', 0, () => {
+      const list = parseFileSearchResponse(
+        '{"success":true,"files":[' +
+        '{"fileName":"foo.ts","filePath":"src","fullPath":"src/foo.ts","fileType":"file"},' +
+        '"bad",null,' +
+        '{"fileName":"bar","filePath":"","fullPath":"bar","fileType":"folder"}' +
+        ']}');
+      expect(list.length).assertEqual(2);
+      expect(list[0].fileName).assertEqual('foo.ts');
+      expect(list[0].fullPath).assertEqual('src/foo.ts');
+      expect(list[0].fileType).assertEqual('file');
+      expect(list[1].fileType).assertEqual('folder');
+    });
+
+    it('parseFileSearchResponse returns empty for missing/invalid', 0, () => {
+      expect(parseFileSearchResponse('not json').length).assertEqual(0);
+      expect(parseFileSearchResponse('{"success":false}').length).assertEqual(0);   // 无 files 键
+      expect(parseFileSearchResponse('{"files":"nope"}').length).assertEqual(0);     // 非数组
+    });
+
+    it('parseCommandResponse parses success + stdout + exitCode', 0, () => {
+      const c = parseCommandResponse('{"success":true,"stdout":"1 .M N...","stderr":"","exitCode":0}');
+      expect(c.success).assertTrue();
+      expect(c.stdout).assertEqual('1 .M N...');
+      expect(c.exitCode).assertEqual(0);
+    });
+
+    it('parseCommandResponse carries error + -1 sentinel exitCode', 0, () => {
+      const c = parseCommandResponse('{"success":false,"error":"not a git repo"}');
+      expect(c.success).assertFalse();
+      expect(c.error).assertEqual('not a git repo');
+      expect(c.exitCode).assertEqual(-1);   // 缺省 -1 哨兵
+    });
+
+    it('parseCommandResponse returns failure shell for invalid JSON', 0, () => {
+      const c = parseCommandResponse('xxx');
+      expect(c.success).assertFalse();
+      expect(c.stdout).assertEqual('');
+    });
+
+    it('parseFileReadResponse parses base64 content', 0, () => {
+      const f = parseFileReadResponse('{"success":true,"content":"aGVsbG8="}');
+      expect(f.success).assertTrue();
+      expect(f.content).assertEqual('aGVsbG8=');
+    });
+
+    it('parseFileReadResponse carries error', 0, () => {
+      const f = parseFileReadResponse('{"success":false,"error":"too large"}');
+      expect(f.success).assertFalse();
+      expect(f.error).assertEqual('too large');
+      expect(f.content).assertEqual('');
+    });
+
+    it('parseSessionDirectoryResponse parses entries + -1 sentinel size/modified', 0, () => {
+      const list = parseSessionDirectoryResponse(
+        '{"success":true,"entries":[' +
+        '{"name":"src","type":"directory","size":0,"modified":1700000000000},' +
+        '{"name":"readme.md","type":"file"}' +
+        ']}');
+      expect(list.length).assertEqual(2);
+      expect(list[0].name).assertEqual('src');
+      expect(list[0].type).assertEqual('directory');
+      expect(list[0].modified).assertEqual(1700000000000);
+      expect(list[1].name).assertEqual('readme.md');
+      expect(list[1].size).assertEqual(-1);    // 缺省 -1 哨兵
+      expect(list[1].modified).assertEqual(-1);
+    });
+
+    it('parseSessionDirectoryResponse returns empty for missing/invalid', 0, () => {
+      expect(parseSessionDirectoryResponse('not json').length).assertEqual(0);
+      expect(parseSessionDirectoryResponse('{"foo":1}').length).assertEqual(0);
+      expect(parseSessionDirectoryResponse('{"entries":"x"}').length).assertEqual(0);
+    });
+  });
+
+  describe('附件上传 parse', () => {
+    it('parseUploadFileResponse parses success + path', 0, () => {
+      const r = parseUploadFileResponse('{"success":true,"path":"/tmp/up/abc.png"}');
+      expect(r.success).assertTrue();
+      expect(r.path).assertEqual('/tmp/up/abc.png');
+      expect(r.error).assertEqual('');
+    });
+
+    it('parseUploadFileResponse carries error on failure', 0, () => {
+      const r = parseUploadFileResponse('{"success":false,"error":"file too large"}');
+      expect(r.success).assertFalse();
+      expect(r.error).assertEqual('file too large');
+      expect(r.path).assertEqual('');
+    });
+
+    it('parseUploadFileResponse returns failure shell for invalid JSON', 0, () => {
+      const r = parseUploadFileResponse('xxx');
+      expect(r.success).assertFalse();
+      expect(r.path).assertEqual('');
     });
   });
 }

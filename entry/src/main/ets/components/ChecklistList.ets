@@ -2,7 +2,7 @@
 // TodoWrite / update_plan 清单渲染：每项 glyph（☑/◉/☐）+ 正文，按状态着色/删除线。
 
 import { ChecklistItem } from '../chat/Checklist';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 @ComponentV2
 struct ChecklistList {
@@ -37,18 +37,18 @@ struct ChecklistList {
       if (this.items.length === 0) {
         if (this.emptyLabel !== '') {
           Text(this.emptyLabel)
-            .fontSize(12)
+            .fontSize(fs(12))
             .fontColor(this.c.textSecondary)
         }
       } else {
         ForEach(this.items, (item: ChecklistItem, idx: number) => {
           Row() {
             Text(this.glyph(item.status))
-              .fontSize(13)
+              .fontSize(fs(13))
               .fontColor(this.tone(item.status))
               .margin({ right: 6 })
             Text(item.text.trim().length > 0 ? item.text.trim() : '(空)')
-              .fontSize(13)
+              .fontSize(fs(13))
               .fontColor(item.status === 'completed' ? this.tone('completed') : this.c.textPrimary)
               .layoutWeight(1)
               .decoration({ type: item.status === 'completed' ? TextDecorationType.LineThrough : TextDecorationType.None })

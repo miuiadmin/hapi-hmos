@@ -2,7 +2,7 @@
 // 配色改用本项目统一主题（textTertiary 文字 + border 描边 + 透明底贴合列表底色），不依赖 $r 资源。
 // 文本由 formatDateDivider(timestamp) 产出（今天 / 昨天 / M月D日 / YYYY年M月D日）。
 import { formatDateDivider } from '../utils/DateFormatUtils';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 @ComponentV2
 export struct DateDivider {
@@ -14,7 +14,7 @@ export struct DateDivider {
   build() {
     Row() {
       Text(formatDateDivider(this.timestamp))
-        .fontSize(11)
+        .fontSize(fs(11))
         .fontWeight(FontWeight.Medium)
         .fontColor(this.c.textTertiary)
         .padding({ left: 10, right: 10, top: 3, bottom: 3 })

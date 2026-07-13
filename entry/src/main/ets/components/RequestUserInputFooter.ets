@@ -14,7 +14,7 @@ import {
 } from '../chat/RequestUserInput';
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { MarkdownText } from './MarkdownText';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 @ComponentV2
 struct RequestUserInputFooter {
@@ -199,13 +199,13 @@ struct RequestUserInputFooter {
       // 头：问题 badge + 进度
       Row() {
         Text('问题')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
           .backgroundColor(this.c.surfaceSelected)
           .borderRadius(8)
         Text(`[${this.clampedStep + 1}/${this.total}]`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .margin({ left: 8 })
       }
@@ -214,7 +214,7 @@ struct RequestUserInputFooter {
 
       if (this.error !== '') {
         Text(this.error)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.error)
           .width('100%')
           .margin({ top: 6 })
@@ -259,10 +259,10 @@ struct RequestUserInputFooter {
         if (this.isPureText) {
           // 纯文本题：仅备注输入框
           Text('请输入回答')
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
           TextArea({ text: this.currentNote, placeholder: '请输入…' })
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)
             .constraintSize({ minHeight: 72 })
@@ -277,15 +277,15 @@ struct RequestUserInputFooter {
           ForEach(this.current.options, (opt: RequestUserInputOption, optIdx: number) => {
             Row({ space: 8 }) {
               Text(this.isSelected(opt.label) ? '●' : '○')
-                .fontSize(15)
+                .fontSize(fs(15))
                 .fontColor(this.isSelected(opt.label) ? this.c.success : this.c.textSecondary)
               Column() {
                 Text(opt.label)
-                  .fontSize(13)
+                  .fontSize(fs(13))
                   .fontColor(this.c.textPrimary)
                 if (opt.description !== '') {
                   Text(opt.description)
-                    .fontSize(11)
+                    .fontSize(fs(11))
                     .fontColor(this.c.textSecondary)
                     .margin({ top: 2 })
                 }
@@ -306,10 +306,10 @@ struct RequestUserInputFooter {
 
           // 备注（有选项题也恒带）
           Text('备注')
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
           TextArea({ text: this.currentNote, placeholder: '可选：补充说明…' })
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)
             .constraintSize({ minHeight: 56 })
@@ -331,7 +331,7 @@ struct RequestUserInputFooter {
   NavButton(label: string, color: string, loading: boolean, disabled: boolean, kind: string) {
     Row() {
       Text(label)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(disabled ? this.c.textTertiary : color)
       if (loading) {
         LoadingProgress()

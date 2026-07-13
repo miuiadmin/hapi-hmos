@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 
@@ -269,9 +269,14 @@ export class HubClient {
   // scheduledAt：>0 = 定时发送（epoch-ms，上游 refine 须 >0、≤7 天、带 localId、禁附件）；0/省略 = 即时。
   //   注意 body 用 Record 手建：scheduledAt===0 时**不发该键**——上游 refine scheduledAt==null 放行，
   //   若序列化 0 会撞 positive 校验 → 400（SendMessageRequest 类仅作类型文档，不直接序列化）。
-  async sendMessage(sessionId: string, text: string, localId: string, scheduledAt: number = 0): Promise<boolean> {
+  // 发送消息（POST /api/sessions/:id/messages，对照 web sendMessage）。
+  //   attachments 与 scheduledAt 互斥（上游 refine：scheduledAt + attachments 同时给会 400），故 attachments 非空时不带 scheduledAt。
+  async sendMessage(sessionId: string, text: string, localId: string,
+    scheduledAt: number = 0, attachments: AttachmentMetadata[] = []): Promise<boolean> {
     const body: Record<string, Object> = { text: text, localId: localId };
-    if (scheduledAt > 0) {
+    if (attachments.length > 0) {
+      body['attachments'] = attachments as Object;
+    } else if (scheduledAt > 0) {
       body['scheduledAt'] = scheduledAt;
     }
     const resp = await this.request(http.RequestMethod.POST,
@@ -399,6 +404,93 @@ export class HubClient {
     const body: Record<string, string | null> = { modelReasoningEffort: effort !== '' ? effort : null };
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/model-reasoning-effort`, body, 'jwt');
+    return resp.success;
+  }
+
+  // —— Files 浏览（对照 web client.ts:224-296，均 GET /sessions/:id/...）——
+  //   git-* 返 CommandResponse（业务 success 在 payload，不抛——非 git 仓库返 success=false+error，UI 据此显空态）。
+  //   files/directory 返数组（HTTP 失败抛 Error，同 getMachines 模式）。
+  //   readSessionFile 返 FileReadResponse（content 为 base64；不抛，业务 success 在 payload）。
+  //   query/path 用 encodeURIComponent 编码（等价 web URLSearchParams）。
+
+  // git status（GET /sessions/:id/git-status → CommandResponse，stdout=porcelain v2 --branch）
+  async getGitStatus(sessionId: string): Promise<CommandResponse> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/git-status`, undefined, 'jwt');
+    return parseCommandResponse(resp.data);
+  }
+
+  // git diff numstat（GET /sessions/:id/git-diff-numstat?staged=bool → CommandResponse，stdout=added\tdeleted\tpath）
+  async getGitDiffNumstat(sessionId: string, staged: boolean): Promise<CommandResponse> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/git-diff-numstat?staged=${staged}`, undefined, 'jwt');
+    return parseCommandResponse(resp.data);
+  }
+
+  // 单文件 diff（GET /sessions/:id/git-diff-file?path=&staged= → CommandResponse，stdout=统一 diff）
+  async getGitDiffFile(sessionId: string, path: string, staged?: boolean): Promise<CommandResponse> {
+    let p = `/api/sessions/${sessionId}/git-diff-file?path=${encodeURIComponent(path)}`;
+    if (staged !== undefined) { p = `${p}&staged=${staged}`; }
+    const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
+    return parseCommandResponse(resp.data);
+  }
+
+  // 文件名搜索（GET /sessions/:id/files[?query=&limit=] → FileSearchItem[]）
+  async searchSessionFiles(sessionId: string, query: string, limit: number = 0): Promise<FileSearchItem[]> {
+    let p = `/api/sessions/${sessionId}/files`;
+    const params: string[] = [];
+    if (query !== '') { params.push(`query=${encodeURIComponent(query)}`); }
+    if (limit > 0) { params.push(`limit=${limit}`); }
+    if (params.length > 0) { p = `${p}?${params.join('&')}`; }
+    const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `搜索文件失败 (${resp.statusCode})`);
+    }
+    return parseFileSearchResponse(resp.data);
+  }
+
+  // 读文件内容（GET /sessions/:id/file?path= → FileReadResponse，content=base64）
+  async readSessionFile(sessionId: string, path: string): Promise<FileReadResponse> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/file?path=${encodeURIComponent(path)}`, undefined, 'jwt');
+    return parseFileReadResponse(resp.data);
+  }
+
+  // 会话工作区目录浏览（GET /sessions/:id/directory[?path=] → SessionDirEntry[]）
+  async listSessionDirectory(sessionId: string, path?: string): Promise<SessionDirEntry[]> {
+    let p = `/api/sessions/${sessionId}/directory`;
+    if (path !== undefined && path !== '') { p = `${p}?path=${encodeURIComponent(path)}`; }
+    const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `浏览目录失败 (${resp.statusCode})`);
+    }
+    return parseSessionDirectoryResponse(resp.data);
+  }
+
+  // —— 附件上传（对照 web client.ts:298 uploadFile / :306 deleteUploadFile）——
+  //   上传为 JSON {filename, content: base64, mimeType}（非 multipart）；成功返服务端 path（回填 AttachmentMetadata.path）。
+  //   请求体较大（整文件 base64），走既有 request（Content-Type application/json + JWT）。
+
+  async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<UploadFileResult> {
+    const body: Record<string, Object> = {
+      filename: filename,
+      content: content,
+      mimeType: mimeType
+    };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/upload`, body, 'jwt');
+    const result: UploadFileResult = parseUploadFileResponse(resp.data);
+    // HTTP 层失败也合成 success=false（parse 只认 JSON 体）
+    if (!resp.success && result.success) { result.success = false; }
+    return result;
+  }
+
+  // 删除已上传附件（POST /sessions/:id/upload/delete body {path}，对照 deleteUploadFile）。
+  //   用于附件 chip 的 ✕：移除待发附件时同步清服务端临时文件，避免残留。
+  async deleteUploadFile(sessionId: string, path: string): Promise<boolean> {
+    const body: Record<string, Object> = { path: path };
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/upload/delete`, body, 'jwt');
     return resp.success;
   }
 }

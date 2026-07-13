@@ -2,7 +2,8 @@ import { getHubClient } from '../api/HubClient';
 import { Machine, DirEntry, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { showToast } from '../utils/Toast';
 
 // 新建会话页（NavDestination）—— 选 machine + 工作目录 + agent → spawn 产生新会话
 // 协议对照 hapi web /sessions/new：spawn 流程（非 POST /api/sessions）
@@ -229,7 +230,7 @@ struct NewSessionPage {
   // —— 目录树浏览（bindSheet 内）——
   private openBrowser(): void {
     if (this.selectedMachineId === '') {
-      this.toast('请先选择机器');
+      showToast('请先选择机器');
       return;
     }
     this.browserVisible = true;
@@ -363,14 +364,10 @@ struct NewSessionPage {
     await getPreferencesService().putString(key, JSON.stringify(next));
   }
 
-  private toast(message: string): void {
-    this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
-  }
-
   @Builder
   private FieldLabel(text: string) {
     Text(text)
-      .fontSize(13)
+      .fontSize(fs(13))
       .fontColor(this.c.textTertiary)
       .width('100%')
       .padding({ left: 16, top: 18, bottom: 6 })
@@ -379,9 +376,9 @@ struct NewSessionPage {
   @Builder
   private RecentPathRow(path: string) {
     Row({ space: 8 }) {
-      Text('📁').fontSize(14)
+      Text('📁').fontSize(fs(14))
       Text(path)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(this.c.textSecondary)
         .layoutWeight(1)
         .maxLines(1)
@@ -397,16 +394,16 @@ struct NewSessionPage {
   @Builder
   private BrowserEntryRow(entry: DirEntry) {
     Row({ space: 10 }) {
-      Text(entry.type === 'directory' ? '📁' : '📄').fontSize(16)
+      Text(entry.type === 'directory' ? '📁' : '📄').fontSize(fs(16))
       Text(entry.name)
-        .fontSize(14)
+        .fontSize(fs(14))
         .fontColor(entry.type === 'directory' ? this.c.textPrimary : this.c.textTertiary)
         .layoutWeight(1)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (entry.isGitRepo) {
         Text('git')
-          .fontSize(10)
+          .fontSize(fs(10))
           .fontColor(this.c.bubbleUserText)
           .backgroundColor(this.c.primary)
           .borderRadius(4)
@@ -428,14 +425,14 @@ struct NewSessionPage {
       // 当前路径 + 回上级
       Row() {
         Button('回上级')
-          .fontSize(13)
+          .fontSize(fs(13))
           .height(32)
           .backgroundColor(this.c.surface)
           .fontColor(this.c.textSecondary)
           .borderRadius(8)
           .onClick(() => { this.goParent(); })
         Text(this.browserPath)
-          .fontSize(12)
+          .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
           .layoutWeight(1)
           .margin({ left: 10 })
@@ -454,17 +451,17 @@ struct NewSessionPage {
         .justifyContent(FlexAlign.Center)
       } else if (this.browserError !== '') {
         Column({ space: 8 }) {
-          Text('加载失败').fontSize(14).fontColor(this.c.error)
-          Text(this.browserError).fontSize(12).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
+          Text('加载失败').fontSize(fs(14)).fontColor(this.c.error)
+          Text(this.browserError).fontSize(fs(12)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
           Button('重试')
-            .fontSize(13).height(32)
+            .fontSize(fs(13)).height(32)
             .backgroundColor(this.c.primary).fontColor(this.c.bubbleUserText)
             .onClick(() => { this.loadBrowserDir(this.browserPath); })
         }
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else if (this.browserEntries.length === 0) {
         Column() {
-          Text('空目录').fontSize(13).fontColor(this.c.textTertiary)
+          Text('空目录').fontSize(fs(13)).fontColor(this.c.textTertiary)
         }
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
@@ -501,8 +498,8 @@ struct NewSessionPage {
         // 机器拉取失败兜底（无机器则无法继续）
         if (this.loadError !== '' && this.machines.length === 0) {
           Column({ space: 12 }) {
-            Text('加载失败').fontSize(16).fontColor(this.c.error)
-            Text(this.loadError).fontSize(13).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
+            Text('加载失败').fontSize(fs(16)).fontColor(this.c.error)
+            Text(this.loadError).fontSize(fs(13)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
             Button('重试')
               .backgroundColor(this.c.primary)
               .fontColor(this.c.bubbleUserText)
@@ -531,7 +528,7 @@ struct NewSessionPage {
               Column({ space: 0 }) {
                 TextInput({ text: this.directory, placeholder: '如 /home/user/project' })
                   .height(48)
-                  .fontSize(14)
+                  .fontSize(fs(14))
                   .backgroundColor(this.c.surface)
                   .borderRadius(10)
                   .onChange((value: string) => { this.directory = value; })
@@ -548,7 +545,7 @@ struct NewSessionPage {
                 // 最近路径联想
                 if (this.recentPaths.length > 0) {
                   Text('最近')
-                    .fontSize(12)
+                    .fontSize(fs(12))
                     .fontColor(this.c.textTertiary)
                     .width('100%')
                     .margin({ top: 10, bottom: 2 })
@@ -624,7 +621,7 @@ struct NewSessionPage {
                 if (this.selectedSessionType === 'worktree') {
                   TextInput({ text: this.worktreeName, placeholder: '工作树名（可选，留空自动生成）' })
                     .height(44)
-                    .fontSize(14)
+                    .fontSize(fs(14))
                     .backgroundColor(this.c.surface)
                     .borderRadius(10)
                     .onChange((value: string) => { this.worktreeName = value; })
@@ -639,14 +636,14 @@ struct NewSessionPage {
               Column() {
                 Row() {
                   Column({ space: 2 }) {
-                    Text('Yolo 模式').fontSize(14).fontColor(this.c.textPrimary)
-                    Text('跳过权限确认（--yolo）').fontSize(11).fontColor(this.c.textTertiary)
+                    Text('Yolo 模式').fontSize(fs(14)).fontColor(this.c.textPrimary)
+                    Text('跳过权限确认（--yolo）').fontSize(fs(11)).fontColor(this.c.textTertiary)
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
 
                   Text(this.yolo ? '✓' : '○')
-                    .fontSize(18)
+                    .fontSize(fs(18))
                     .fontColor(this.yolo ? this.c.primary : this.c.textTertiary)
                 }
                 .width('100%')
@@ -661,7 +658,7 @@ struct NewSessionPage {
               // 错误提示
               if (this.spawnError !== '') {
                 Text(this.spawnError)
-                  .fontSize(12)
+                  .fontSize(fs(12))
                   .fontColor(this.c.error)
                   .width('100%')
                   .padding({ left: 16, top: 12 })

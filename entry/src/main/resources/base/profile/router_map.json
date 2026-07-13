@@ -14,6 +14,16 @@
       "name": "NewSessionPage",
       "pageSourceFile": "src/main/ets/pages/NewSessionPage.ets",
       "buildFunction": "NewSessionPageBuilder"
+    },
+    {
+      "name": "FilesPage",
+      "pageSourceFile": "src/main/ets/pages/FilesPage.ets",
+      "buildFunction": "FilesPageBuilder"
+    },
+    {
+      "name": "FileViewerPage",
+      "pageSourceFile": "src/main/ets/pages/FileViewerPage.ets",
+      "buildFunction": "FileViewerPageBuilder"
     }
   ]
 }

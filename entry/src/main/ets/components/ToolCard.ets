@@ -8,7 +8,7 @@ import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
 import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // ToolCard —— 对齐 web/src/components/ToolCard/ToolCard.tsx + PermissionFooter.tsx
 // 工具调用卡：header（emoji+标题+副标题+elapsed+状态符+详情入口）+ 卡片体（特化/已答回显）+ footer（三选一）+ 详情半模态。
@@ -294,10 +294,10 @@ struct ToolCard {
       Column() {
         Row() {
           Text(this.presentation.icon)
-            .fontSize(14)
+            .fontSize(fs(14))
             .margin({ right: 6 })
           Text(this.presentation.title)
-            .fontSize(14)
+            .fontSize(fs(14))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.c.textPrimary)
             .maxLines(2)
@@ -309,7 +309,7 @@ struct ToolCard {
 
         if (this.subtitleText() !== '') {
           Text(this.subtitleText())
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -325,15 +325,15 @@ struct ToolCard {
         Row() {
           if (this.elapsedText() !== '') {
             Text(this.elapsedText())
-              .fontSize(11)
+              .fontSize(fs(11))
               .fontColor(this.c.textTertiary)
               .margin({ right: 6 })
           }
           Text(this.statusGlyph())
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.statusColor())
           Text('›')
-            .fontSize(18)
+            .fontSize(fs(18))
             .fontColor(this.c.textTertiary)
             .margin({ left: 4 })
         }
@@ -352,7 +352,7 @@ struct ToolCard {
   private ActionRow(label: string, color: string, loading: boolean, actionKey: string, disabled: boolean) {
     Row() {
       Text(label)
-        .fontSize(14)
+        .fontSize(fs(14))
         .fontColor(disabled ? this.c.textTertiary : color)
         .layoutWeight(1)
       if (loading) {
@@ -396,13 +396,13 @@ struct ToolCard {
     if (this.isPending) {
       Column() {
         Text(this.decided ? '已处理，等待响应…' : '等待批准')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
 
         if (this.actionError !== '') {
           Text(this.actionError)
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.error)
             .width('100%')
             .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -431,10 +431,10 @@ struct ToolCard {
       Column({ space: 6 }) {
         Row({ space: 6 }) {
           Text(this.permission !== null && this.permission.status === 'denied' ? '✕' : '⊘')
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.c.error)
           Text(this.permission !== null && this.permission.status === 'denied' ? '已拒绝' : '已取消')
-            .fontSize(12)
+            .fontSize(fs(12))
             .fontColor(this.c.error)
             .fontWeight(FontWeight.Medium)
         }
@@ -443,7 +443,7 @@ struct ToolCard {
 
         if (this.permission !== null && this.permission.reason !== '') {
           Text(this.permission.reason)
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.error)
             .width('100%')
             .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -464,14 +464,14 @@ struct ToolCard {
     Scroll() {
       Column() {
         Text('输入')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
           .margin({ bottom: 6 })
         ToolInputView({ tool: this.toolNotNull, surface: 'dialog' })
 
         Text('结果')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
           .margin({ top: 16, bottom: 6 })

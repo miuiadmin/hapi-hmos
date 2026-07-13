@@ -1,5 +1,6 @@
 import { getHubClient } from '../api/HubClient';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { showToast } from '../utils/Toast';
 
 // 会话动作菜单（重命名 / 归档 / 删除）——列表长按（Index）与对话页标题栏 ⋯（ChatPage）复用，去重。
 // 组件自持两 sheet（动作面板 + 重命名面板）+ 全部生命周期逻辑（确认弹窗 / API 调用 / 防重入）。
@@ -36,10 +37,6 @@ export struct SessionActionMenu {
   private renameInputController: TextInputController = new TextInputController();
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
-
-  private toast(msg: string): void {
-    this.getUIContext().getPromptAction().showToast({ message: msg });
-  }
 
   // 动作面板被滑掉/点蒙层 → 回写父关闭
   private onActionDisappear(): void {
@@ -86,13 +83,13 @@ export struct SessionActionMenu {
       const ok = await getHubClient().renameSession(this.sessionId, name);
       if (ok) {
         this.onRenamed(name);
-        this.toast('已重命名');
+        showToast('已重命名');
         this.closeRename();
       } else {
-        this.toast('重命名失败，请重试');
+        showToast('重命名失败，请重试');
       }
     } catch (e) {
-      this.toast('重命名失败，请重试');
+      showToast('重命名失败，请重试');
     } finally {
       this.isActing = false;
     }
@@ -138,12 +135,12 @@ export struct SessionActionMenu {
       const ok = await getHubClient().archiveSession(this.sessionId);
       if (ok) {
         this.onArchived();
-        this.toast('已归档');
+        showToast('已归档');
       } else {
-        this.toast('归档失败，请重试');
+        showToast('归档失败，请重试');
       }
     } catch (e) {
-      this.toast('归档失败，请重试');
+      showToast('归档失败，请重试');
     } finally {
       this.isActing = false;
     }
@@ -159,12 +156,12 @@ export struct SessionActionMenu {
       const ok = await getHubClient().deleteSession(this.sessionId);
       if (ok) {
         this.onDeleted();
-        this.toast('已删除');
+        showToast('已删除');
       } else {
-        this.toast('删除失败，请重试');
+        showToast('删除失败，请重试');
       }
     } catch (e) {
-      this.toast('删除失败，请重试');
+      showToast('删除失败，请重试');
     } finally {
       this.isActing = false;
     }
@@ -175,7 +172,7 @@ export struct SessionActionMenu {
   private ActionMenuSheet() {
     Column() {
       Text(this.title)
-        .fontSize(13)
+        .fontSize(fs(13))
         .fontColor(this.c.textTertiary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -183,7 +180,7 @@ export struct SessionActionMenu {
         .padding({ left: 20, right: 20, top: 16, bottom: 8 })
 
       Row() {
-        Text('重命名').fontSize(16).fontColor(this.c.textPrimary).layoutWeight(1)
+        Text('重命名').fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
       }
       .width('100%')
       .height(52)
@@ -194,7 +191,7 @@ export struct SessionActionMenu {
       Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
 
       Row() {
-        Text(this.destructiveLabel()).fontSize(16).fontColor(this.c.error).layoutWeight(1)
+        Text(this.destructiveLabel()).fontSize(fs(16)).fontColor(this.c.error).layoutWeight(1)
       }
       .width('100%')
       .height(52)
@@ -212,7 +209,7 @@ export struct SessionActionMenu {
   private RenameSheet() {
     Column() {
       TextInput({ text: this.renameText, placeholder: '会话名称', controller: this.renameInputController })
-        .fontSize(16)
+        .fontSize(fs(16))
         .fontColor(this.c.textPrimary)
         .placeholderColor(this.c.textTertiary)
         .backgroundColor(this.c.surface)

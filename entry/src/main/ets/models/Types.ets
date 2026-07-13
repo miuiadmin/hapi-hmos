@@ -575,3 +575,159 @@ function parseTeamMessageList(arr: Object): TeamMessage[] {
   }
   return out;
 }
+
+// —— Files 浏览页类型（对照 shared/src/apiTypes.ts + web types/api.ts）——
+// FileSearchItem：GET /sessions/:id/files?query= 的单项（fileName/filePath/fullPath/fileType）。
+export class FileSearchItem {
+  fileName: string = '';
+  filePath: string = '';
+  fullPath: string = '';
+  fileType: string = '';        // 'file' | 'folder'
+}
+
+// —— 附件上传（对照 shared/src/schemas.ts AttachmentMetadataSchema + apiTypes.ts UploadFileResponse）——
+// AttachmentMetadata：随消息发送的附件元数据；id 客户端生成，path 由 upload 返回（服务端落盘路径）。
+export class AttachmentMetadata {
+  id: string = '';
+  filename: string = '';
+  mimeType: string = '';
+  size: number = 0;
+  path: string = '';            // uploadFile 返回的服务端 path（发送时必填）
+  previewUrl: string = '';      // 可选；图片可填 data: URI 供本地预览，v1 留空
+}
+
+// UploadFileResult：POST /sessions/:id/upload 的响应壳（success + path? + error?，对照 UploadFileResponse）。
+export class UploadFileResult {
+  success: boolean = false;
+  path: string = '';
+  error: string = '';
+}
+
+// 解析 POST /sessions/:id/upload 响应 → UploadFileResult（非法 JSON → success=false 空壳）。
+//   成功取 path（服务端落盘路径，发送附件时回填 AttachmentMetadata.path）；失败取 error。
+export function parseUploadFileResponse(json: string): UploadFileResult {
+  const r: UploadFileResult = new UploadFileResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return r;
+  }
+  r.success = pickBool(raw, 'success');
+  r.path = pickStr(raw, 'path');
+  r.error = pickStr(raw, 'error');
+  return r;
+}
+
+// CommandResponse：git-status / git-diff-numstat / git-diff-file 通用壳（success + stdout/stderr/exitCode/error）。
+export class CommandResponse {
+  success: boolean = false;
+  stdout: string = '';
+  stderr: string = '';
+  exitCode: number = -1;        // -1 哨兵 = 未提供
+  error: string = '';
+}
+
+// FileReadResponse：GET /sessions/:id/file?path= 的内容壳（content 为 base64 编码）。
+export class FileReadResponse {
+  success: boolean = false;
+  content: string = '';         // base64 编码的文件内容
+  error: string = '';
+}
+
+// SessionDirEntry：GET /sessions/:id/directory 的单项（区别机器版 DirEntry：无 isGitRepo，有 size/modified）。
+export class SessionDirEntry {
+  name: string = '';
+  type: string = '';            // 'file' | 'directory' | 'other'
+  size: number = -1;            // -1 哨兵 = 未提供
+  modified: number = -1;        // -1 哨兵 = 未提供（epoch-ms）
+}
+
+// 解析 GET /sessions/:id/files?query= → FileSearchItem[]（失败/缺 files → 空数组）
+export function parseFileSearchResponse(json: string): FileSearchItem[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  const arr = raw['files'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) { return []; }
+  const list: Object[] = arr as Object[];
+  const out: FileSearchItem[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      const r: Record<string, Object> = item as Record<string, Object>;
+      const f: FileSearchItem = new FileSearchItem();
+      f.fileName = pickStr(r, 'fileName');
+      f.filePath = pickStr(r, 'filePath');
+      f.fullPath = pickStr(r, 'fullPath');
+      f.fileType = pickStr(r, 'fileType');
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+// 解析 git-* CommandResponse（非法 JSON → success=false 空壳）
+export function parseCommandResponse(json: string): CommandResponse {
+  const c: CommandResponse = new CommandResponse();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return c;
+  }
+  c.success = pickBool(raw, 'success');
+  c.stdout = pickStr(raw, 'stdout');
+  c.stderr = pickStr(raw, 'stderr');
+  c.error = pickStr(raw, 'error');
+  const ec = raw['exitCode'];
+  c.exitCode = typeof ec === 'number' ? ec : -1;
+  return c;
+}
+
+// 解析 GET /sessions/:id/file?path= → FileReadResponse（非法 JSON → success=false 空壳）
+export function parseFileReadResponse(json: string): FileReadResponse {
+  const f: FileReadResponse = new FileReadResponse();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return f;
+  }
+  f.success = pickBool(raw, 'success');
+  f.content = pickStr(raw, 'content');
+  f.error = pickStr(raw, 'error');
+  return f;
+}
+
+// 解析 GET /sessions/:id/directory → SessionDirEntry[]（失败/缺 entries → 空数组）
+export function parseSessionDirectoryResponse(json: string): SessionDirEntry[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  const arr = raw['entries'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) { return []; }
+  const list: Object[] = arr as Object[];
+  const out: SessionDirEntry[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      const r: Record<string, Object> = item as Record<string, Object>;
+      const e: SessionDirEntry = new SessionDirEntry();
+      e.name = pickStr(r, 'name');
+      e.type = pickStr(r, 'type');
+      const sz = r['size'];
+      e.size = typeof sz === 'number' ? sz : -1;
+      const md = r['modified'];
+      e.modified = typeof md === 'number' ? md : -1;
+      out.push(e);
+    }
+  }
+  return out;
+}

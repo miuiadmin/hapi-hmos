@@ -1,5 +1,5 @@
 import { TeamState, TeamMember, TeamTask, TeamMessage } from '../models/Types';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 会话内多 agent 团队面板（对照上游 web/src/components/TeamPanel.tsx）。
 //   teamState 是 Session 的运行时字段（agent 自治上报，非 spawn 配置）——纯只读展示，无客户端改写。
@@ -99,13 +99,13 @@ export struct TeamPanel {
         .borderRadius(3.5)
         .backgroundColor(this.memberDotColor(member.status))
       Text(member.name)
-        .fontSize(12)
+        .fontSize(fs(12))
         .fontColor(this.c.textPrimary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (member.agentType !== '') {
         Text(`(${member.agentType})`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .maxLines(1)
       }
@@ -120,17 +120,17 @@ export struct TeamPanel {
   private TaskRow(task: TeamTask) {
     Row({ space: 6 }) {
       Text(this.taskIcon(task.status))
-        .fontSize(12)
+        .fontSize(fs(12))
         .fontColor(this.taskColor(task.status))
       Text(task.title)
-        .fontSize(12)
+        .fontSize(fs(12))
         .fontColor(this.taskColor(task.status))
         .layoutWeight(1)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (task.owner !== '') {
         Text(`[${task.owner}]`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
       }
     }
@@ -142,10 +142,10 @@ export struct TeamPanel {
   private MessageRow(msg: TeamMessage) {
     Row() {
       Text(`${msg.from} → ${msg.to}: `)
-        .fontSize(12)
+        .fontSize(fs(12))
         .fontColor(this.c.textPrimary)
       Text(msg.summary)
-        .fontSize(12)
+        .fontSize(fs(12))
         .fontColor(this.c.textTertiary)
         .layoutWeight(1)
         .maxLines(2)
@@ -158,7 +158,7 @@ export struct TeamPanel {
   @Builder
   private SectionLabel(label: string) {
     Text(label)
-      .fontSize(11)
+      .fontSize(fs(11))
       .fontWeight(FontWeight.Medium)
       .fontColor(this.c.textTertiary)
       .margin({ top: 6, bottom: 4 })
@@ -168,20 +168,20 @@ export struct TeamPanel {
     Column() {
       // 折叠头（点击展开/收起，对照上游 header button）
       Row({ space: 6 }) {
-        Text('👥').fontSize(14)
+        Text('👥').fontSize(fs(14))
         Text(`Team: ${this.teamState.teamName}`)
-          .fontSize(13)
+          .fontSize(fs(13))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text(this.headerCounts())
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .maxLines(1)
         Text('▾')
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .rotate({ angle: this.expanded ? 180 : 0 })
       }
@@ -197,7 +197,7 @@ export struct TeamPanel {
         Column() {
           if (this.teamState.description !== '') {
             Text(this.teamState.description)
-              .fontSize(12)
+              .fontSize(fs(12))
               .fontColor(this.c.textTertiary)
               .width('100%')
               .margin({ bottom: 4 })

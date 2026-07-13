@@ -14,6 +14,7 @@ import {
   mergeMessage,
   cloneMessage,
   parseUsage,
+  normalizeCodexTokenUsage,
   latestVisibleUsage,
   getContextBudgetTokens,
   formatTokenCount,
@@ -411,6 +412,49 @@ export default function messageTest(): void {
     });
   });
 
+  describe('normalizeCodexTokenUsage', () => {
+    it('prefers info.last over info.total', 0, () => {
+      const info = JSON.parse('{"last":{"inputTokens":300,"outputTokens":40},' +
+        '"total":{"inputTokens":999999,"outputTokens":888888}}') as Record<string, Object>;
+      const u = normalizeCodexTokenUsage(info, null);
+      expect(u !== null).assertTrue();
+      if (u !== null) {
+        expect(u.inputTokens).assertEqual(300); // last 胜出
+        expect(u.outputTokens).assertEqual(40);
+      }
+    });
+    it('falls back to total when last is absent', 0, () => {
+      const info = JSON.parse('{"total":{"inputTokens":5000,"outputTokens":600}}') as Record<string, Object>;
+      const u = normalizeCodexTokenUsage(info, null);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.inputTokens).assertEqual(5000); }
+    });
+    it('uses info itself when neither last nor total present', 0, () => {
+      const info = JSON.parse('{"inputTokens":7,"outputTokens":3}') as Record<string, Object>;
+      const u = normalizeCodexTokenUsage(info, null);
+      expect(u !== null).assertTrue();
+      if (u !== null) { expect(u.inputTokens).assertEqual(7); }
+    });
+    it('returns null when input/output missing', 0, () => {
+      const info = JSON.parse('{"last":{"inputTokens":5}}') as Record<string, Object>;
+      expect(normalizeCodexTokenUsage(info, null) === null).assertTrue();
+    });
+    it('returns null when info is null', 0, () => {
+      expect(normalizeCodexTokenUsage(null, null) === null).assertTrue();
+    });
+    it('reads scope_role from data and context_window from info', 0, () => {
+      const info = JSON.parse('{"last":{"inputTokens":10,"outputTokens":1},"model_context_window":200000}') as Record<string, Object>;
+      const data = JSON.parse('{"type":"token_count","scope_role":"child"}') as Record<string, Object>;
+      const u = normalizeCodexTokenUsage(info, data);
+      expect(u !== null).assertTrue();
+      if (u !== null) {
+        expect(u.contextWindow).assertEqual(200000);
+        expect(u.scopeRole).assertEqual('child');
+        expect(u.isVisibleInParent).assertFalse();
+      }
+    });
+  });
+
   describe('UsageData.contextSize / isVisibleInParent', () => {
     it('contextSize uses context_tokens when present', 0, () => {
       const u = parseUsage(JSON.parse(
@@ -530,6 +574,41 @@ export default function messageTest(): void {
     });
     it('leaves usage null when the agent message has none', 0, () => {
       const m: ChatMessage = parse(agentEnv('a1', '{"message":{"content":[{"type":"text","text":"hi"}]}}'));
+      expect(m.usage === null).assertTrue();
+    });
+  });
+
+  describe('parseMessage — codex token_count event usage', () => {
+    it('extracts usage from a token_count event (info.last)', 0, () => {
+      const m: ChatMessage = parse('{"id":"e1","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"token_count","info":{"last":{"inputTokens":300,"outputTokens":40},' +
+        '"contextTokens":320,"modelContextWindow":258400}}}}');
+      expect(m.role).assertEqual('event');
+      expect(m.text).assertEqual('');
+      expect(m.usage !== null).assertTrue();
+      if (m.usage !== null) {
+        expect(m.usage.inputTokens).assertEqual(300);
+        expect(m.usage.outputTokens).assertEqual(40);
+        expect(m.usage.contextTokens).assertEqual(320);
+        expect(m.usage.contextWindow).assertEqual(258400);
+        expect(m.usage.cacheCreation).assertEqual(0); // codex 不区分 cache_creation
+      }
+    });
+    it('accepts the hyphenated type token-count and snake_case keys', 0, () => {
+      const m: ChatMessage = parse('{"id":"e2","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"token-count","info":{"last":{"input_tokens":10,"output_tokens":2,' +
+        '"cached_input_tokens":5}}}}}');
+      expect(m.usage !== null).assertTrue();
+      if (m.usage !== null) {
+        expect(m.usage.inputTokens).assertEqual(10);
+        expect(m.usage.cacheRead).assertEqual(5);
+        expect(m.usage.contextTokens).assertEqual(10); // 缺 context_tokens → 回退 inputTokens
+        expect(m.usage.contextWindow).assertEqual(-1); // 未提供
+      }
+    });
+    it('leaves usage null for non-token-count events', 0, () => {
+      const m: ChatMessage = parse('{"id":"e3","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"ready","agentId":"codex"}}}');
       expect(m.usage === null).assertTrue();
     });
   });

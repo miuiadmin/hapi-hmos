@@ -3,7 +3,7 @@
 // 宽行按 maxLines(1) 截断（窄屏取舍：完整内容在详情 sheet 可纵向滚动查看）。
 // V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight；@Computed allLines/isCollapsed/visibleLines/label。
 
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 const COLLAPSE_LINE_THRESHOLD: number = 18;
 const COLLAPSE_CHAR_THRESHOLD: number = 1800;
@@ -85,7 +85,7 @@ struct CodeBlock {
       // header（label）
       Row() {
         Text(this.label)
-          .fontSize(10)
+          .fontSize(fs(10))
           .fontColor(this.c.codeMuted)
           .layoutWeight(1)
           .maxLines(1)
@@ -110,7 +110,7 @@ struct CodeBlock {
           // 底部「已截断」角标
           Row() {
             Text('已截断')
-              .fontSize(10)
+              .fontSize(fs(10))
               .fontColor(this.c.codeMuted)
               .backgroundColor(this.c.codeBg)
               .padding({ left: 8, right: 8, top: 2, bottom: 2 })
@@ -139,12 +139,12 @@ struct CodeBlock {
       ForEach(this.visibleLines, (line: string, idx: number) => {
         Row() {
           Text(String(idx + 1))
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.codeMuted)
             .width(this.numColWidth())
             .textAlign(TextAlign.End)
           Text(line.length > 0 ? line : ' ')
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.codeText)
             .layoutWeight(1)
             .maxLines(1)

@@ -14,6 +14,8 @@ import hubClientUtilsTest from './HubClientUtils.test';
 import chatSearchTest from './ChatSearch.test';
 import slashCommandsTest from './SlashCommands.test';
 import activeWordTest from './ActiveWord.test';
+import gitParsersTest from './GitParsers.test';
+import externalLinkTest from './ExternalLink.test';
 
 export default function testsuite() {
   diffTest();
@@ -29,4 +31,6 @@ export default function testsuite() {
   chatSearchTest();
   slashCommandsTest();
   activeWordTest();
+  gitParsersTest();
+  externalLinkTest();
 }

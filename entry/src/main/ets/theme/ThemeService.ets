@@ -22,6 +22,21 @@ let _state: ThemeState | null = null;
 // 系统真实明暗缓存（mode==='system' 时 isDark 取它）
 let _systemDark: boolean = false;
 
+// 字号缩放档位（设置页三选；存档位字符串，state.fontScale 存数值因子）
+export type FontScaleMode = 'small' | 'default' | 'large';
+const FONT_SCALE_FACTOR: Record<FontScaleMode, number> = {
+  'small': 0.9,
+  'default': 1.0,
+  'large': 1.2
+};
+
+// 全局字号缩放取值器：组件每个 .fontSize(N) 套 fs(N)，读 fontScale @Trace 即时随设置页重渲染。
+//   Math.round 保整数 vp（ArkUI fontSize 支持小数，但整数避免亚像素模糊）；下限 1。
+export function fs(base: number): number {
+  const scaled: number = Math.round(base * getThemeState().fontScale);
+  return scaled < 1 ? 1 : scaled;
+}
+
 // 全局取值器：首次 AppStorageV2.connect 共享单例并缓存；所有组件/页面都调它取主题（不持 @Local、不逐处 connect）
 export function getThemeState(): ThemeState {
   if (_state === null) {
@@ -85,6 +100,18 @@ export class ThemeService {
     state.mode = mode;
     state.isDark = resolveIsDark(mode);
     setAppColorMode(context, toColorModeConstant(mode));
+
+    // 字号缩放（独立于主题，但同走 Preferences；缺省 default）
+    let scaleMode: FontScaleMode = 'default';
+    try {
+      const storedScale: string = await getPreferencesService().getString(PreferenceKeys.FONT_SCALE, 'default');
+      if (storedScale === 'small' || storedScale === 'large') {
+        scaleMode = storedScale;
+      }
+    } catch (e) {
+      // 读失败默认 default
+    }
+    state.fontScale = FONT_SCALE_FACTOR[scaleMode];
   }
 
   // 设置页切换主题调
@@ -109,7 +136,25 @@ export class ThemeService {
     }
   }
 
+  // 设置页切字号调（无需 context——纯 JS 调色板无关，仅 state + 持久化）
+  static async setFontScale(scaleMode: FontScaleMode): Promise<void> {
+    const state: ThemeState = getThemeState();
+    state.fontScale = FONT_SCALE_FACTOR[scaleMode];
+    try {
+      await getPreferencesService().putString(PreferenceKeys.FONT_SCALE, scaleMode);
+    } catch (e) {
+      // 持久化失败不影响本次切换
+    }
+  }
+
   static get currentMode(): ThemeMode {
     return getThemeState().mode;
+  }
+
+  static get currentFontScaleMode(): FontScaleMode {
+    const s: number = getThemeState().fontScale;
+    if (s < 0.95) { return 'small'; }
+    if (s > 1.05) { return 'large'; }
+    return 'default';
   }
 }

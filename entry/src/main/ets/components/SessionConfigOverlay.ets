@@ -5,7 +5,7 @@ import {
   CODEX_COLLABORATION_MODES, collaborationModeDisplayName,
   reasoningEffortsForFlavor, reasoningEffortDisplayName
 } from '../models/Types';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 // 会话内即时配置 overlay（对照 web FloatingOverlay + SessionChat 配置区）：
 //   分区按 flavor 门控：模型(全)/权限模式(全)/协作模式(仅codex)/努力度(仅claude)/推理努力(codex·opencode)。
@@ -51,7 +51,7 @@ export struct SessionConfigOverlay {
   @Builder
   private sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(fs(13))
       .fontColor(this.c.textTertiary)
       .width('100%')
       .padding({ left: 4, top: 14, bottom: 4 })
@@ -61,11 +61,11 @@ export struct SessionConfigOverlay {
   private optionRow(label: string, value: string, current: string, field: string) {
     Row({ space: 10 }) {
       Text(value === current ? '●' : '○')
-        .fontSize(14)
+        .fontSize(fs(14))
         .fontColor(value === current ? this.c.primary : this.c.textTertiary)
         .width(18)
       Text(label)
-        .fontSize(15)
+        .fontSize(fs(15))
         .fontColor(value === current ? this.c.textPrimary : this.c.textSecondary)
         .layoutWeight(1)
     }
@@ -80,7 +80,7 @@ export struct SessionConfigOverlay {
     Scroll() {
       Column() {
         Text('会话配置')
-          .fontSize(17)
+          .fontSize(fs(17))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .width('100%')

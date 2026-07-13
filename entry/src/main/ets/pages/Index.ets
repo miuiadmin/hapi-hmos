@@ -5,7 +5,8 @@ import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { ChatPageRouteParams } from './ChatPage';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { showToast } from '../utils/Toast';
 
 // 会话列表页（已登录首屏）
 // UI 写法/样式对照 chatcube Index（Navigation + 列表 + 列表项 + 空态/加载态/错误态）
@@ -117,7 +118,7 @@ struct Index {
     if (message === '') {
       return;
     }
-    this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
+    showToast(message);
   }
 
   // 点击进入对话页（NavPathStack.pushPath，对照 chatcube openChatRoute）
@@ -208,7 +209,7 @@ struct Index {
   @Builder
   private FilterTab(label: string, mode: 'all' | 'active' | 'archived', count: number) {
     Text(`${label} ${count}`)
-      .fontSize(13)
+      .fontSize(fs(13))
       .fontWeight(this.sessionFilter === mode ? FontWeight.Medium : FontWeight.Regular)
       .fontColor(this.sessionFilter === mode ? this.c.primary : this.c.textTertiary)
       .decoration({ type: this.sessionFilter === mode ? TextDecorationType.Underline : TextDecorationType.None })
@@ -269,7 +270,7 @@ struct Index {
       // 头像方块（主题色 + 首字）
       Column() {
         Text(session.title.length > 0 ? session.title.substring(0, 1) : '#')
-          .fontSize(18)
+          .fontSize(fs(18))
           .fontWeight(FontWeight.Bold)
           .fontColor(this.c.bubbleUserText)
       }
@@ -283,21 +284,21 @@ struct Index {
       Column({ space: 6 }) {
         Row() {
           Text(session.title)
-            .fontSize(15)
+            .fontSize(fs(15))
             .fontWeight(FontWeight.Medium)
             .fontColor(this.c.textPrimary)
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(this.formatTime(session.updatedAt))
-            .fontSize(12)
+            .fontSize(fs(12))
             .fontColor(this.c.textTertiary)
         }
         .width('100%')
 
         Row() {
           Text(session.summaryText !== '' ? session.summaryText : (session.thinking ? '思考中…' : ' '))
-            .fontSize(13)
+            .fontSize(fs(13))
             .fontColor(this.c.textSecondary)
             .layoutWeight(1)
             .maxLines(1)
@@ -306,15 +307,15 @@ struct Index {
           //   无 todo 或全部完成则隐藏——todoTotal=0 或 done===total 都不显，仅在进行中提示）
           if (session.todoTotal > 0 && session.todoCompleted !== session.todoTotal) {
             Row({ space: 3 }) {
-              Text('💡').fontSize(10)
-              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(11)
+              Text('💡').fontSize(fs(10))
+              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(fs(11))
             }
             .fontColor(this.c.textTertiary)
             .margin({ right: 6 })
           }
           if (session.pendingRequestsCount > 0) {
             Text(`${session.pendingRequestsCount}`)
-              .fontSize(11)
+              .fontSize(fs(11))
               .fontColor(this.c.bubbleUserText)
               .backgroundColor(this.c.error)
               .borderRadius(10)
@@ -323,8 +324,8 @@ struct Index {
           // 后台任务角标（backgroundTaskCount>0；agent 后台跑的待办任务数，中性样式区别于待审批红角标）
           if (session.backgroundTaskCount > 0) {
             Row({ space: 3 }) {
-              Text('⚙').fontSize(10)
-              Text(`${session.backgroundTaskCount}`).fontSize(11)
+              Text('⚙').fontSize(fs(10))
+              Text(`${session.backgroundTaskCount}`).fontSize(fs(11))
             }
             .fontColor(this.c.textSecondary)
             .backgroundColor(this.c.surface)
@@ -349,9 +350,9 @@ struct Index {
   @Builder
   private EmptyState() {
     Column({ space: 10 }) {
-      Text('📭').fontSize(48)
-      Text('暂无会话').fontSize(16).fontColor(this.c.textSecondary)
-      Text('在终端启动 hapi 后，会话会出现在这里').fontSize(13).fontColor(this.c.textTertiary)
+      Text('📭').fontSize(fs(48))
+      Text('暂无会话').fontSize(fs(16)).fontColor(this.c.textSecondary)
+      Text('在终端启动 hapi 后，会话会出现在这里').fontSize(fs(13)).fontColor(this.c.textTertiary)
       Button('新建会话')
         .margin({ top: 12 })
         .backgroundColor(this.c.primary)
@@ -368,8 +369,8 @@ struct Index {
   @Builder
   private SearchEmptyState(icon: string, message: string) {
     Column({ space: 8 }) {
-      Text(icon).fontSize(40)
-      Text(message).fontSize(15).fontColor(this.c.textSecondary)
+      Text(icon).fontSize(fs(40))
+      Text(message).fontSize(fs(15)).fontColor(this.c.textSecondary)
     }
     .width('100%')
     .height('100%')
@@ -379,8 +380,8 @@ struct Index {
   @Builder
   private ErrorState() {
     Column({ space: 12 }) {
-      Text('加载失败').fontSize(16).fontColor(this.c.error)
-      Text(this.errorMessage).fontSize(13).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
+      Text('加载失败').fontSize(fs(16)).fontColor(this.c.error)
+      Text(this.errorMessage).fontSize(fs(13)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
       Button('重试')
         .backgroundColor(this.c.primary)
         .fontColor(this.c.bubbleUserText)
@@ -397,16 +398,16 @@ struct Index {
         // 自绘标题栏（含 SSE 实时状态 + 设置入口）
         Row() {
           Row() {
-            Text('会话').fontSize(22).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
+            Text('会话').fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
             if (this.sseBadge() !== '') {
-              Text(this.sseBadge()).fontSize(11).fontColor(this.c.textTertiary).margin({ left: 8 })
+              Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary).margin({ left: 8 })
             }
           }
           .layoutWeight(1)
 
           // 新建会话入口
           Text('+')
-            .fontSize(26)
+            .fontSize(fs(26))
             .fontColor(this.c.textSecondary)
             .width(40)
             .height(40)
@@ -415,7 +416,7 @@ struct Index {
 
           // 设置入口
           Text('⚙')
-            .fontSize(22)
+            .fontSize(fs(22))
             .fontColor(this.c.textSecondary)
             .width(40)
             .height(40)

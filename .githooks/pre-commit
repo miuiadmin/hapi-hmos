@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit
+#
+# hapi: no changelog gate yet; add pre-commit checks here.
+# （移植自 berry3/.githooks/pre-commit；hapi 无 changelog.json，故占位模板扫描闸已移除，
+#   此处保持 no-op 让 setup-hooks.sh 配置的 hooksPath 仍有有效入口。未来需要提交期检查时，
+#   在下方追加逻辑即可。）
+#
+# 启用（每个 clone 运行一次）：bash tools/setup-hooks.sh
+# 紧急绕过（不推荐）：git commit --no-verify
+
+set -uo pipefail
+
+exit 0

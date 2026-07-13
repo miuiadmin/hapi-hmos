@@ -13,7 +13,7 @@ import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
 import { ChecklistList } from './ChecklistList';
 import { MarkdownText } from './MarkdownText';
-import { paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 
 const MAX_COMPACT_EDITS: number = 3;
 
@@ -162,7 +162,7 @@ struct ToolInputView {
       }, (ep: EditPair, idx: number) => `edit-${idx}`)
       if (this.isInline && this.multiEdits().length > MAX_COMPACT_EDITS) {
         Text(`（还有 ${this.multiEdits().length - MAX_COMPACT_EDITS} 处编辑）`)
-          .fontSize(11)
+          .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
       }
     }
@@ -179,7 +179,7 @@ struct ToolInputView {
       Column({ space: 6 }) {
         if (this.writePath() !== '') {
           Text(this.writePath())
-            .fontSize(11)
+            .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -286,7 +286,7 @@ struct ToolResultView {
   @Builder
   Pill(text: string) {
     Text(text)
-      .fontSize(11)
+      .fontSize(fs(11))
       .fontColor(this.c.textSecondary)
       .padding({ left: 8, right: 8, top: 3, bottom: 3 })
       .backgroundColor(this.c.surfaceSelected)
@@ -356,7 +356,7 @@ struct ToolResultView {
       Column({ space: 2 }) {
         ForEach(this.splitResultLines(), (line: string, idx: number) => {
           Text(line)
-            .fontSize(12)
+            .fontSize(fs(12))
             .fontColor(this.c.codeText)
             .width('100%')
         }, (line: string, idx: number) => `line-${idx}`)
