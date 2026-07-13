@@ -8,6 +8,8 @@ import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
 import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
+import { shouldShowInlineToolCardBody, shouldUseCompactTerminalToolCard, TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
+import { getTerminalToolDisplayState } from '../services/TerminalToolDisplayService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -66,10 +68,20 @@ struct ToolCard {
     return p !== null && p.status === 'pending';
   }
 
-  // 是否挂内联卡片体：presentation.minimal=false 的工具（TodoWrite/update_plan/ExitPlanMode）
-  // 对照上游 hasBody = showInline(=!minimal) || ...；这里 showInline 即 !minimal。
+  // 终端工具卡片显示模式（读 @Trace mode 建立刷新依赖；设置页切换即时重渲染，同 isDark 机制）
+  private get terminalToolMode(): TerminalToolDisplayMode {
+    return getTerminalToolDisplayState().mode;
+  }
+
+  // compact 终端卡走紧凑样式（副标题单行截断；对照上游 useCompactTerminalCard）
+  private get useCompactTerminalCard(): boolean {
+    return shouldUseCompactTerminalToolCard(this.toolName, this.terminalToolMode);
+  }
+
+  // 是否挂内联卡片体（对照上游 showInline = shouldShowInlineToolCardBody）：
+  //   子代理工具→false；终端类(Bash 等)→detailed 时 true（绕过 minimal 内联命令预览）；其他→!minimal。
   private get hasInlineBody(): boolean {
-    return !this.presentation.minimal;
+    return shouldShowInlineToolCardBody(this.toolName, this.presentation.minimal, this.terminalToolMode);
   }
 
   // 是否挂通用权限 footer：pending 且非答题工具；或 denied/canceled（显示状态/原因框）
@@ -312,7 +324,7 @@ struct ToolCard {
           Text(this.subtitleText())
             .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
-            .maxLines(2)
+            .maxLines(this.useCompactTerminalCard ? 1 : 2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
             .margin({ top: 2 })

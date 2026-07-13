@@ -5,6 +5,7 @@ import { AppStorageKeys, PreferenceKeys } from '../config/Keys';
 import { window } from '@kit.ArkUI';
 import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeService, ThemeMode, FontScaleMode } from '../theme/ThemeService';
+import { TerminalToolDisplayService, TerminalToolDisplayMode } from '../services/TerminalToolDisplayService';
 import { showToast } from '../utils/Toast';
 import { t, I18nService, LanguageChoice } from '../i18n/I18nService';
 
@@ -40,6 +41,16 @@ struct SettingsPage {
   private selectLanguage(choice: LanguageChoice): void {
     this.langChoice = choice;
     I18nService.setChoice(choice);
+  }
+
+  // 终端工具卡片显示模式（读 @Trace mode 建立刷新依赖；切换即时重渲染 ✓ 高亮）
+  private get terminalToolMode(): TerminalToolDisplayMode {
+    return TerminalToolDisplayService.currentMode;
+  }
+
+  // 切终端工具卡片显示：setMode 改 mode @Trace（全量 ToolCard 重渲染）+ 持久化
+  private selectTerminalToolDisplay(mode: TerminalToolDisplayMode): void {
+    TerminalToolDisplayService.setMode(mode);
   }
 
   private navPathStack: NavPathStack | null = null;
@@ -286,6 +297,16 @@ struct SettingsPage {
         this.SectionHeader(t('settings.section.input'))
         Column() {
           this.ToggleRow(t('settings.enterToSend'), this.enterToSend, (v: boolean): void => { this.saveEnterToSend(v); })
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+
+        // 终端工具卡片分组（compact 仅 header 降噪 / detailed 内联命令预览；对照上游 settings.chat.terminalToolDisplay）
+        this.SectionHeader(t('settings.chat.terminalToolDisplay'))
+        Column() {
+          this.SelectRow(t('settings.chat.terminalToolDisplay.compact'), this.terminalToolMode === 'compact', (): void => { this.selectTerminalToolDisplay('compact'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(t('settings.chat.terminalToolDisplay.detailed'), this.terminalToolMode === 'detailed', (): void => { this.selectTerminalToolDisplay('detailed'); })
         }
         .width('100%')
         .backgroundColor(this.c.bg)

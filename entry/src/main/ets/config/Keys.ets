@@ -7,6 +7,7 @@ export class PreferenceKeys {
   static readonly THEME_MODE: string = 'hapi_theme_mode';   // 主题模式 light/dark/system
   static readonly FONT_SCALE: string = 'hapi_font_scale';   // 全局字号缩放（'small'|'default'|'large'）
   static readonly ENTER_TO_SEND: string = 'hapi_enter_to_send';   // 回车发送消息（bool，默认关：Enter=换行）
+  static readonly TERMINAL_TOOL_DISPLAY_MODE: string = 'hapi_terminal_tool_display_mode';   // 终端工具卡片显示模式（'compact'|'detailed'，默认 compact：仅 header）
   static readonly LANGUAGE: string = 'hapi_lang';   // 语言选择（'system'|'zh-CN'|'en'，默认 system 跟随系统）
   static readonly RECENT_SKILLS: string = 'hapi_recent_skills';   // $ 技能最近使用 map（JSON name→timestamp，上限 200）
 
