@@ -930,3 +930,78 @@ export function parseSessionDirectoryResponse(json: string): SessionDirEntry[] {
   }
   return out;
 }
+
+// —— 语音（Voice）类型 + 解析，对齐 hub web/routes/voice.ts（只读对照，协议权威）——
+//   POST /api/voice/token body {voiceId?} → { allowed, token?, agentId?, error? }
+//   GET  /api/voice/voices → { voices: [{ id, name, previewUrl, category }] }
+//   POST /api/voice/telemetry body { stage, message, sessionId?, voiceId?, language?, details? } → { ok }
+
+// 语音会话 token 结果（Hub 代 ElevenLabs 换的 conversation token；allowed=false 时 error 带原因）
+export class VoiceTokenResult {
+  allowed: boolean = false;
+  token: string = '';
+  agentId: string = '';
+  error: string = '';
+}
+
+// ElevenLabs 声音（含用户克隆声；category 如 'premade'/'cloned'/'generated'）
+export class VoiceItem {
+  id: string = '';
+  name: string = '';
+  previewUrl: string = '';
+  category: string = '';
+}
+
+// 语音遥测事件（stage 为阶段标识，如 'session_start'/'session_end'/'error'；details 透传）
+export class VoiceTelemetryEvent {
+  stage: string = '';
+  message: string = '';
+  sessionId: string = '';
+  voiceId: string = '';
+  language: string = '';
+  details: Record<string, Object> = {};
+}
+
+// 解析 POST /api/voice/token → VoiceTokenResult（HTTP 失败/损坏体合成 allowed=false+error）
+export function parseVoiceTokenResponse(json: string, httpError: string): VoiceTokenResult {
+  const r: VoiceTokenResult = new VoiceTokenResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.error = httpError !== '' ? httpError : t('types.voice.tokenParseFailed');
+    return r;
+  }
+  r.allowed = raw['allowed'] === true;
+  r.token = pickStr(raw, 'token');
+  r.agentId = pickStr(raw, 'agentId');
+  r.error = pickStr(raw, 'error');
+  return r;
+}
+
+// 解析 GET /api/voice/voices → VoiceItem[]（失败/缺 voices → 空数组；Hub 已 snake→camel 转好 previewUrl）
+export function parseVoicesResponse(json: string): VoiceItem[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  const arr = raw['voices'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) { return []; }
+  const list: Object[] = arr as Object[];
+  const out: VoiceItem[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      const rr: Record<string, Object> = item as Record<string, Object>;
+      const v: VoiceItem = new VoiceItem();
+      v.id = pickStr(rr, 'id');
+      v.name = pickStr(rr, 'name');
+      v.previewUrl = pickStr(rr, 'previewUrl');
+      v.category = pickStr(rr, 'category');
+      if (v.id !== '') { out.push(v); }
+    }
+  }
+  return out;
+}

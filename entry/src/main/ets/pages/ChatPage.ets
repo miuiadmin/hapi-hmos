@@ -27,6 +27,7 @@ import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
 import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
 import { TerminalRouteParams } from './TerminalPage';
+import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
 import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -374,6 +375,14 @@ struct ChatPage {
     const p: TerminalRouteParams = new TerminalRouteParams();
     p.sessionId = this.sessionId;
     this.navPathStack.pushPath({ name: 'TerminalPage', param: p });
+  }
+
+  // 进语音页（ElevenLabs Conversational AI；对照 web /sessions/$id/realtime）
+  private openVoice(): void {
+    if (!this.isActive || this.sessionId === '' || this.navPathStack === null) { return; }
+    const p: VoiceRouteParams = new VoiceRouteParams();
+    p.sessionId = this.sessionId;
+    this.navPathStack.pushPath({ name: 'VoicePage', param: p });
   }
 
   // elapsed 实时 ticker：仅当 thinking 或有 running 工具卡时每秒 bump nowTick（否则不 bump，避免无谓 rebuild）
@@ -2010,6 +2019,7 @@ struct ChatPage {
           showNavigation: true,
           onOpenFiles: () => { this.openFiles(); },
           onOpenTerminal: () => { this.openTerminal(); },
+          onOpenVoice: () => { this.openVoice(); },
           onClose: () => { this.menuOpen = false; },
           onRenamed: (name: string) => { this.sessionTitle = name; },
           onArchived: () => { this.isActive = false; },

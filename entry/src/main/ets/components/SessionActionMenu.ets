@@ -34,6 +34,7 @@ export struct SessionActionMenu {
   // 导航行回调（仅 showNavigation=true 时触发；父 push Files/Terminal 页）
   @Event onOpenFiles: () => void = () => {};
   @Event onOpenTerminal: () => void = () => {};
+  @Event onOpenVoice: () => void = () => {};
   // 动作面板关闭回写（滑掉/蒙层/选了重命名/归档/删除）
   @Event onClose: () => void = () => {};
 
@@ -229,6 +230,17 @@ export struct SessionActionMenu {
         .onClick(() => { if (this.active) { this.onClose(); this.onOpenTerminal(); } })
 
         Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+
+        Row() {
+          Text(t('sessionMenu.voice')).fontSize(fs(16))
+            .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .opacity(this.active ? 1 : 0.5)
+        .onClick(() => { if (this.active) { this.onClose(); this.onOpenVoice(); } })
       }
 
       Row() {

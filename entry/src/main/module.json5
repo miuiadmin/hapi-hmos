@@ -23,6 +23,10 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        "backgroundModes": [
+          "dataTransfer",
+          "audioPlayback"
+        ],
         "skills": [
           {
             "entities": [
@@ -39,6 +43,16 @@
       {
         "name": "ohos.permission.INTERNET",
         "reason": "$string:permission_internet_reason",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.MICROPHONE",
+        "reason": "$string:permission_microphone_reason",
         "usedScene": {
           "abilities": [
             "EntryAbility"

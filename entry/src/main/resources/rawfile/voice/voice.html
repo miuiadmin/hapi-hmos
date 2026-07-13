@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>voice</title>
+  <!-- 托管 ElevenLabs Conversational AI（@elevenlabs/client，自建 IIFE 单文件）。
+       数据面（WebRTC 双向音频 / conversation 生命周期）全在本 JS 上下文，不过 ArkTS↔JS 桥。
+       ArkTS 经 runJavaScript 调 bootVoice/endVoice/toggleMute/sendUserText/pushContext/pushText/applyTheme；
+       JS 经 window.HostBridge（ArkTS javaScriptProxy）回报 onStatus/onMode + 派发 client tool。
+       对照 hapi web/src/realtime/RealtimeVoiceSession.tsx（只读对照，协议权威）。 -->
+  <script src="elevenlabs-client.min.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff; --fg: #1a1a1a; --muted: #8a8a8e; --accent: #2e7d32;
+      --bar: #c9c9ce; --bar-active: #2e7d32;
+    }
+    html[data-theme="dark"] {
+      --bg: #15151a; --fg: #f2f2f4; --muted: #8a8a92; --accent: #7fb285;
+      --bar: #3a3a42; --bar-active: #7fb285;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, "HarmonyOS Sans", "PingFang SC", sans-serif;
+      -webkit-user-select: none; user-select: none;
+      overflow: hidden;
+    }
+    .stage {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 28px;
+    }
+    .mode-label {
+      font-size: 22px; font-weight: 600; letter-spacing: 0.5px;
+      color: var(--fg); text-align: center;
+      min-height: 30px;
+    }
+    .mode-sub {
+      font-size: 13px; color: var(--muted); text-align: center;
+      min-height: 18px;
+    }
+    /* 波形：5 根条，高度由 RAF 据 frequency data 更新 */
+    .wave {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; height: 64px;
+    }
+    .wave .bar {
+      width: 6px; height: 8px; border-radius: 3px;
+      background: var(--bar); transition: height 0.08s linear, background 0.2s;
+    }
+    html[data-active="true"] .wave .bar { background: var(--bar-active); }
+    /* 连接中转圈 */
+    .spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 3px solid var(--bar); border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div id="spinner" class="spinner hidden"></div>
+    <div class="wave" id="wave">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div>
+    </div>
+    <div class="mode-label" id="modeLabel"></div>
+    <div class="mode-sub" id="modeSub"></div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // —— HostBridge 访问器（ArkTS javaScriptProxy 注入；未注入时 stub 兜底，免崩）——
+      function hb() {
+        return window.HostBridge || {
+          onReady: function () {}, onStatus: function () {}, onMode: function () {},
+          onClientToolSent: function () { return "sent [DO NOT say anything else, simply say 'sent']"; },
+          onClientToolPerm: function () { return "done [DO NOT say anything else, simply say 'done']"; }
+        };
+      }
+
+      // —— 状态 ——
+      var Conversation = (window.ElevenLabsClient || {}).Conversation;
+      var conv = null;            // Conversation 实例
+      var mode = 'idle';          // 'listening' | 'speaking' | 'idle'
+      var rafId = 0;
+      var labels = { connecting: '连接中…', listening: '聆听中', speaking: '说话中', ended: '已结束', error: '出错' };
+
+      var spinnerEl = document.getElementById('spinner');
+      var waveEl = document.getElementById('wave');
+      var modeLabelEl = document.getElementById('modeLabel');
+      var modeSubEl = document.getElementById('modeSub');
+      var bars = waveEl.querySelectorAll('.bar');
+
+      function setMode(m) {
+        mode = m;
+        document.documentElement.setAttribute('data-active', m === 'listening' || m === 'speaking' ? 'true' : 'false');
+        if (m === 'listening') { modeLabelEl.textContent = labels.listening; modeSubEl.textContent = ''; }
+        else if (m === 'speaking') { modeLabelEl.textContent = labels.speaking; modeSubEl.textContent = ''; }
+        else { modeLabelEl.textContent = ''; }
+      }
+
+      function showConnecting(text) {
+        spinnerEl.classList.remove('hidden');
+        waveEl.classList.add('hidden');
+        modeLabelEl.textContent = text || labels.connecting;
+        modeSubEl.textContent = '';
+      }
+      function showStage() {
+        spinnerEl.classList.add('hidden');
+        waveEl.classList.remove('hidden');
+      }
+      function showError(msg) {
+        spinnerEl.classList.add('hidden');
+        waveEl.classList.remove('hidden');
+        modeLabelEl.textContent = labels.error;
+        modeSubEl.textContent = msg || '';
+      }
+
+      // —— 波形：RAF 读 frequency data 更新条高 ——
+      function waveLoop() {
+        rafId = 0;
+        if (!conv) { flatBars(); return; }
+        try {
+          var data = null;
+          if (mode === 'speaking') { data = conv.getOutputByteFrequencyData(); }
+          else { data = conv.getInputByteFrequencyData(); }
+          if (data && data.length > 0) {
+            // 取 5 个分箱（均布）映射到 8~56px
+            var n = bars.length;
+            for (var i = 0; i < n; i++) {
+              var idx = Math.floor((i + 0.5) * data.length / n);
+              var v = data[idx] / 255;             // 0~1
+              var h = 8 + Math.round(v * 48);
+              bars[i].style.height = h + 'px';
+            }
+          } else { flatBars(); }
+        } catch (e) { flatBars(); }
+        rafId = requestAnimationFrame(waveLoop);
+      }
+      function flatBars() { for (var i = 0; i < bars.length; i++) { bars[i].style.height = '8px'; } }
+      function startWave() { if (rafId === 0) { rafId = requestAnimationFrame(waveLoop); } }
+      function stopWave() { if (rafId !== 0) { cancelAnimationFrame(rafId); rafId = 0; } flatBars(); }
+
+      // —— SDK 状态 → HostBridge（onStatusChange 为权威源；onConnect/onDisconnect/onError 补充）——
+      function mapStatus(s) {
+        // Status: 'connecting' | 'connected' | 'disconnected' | 'failed'
+        //   onStatus 恒传 2 参（msg 为空时 ''）—— ArkTS 桥方法定长形参，免变参桥不确定
+        if (s === 'connected') { hb().onStatus('connected', ''); showStage(); startWave(); }
+        else if (s === 'connecting') { hb().onStatus('connecting', ''); showConnecting(labels.connecting); }
+        else if (s === 'disconnected') { hb().onStatus('disconnected', ''); stopWave(); setMode('idle'); modeLabelEl.textContent = labels.ended; }
+        else if (s === 'failed') { hb().onStatus('error', 'connection failed'); stopWave(); showError('connection failed'); }
+      }
+
+      // —— client tools（agent → ArkTS；对照 web realtimeClientTools.ts）——
+      //   同步返魔法串指导 agent 只说 "sent"/"done"；真实 Hub 调用由 ArkTS 异步派发。
+      var clientTools = {
+        messageCodingAgent: function (p) {
+          var message = (p && typeof p.message === 'string') ? p.message : '';
+          return hb().onClientToolSent(message);
+        },
+        processPermissionRequest: function (p) {
+          var decision = (p && typeof p.decision === 'string') ? p.decision : 'deny';
+          return hb().onClientToolPerm(decision);
+        }
+      };
+
+      // —— 启动语音会话（ArkTS runJavaScript('bootVoice(cfg)') 调）——
+      //   cfg = { conversationToken, sessionId, initialContext, language, voiceId, labels }
+      //   对照上游 web RealtimeVoiceSession.startSession 的 baseSessionConfig：仅 overrides.agent.language，
+      //   不带 overrides.tts —— 声音选择走服务端（Hub 按 voiceId 建/找 per-voice agent，token 已编码）。
+      window.bootVoice = function (cfg) {
+        if (!Conversation) { hb().onStatus('error', 'ElevenLabsClient 未加载'); showError('SDK not loaded'); return; }
+        if (conv) { return; }   // 幂等防重
+        if (cfg && cfg.labels) { for (var k in cfg.labels) { if (Object.prototype.hasOwnProperty.call(cfg.labels, k)) { labels[k] = cfg.labels[k]; } } }
+        showConnecting(labels.connecting);
+        var options = {
+          conversationToken: cfg.conversationToken,
+          connectionType: 'webrtc',
+          dynamicVariables: {
+            sessionId: cfg.sessionId,
+            initialConversationContext: (cfg.initialContext || '')
+          },
+          overrides: {
+            agent: cfg.language ? { language: cfg.language } : undefined
+          },
+          clientTools: clientTools,
+          onConnect: function (props) { /* onStatusChange 权威；此处仅占位 */ },
+          onDisconnect: function () { /* onStatusChange 权威 */ },
+          onError: function (message) { hb().onStatus('error', message || ''); showError(message); },
+          onMessage: function (props) { /* 文本转录：留控制台观察 */ try { console.log('[voice] message', props && props.source, props && props.message); } catch (e) {} },
+          onModeChange: function (prop) { var mm = (prop && prop.mode) || 'idle'; setMode(mm); hb().onMode(mm); },
+          onStatusChange: function (prop) { mapStatus((prop && prop.status) || 'connecting'); },
+          onDebug: function () {}
+        };
+        // 启动（WebRTC：内部 getUserMedia + RTCPeerConnection；getUserMedia 触发 ArkWeb onPermissionRequest）
+        Conversation.startSession(options).then(function (c) {
+          conv = c;
+        }).catch(function (err) {
+          conv = null;
+          var msg = (err && err.message) ? err.message : ('startSession failed');
+          hb().onStatus('error', msg);
+          showError(msg);
+        });
+      };
+
+      // —— 控制（ArkTS runJavaScript 调）——
+      window.endVoice = function () {
+        stopWave();
+        if (conv) {
+          var c = conv; conv = null;
+          try { c.endSession(); } catch (e) {}
+        }
+      };
+      window.toggleMute = function (muted) {
+        if (conv) { try { conv.setMicMuted(!!muted); } catch (e) {} }
+      };
+      window.sendUserText = function (text) {
+        if (conv && text) { try { conv.sendUserMessage(text); } catch (e) {} }
+      };
+      // 上下文回灌（ArkTS→voice）：非打断式背景上下文
+      window.pushContext = function (text) {
+        if (conv && text) { try { conv.sendContextualUpdate(text); } catch (e) {} }
+      };
+      // 上下文回灌（ArkTS→voice）：当作用户文本（触发 agent 回应；权限请求/ready 事件走此通道）
+      window.pushText = function (text) {
+        if (conv && text) { try { conv.sendUserMessage(text); } catch (e) {} }
+      };
+      window.applyTheme = function (isDark) {
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      };
+
+      // 通知 ArkTS：voice.html 就绪（ArkTS 收到后按需 bootVoice）
+      try { hb().onReady(); } catch (e) {}
+    })();
+  </script>
+</body>
+</html>

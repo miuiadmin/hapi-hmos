@@ -15,6 +15,10 @@
     {
       "name": "permission_internet_reason",
       "value": "连接 Hapi Hub 以远程控制 AI 编码 agent"
+    },
+    {
+      "name": "permission_microphone_reason",
+      "value": "语音对话模式下采集麦克风音频，与 ElevenLabs 语音助手实时通话"
     }
   ]
 }

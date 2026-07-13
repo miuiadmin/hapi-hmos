@@ -10,6 +10,8 @@ export class PreferenceKeys {
   static readonly TERMINAL_TOOL_DISPLAY_MODE: string = 'hapi_terminal_tool_display_mode';   // 终端工具卡片显示模式（'compact'|'detailed'，默认 compact：仅 header）
   static readonly LANGUAGE: string = 'hapi_lang';   // 语言选择（'system'|'zh-CN'|'en'，默认 system 跟随系统）
   static readonly RECENT_SKILLS: string = 'hapi_recent_skills';   // $ 技能最近使用 map（JSON name→timestamp，上限 200）
+  static readonly VOICE_LANG: string = 'hapi_voice_lang';   // 语音识别语言（locale 码，如 'zh-CN'；''=自动检测）
+  static readonly VOICE_ID: string = 'hapi_voice_id';   // 语音声音（ElevenLabs voice id；''=Hub 默认 agent）
 
   // per-session 输入草稿 key（hapi_draft_<sessionId>）：草稿随会话存，切换/重进恢复，发送即清。
   static draftKey(sessionId: string): string {

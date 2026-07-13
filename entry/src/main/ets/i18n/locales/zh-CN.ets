@@ -39,6 +39,11 @@ export const zhCN: Record<string, string> = {
   'settings.chat.terminalToolDisplay': '终端工具卡片',
   'settings.chat.terminalToolDisplay.compact': '简洁（仅命令）',
   'settings.chat.terminalToolDisplay.detailed': '详细（显示输出预览）',
+  'settings.voice.title': '语音',
+  'settings.voice.language': '识别语言',
+  'settings.voice.voice': '声音',
+  'settings.voice.autoDetect': '自动检测',
+  'settings.voice.hubDefault': 'Hub 默认',
   'settings.hubUrl': 'Hub 地址',
   'settings.namespace': '命名空间',
   'settings.accessToken': 'Access Token',
@@ -222,6 +227,26 @@ export const zhCN: Record<string, string> = {
   'terminal.pasteEmpty': '剪贴板为空',
   'terminal.quotaExceeded': '终端数已达上限（最多 {max}）',
 
+  // —— 语音页（ElevenLabs Conversational AI）——
+  'voice.title': '语音',
+  'voice.state.idle': '未开始',
+  'voice.state.connecting': '连接中…',
+  'voice.state.connected': '已连接',
+  'voice.state.error': '连接错误',
+  'voice.sessionInactive': '会话未活跃',
+  'voice.notAllowed': '未开通语音',
+  'voice.tokenFailed': '获取语音令牌失败',
+  'voice.micDenied': '麦克风未授权',
+  'voice.micDeniedHint': '请在系统设置中授予麦克风权限',
+  'voice.retry': '重试',
+  'voice.inputPlaceholder': '输入文字…',
+  'voice.endCall': '挂断',
+  'voice.label.connecting': '连接中…',
+  'voice.label.listening': '聆听中',
+  'voice.label.speaking': '说话中',
+  'voice.label.ended': '通话已结束',
+  'voice.label.error': '出错',
+
   // —— 文件查看页 ——
   'fileViewer.fallbackTitle': '文件',
   'fileViewer.loading': '加载文件…',
@@ -313,6 +338,7 @@ export const zhCN: Record<string, string> = {
   'sessionMenu.saving': '保存中…',
   'sessionMenu.files': '文件',
   'sessionMenu.terminal': '终端',
+  'sessionMenu.voice': '语音',
 
   // —— 会话配置 overlay ——
   'sessionConfig.title': '会话配置',
@@ -366,6 +392,7 @@ export const zhCN: Record<string, string> = {
 
   // —— 类型 / 枚举显示标签（permission/collaboration/sessionType/spawn/resume 错误）——
   'types.default': '默认',
+  'types.voice.tokenParseFailed': '语音令牌解析失败',
   'types.auto': '自动',
   'types.sessionSimple': '普通',
   'types.sessionWorktree': '工作树',

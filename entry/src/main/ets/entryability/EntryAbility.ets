@@ -11,6 +11,7 @@ import { AppStorageKeys } from '../config/Keys';
 import { ThemeService } from '../theme/ThemeService';
 import { I18nService } from '../i18n/I18nService';
 import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
+import { VoiceSettingsService } from '../services/VoiceSettingsService';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -47,6 +48,8 @@ export default class EntryAbility extends UIAbility {
     await I18nService.init(this.context);
     // 终端工具卡片显示模式须在 loadContent 前从持久化读回（ToolCard 首帧即用正确模式，避默认 compact 闪一下）
     await TerminalToolDisplayService.init();
+    // 语音语言/声音须在 loadContent 前从持久化读回（VoicePage boot 即用，避默认声闪一下）
+    await VoiceSettingsService.init();
     // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
     await getGeneratedImageCache().initialize(this.context);
     // 按登录态选首屏

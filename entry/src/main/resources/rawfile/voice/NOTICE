@@ -1,0 +1,53 @@
+voice/ — 语音页 Web 组件托管资源
+================================================
+
+本目录托管语音页（VoicePage）运行所需的第三方 JS 库 + 自写 HTML，由 ArkWeb 在 Web 组件内加载。
+语音数据面（WebRTC 双向音频、ElevenLabs conversation 生命周期）全在 Web 组件内的同一 JS 上下文运行，
+不过 ArkTS↔JS 桥；ArkTS 仅经 runJavaScript 控制面（bootVoice/endVoice/pushContext/pushText/applyTheme）。
+
+------------------------------------------------------------
+第三方库（vendored，与 AGPL-3.0 兼容）
+------------------------------------------------------------
+
+1. @elevenlabs/client  — @elevenlabs/client@0.13.0
+   文件: elevenlabs-client.min.js（esbuild 自建 IIFE 单文件，global 名 ElevenLabsClient）
+   来源: https://www.npmjs.com/package/@elevenlabs/client
+   协议: MIT — Copyright (c) 2025 ElevenLabs
+   用途: ElevenLabs Conversational AI 框架无关客户端（Conversation.startSession/endSession/
+         sendUserMessage/sendContextualUpdate/setMicMuted + onConnect/onDisconnect/onMessage/
+         onError/onStatusChange/onModeChange 回调）。上游 web 用 @elevenlabs/react 的
+         useConversation hook，本目录直接用其底层 Conversation 类（无 React 依赖）。
+
+   打包方式：临时目录 npm i @elevenlabs/client@0.13.0 →
+     esbuild src.js --bundle --format=iife --global-name=ElevenLabsClient \
+       --minify --target=es2020 --platform=browser
+   （src.js = `export * from '@elevenlabs/client'`）。内联传递依赖：
+     - @elevenlabs/types@0.4.0（MIT，ElevenLabs）
+     - livekit-client@2.20.1（Apache-2.0，LiveKit — WebRTC 传输层）
+
+   ⚠️ 版本锁定：上游 web bun.lock 锁 @elevenlabs/client@0.13.0（peer livekit-client@^2.11.4，
+      实际解析到 2.20.1）。上游升级时需重新打包同步。
+
+2. livekit-client  — livekit-client@2.20.1（内联进上面 IIFE，无独立文件）
+   来源: https://www.npmjs.com/package/livekit-client
+   协议: Apache-2.0 — Copyright (c) LiveKit
+   用途: WebRTC 信令与音视频传输（@elevenlabs/client 的底层传输；不直接对接，协议语义对齐上游）
+
+MIT / Apache-2.0 均与本项目 AGPL-3.0 兼容；保留上述版权与许可声明（合规）。
+
+------------------------------------------------------------
+自写文件
+------------------------------------------------------------
+
+voice.html — 语音页 Web 组件入口：
+  - 托管 ElevenLabsClient.Conversation 生命周期（移植 hapi web/src/realtime/RealtimeVoiceSession.tsx）
+  - 暴露 window.{bootVoice, endVoice, sendUserText, pushContext, pushText, applyTheme} 供 ArkTS runJavaScript 调用
+  - 经 window.HostBridge（ArkTS javaScriptProxy 注入）回报 onReady/onStatus/onMode
+    及 client tool 派发 onClientToolSent/onClientToolPerm（messageCodingAgent/processPermissionRequest）
+  - 协议权威来源：参考源码/hapi/web/src/realtime/（只读对照）+ shared/src/voice.ts（agent 配置）
+
+  ⚠️ ArkWeb 权限命门：Web 组件内 getUserMedia 走通需
+     1) module.json5 声明 ohos.permission.MICROPHONE
+     2) 运行时 ensureMicrophonePermission 拿系统授权
+     3) Web 组件 .onPermissionRequest 钩子 grant（参考 berry3 Index.ets L9695 注释：
+        grant() 仅放行 ArkWeb 层；无系统授权则 getUserMedia 抛 NotAllowedError）

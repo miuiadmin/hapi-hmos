@@ -38,6 +38,11 @@ export const en: Record<string, string> = {
   'settings.chat.terminalToolDisplay': 'Terminal Tool Cards',
   'settings.chat.terminalToolDisplay.compact': 'Compact (command only)',
   'settings.chat.terminalToolDisplay.detailed': 'Detailed (show output preview)',
+  'settings.voice.title': 'Voice',
+  'settings.voice.language': 'Recognition language',
+  'settings.voice.voice': 'Voice',
+  'settings.voice.autoDetect': 'Auto-detect',
+  'settings.voice.hubDefault': 'Hub default',
   'settings.hubUrl': 'Hub URL',
   'settings.namespace': 'Namespace',
   'settings.accessToken': 'Access Token',
@@ -221,6 +226,26 @@ export const en: Record<string, string> = {
   'terminal.pasteEmpty': 'Clipboard is empty',
   'terminal.quotaExceeded': 'Terminal limit reached (max {max})',
 
+  // —— Voice (ElevenLabs Conversational AI) ——
+  'voice.title': 'Voice',
+  'voice.state.idle': 'Idle',
+  'voice.state.connecting': 'Connecting…',
+  'voice.state.connected': 'Connected',
+  'voice.state.error': 'Connection error',
+  'voice.sessionInactive': 'Session inactive',
+  'voice.notAllowed': 'Voice not enabled',
+  'voice.tokenFailed': 'Failed to get voice token',
+  'voice.micDenied': 'Microphone not authorized',
+  'voice.micDeniedHint': 'Please grant microphone permission in system settings',
+  'voice.retry': 'Retry',
+  'voice.inputPlaceholder': 'Type a message…',
+  'voice.endCall': 'End call',
+  'voice.label.connecting': 'Connecting…',
+  'voice.label.listening': 'Listening',
+  'voice.label.speaking': 'Speaking',
+  'voice.label.ended': 'Call ended',
+  'voice.label.error': 'Error',
+
   // —— File viewer ——
   'fileViewer.fallbackTitle': 'File',
   'fileViewer.loading': 'Loading file…',
@@ -312,6 +337,7 @@ export const en: Record<string, string> = {
   'sessionMenu.saving': 'Saving…',
   'sessionMenu.files': 'Files',
   'sessionMenu.terminal': 'Terminal',
+  'sessionMenu.voice': 'Voice',
 
   // —— Session config overlay ——
   'sessionConfig.title': 'Session Config',
@@ -365,6 +391,7 @@ export const en: Record<string, string> = {
 
   // —— Type / enum display labels ——
   'types.default': 'Default',
+  'types.voice.tokenParseFailed': 'Failed to parse voice token',
   'types.auto': 'Auto',
   'types.sessionSimple': 'Simple',
   'types.sessionWorktree': 'Worktree',

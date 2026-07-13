@@ -29,6 +29,11 @@
       "name": "TerminalPage",
       "pageSourceFile": "src/main/ets/pages/TerminalPage.ets",
       "buildFunction": "TerminalPageBuilder"
+    },
+    {
+      "name": "VoicePage",
+      "pageSourceFile": "src/main/ets/pages/VoicePage.ets",
+      "buildFunction": "VoicePageBuilder"
     }
   ]
 }

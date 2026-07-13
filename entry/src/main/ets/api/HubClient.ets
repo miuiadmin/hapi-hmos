@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t } from '../i18n/I18nService';
@@ -703,6 +703,44 @@ export class HubClient {
     const body: Record<string, Object> = { path: path };
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/upload/delete`, body, 'jwt');
+    return resp.success;
+  }
+
+  // —— 语音（Voice），对齐 hub web/routes/voice.ts（只读对照，协议权威）——
+  //   Hub 代 ElevenLabs 换 conversation token（客户端不持 ElevenLabs 凭据）。
+  //   voiceId 非空才随 body 发（schema 全 optional；空串等同不发，服务端按默认 agent 路由）。
+  //   成功 → { allowed:true, token, agentId }；失败/未配 API key → { allowed:false, error }，不抛（VoicePage 据 error 显态）。
+  async fetchVoiceToken(voiceId: string = ''): Promise<VoiceTokenResult> {
+    const body: Record<string, Object> = {};
+    if (voiceId !== '') {
+      body['voiceId'] = voiceId;
+    }
+    const resp = await this.request(http.RequestMethod.POST, '/api/voice/token', body, 'jwt');
+    const httpError: string = resp.errorMessage !== undefined ? resp.errorMessage : '';
+    return parseVoiceTokenResponse(resp.data, httpError);
+  }
+
+  // 拉可用声音列表（GET /api/voice/voices → { voices: [...] }，Hub 已 snake→camel）。
+  //   含用户克隆声；失败/未配 API key → []（hub 路由本身返空数组，不抛）。
+  async fetchVoices(): Promise<VoiceItem[]> {
+    const resp = await this.request(http.RequestMethod.GET, '/api/voice/voices', undefined, 'jwt');
+    if (!resp.success) {
+      return [];
+    }
+    return parseVoicesResponse(resp.data);
+  }
+
+  // 上报语音遥测（POST /api/voice/telemetry，对照 hub telemetryEventSchema）。
+  //   stage/message 必填；sessionId/voiceId/language/details 非空才随 body 发。fire-and-forget，成功与否不阻塞 UI。
+  async sendVoiceTelemetry(ev: VoiceTelemetryEvent): Promise<boolean> {
+    const body: Record<string, Object> = { stage: ev.stage, message: ev.message };
+    if (ev.sessionId !== '') { body['sessionId'] = ev.sessionId; }
+    if (ev.voiceId !== '') { body['voiceId'] = ev.voiceId; }
+    if (ev.language !== '') { body['language'] = ev.language; }
+    // details 非空对象才发（schema z.record().optional()；空对象 {} 合法但无意义，省略）
+    const dk: string[] = Object.keys(ev.details);
+    if (dk.length > 0) { body['details'] = ev.details as Object; }
+    const resp = await this.request(http.RequestMethod.POST, '/api/voice/telemetry', body, 'jwt');
     return resp.success;
   }
 }

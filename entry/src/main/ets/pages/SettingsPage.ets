@@ -8,6 +8,9 @@ import { fs, paletteOf, PaletteColors, getThemeState, ThemeService, ThemeMode, F
 import { TerminalToolDisplayService, TerminalToolDisplayMode } from '../services/TerminalToolDisplayService';
 import { showToast } from '../utils/Toast';
 import { t, I18nService, LanguageChoice } from '../i18n/I18nService';
+import { VoiceSettingsService } from '../services/VoiceSettingsService';
+import { VOICE_LANGUAGES, VoiceLanguage, findLanguageByCode, getLanguageDisplayName } from '../chat/VoiceLanguages';
+import { VOICE_PRESETS, VoicePreset, getPresetDisplayName } from '../chat/VoiceVoices';
 
 // 设置页（NavDestination）—— 主题/字号/语言/输入 + 连接信息 + 关于 + 退出登录
 // UI 对照 chatcube 设置类页面（NavDestination + 分组信息行 + 危险操作按钮），V2 状态管理
@@ -26,6 +29,8 @@ struct SettingsPage {
   @Local enterToSend: boolean = false;       // 回车发送（默认关；设置页 Toggle 改 + 持久化）
   @Local versionName: string = '';           // 关于：版本号（bundleManager 取）
   @Local langChoice: LanguageChoice = 'system';   // 语言选择高亮用（与 I18nService.currentChoice 同步）
+  @Local voiceSheetOpen: boolean = false;          // 语音设置选择器 sheet 开关（bindSheet 双向）
+  @Local voiceSheetMode: 'lang' | 'voice' = 'lang'; // 当前 sheet 内容：识别语言 / 声音
 
   // 主题（读 @Trace isDark/mode 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -46,6 +51,35 @@ struct SettingsPage {
   // 终端工具卡片显示模式（读 @Trace mode 建立刷新依赖；切换即时重渲染 ✓ 高亮）
   private get terminalToolMode(): TerminalToolDisplayMode {
     return TerminalToolDisplayService.currentMode;
+  }
+
+  // —— 语音设置（读 VoiceSettingsService @Trace；切换即时重渲染，下次进语音页生效）——
+  // 当前识别语言显示名（''=自动检测）
+  private get voiceLangLabel(): string {
+    const lang: VoiceLanguage | null = findLanguageByCode(VoiceSettingsService.currentLang);
+    if (lang === null) { return t('settings.voice.autoDetect'); }
+    return getLanguageDisplayName(lang);
+  }
+  // 当前声音显示名（''=Hub 默认；预设 id 取本地化名）
+  private get voiceIdLabel(): string {
+    const id: string = VoiceSettingsService.currentVoiceId;
+    if (id === '') { return t('settings.voice.hubDefault'); }
+    return getPresetDisplayName(id, I18nService.locale);
+  }
+  // 打开选择器（mode 区分语言/声音）
+  private openVoiceSheet(mode: 'lang' | 'voice'): void {
+    this.voiceSheetMode = mode;
+    this.voiceSheetOpen = true;
+  }
+  // 选识别语言：持久化 + 关 sheet（@Trace 改 → voiceLangLabel 即时刷新）
+  private pickLang(code: string): void {
+    VoiceSettingsService.setLang(code);
+    this.voiceSheetOpen = false;
+  }
+  // 选声音：持久化 + 关 sheet
+  private pickVoice(id: string): void {
+    VoiceSettingsService.setVoice(id);
+    this.voiceSheetOpen = false;
   }
 
   // 切终端工具卡片显示：setMode 改 mode @Trace（全量 ToolCard 重渲染）+ 持久化
@@ -254,6 +288,102 @@ struct SettingsPage {
     .alignItems(VerticalAlign.Center)
   }
 
+  // 语音设置项行（label + 当前值 + ›；tap 开选择器 sheet）
+  @Builder
+  private VoicePickerRow(label: string, value: string, onTap: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+      Text(value)
+        .fontSize(fs(14))
+        .fontColor(this.c.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '55%' })
+      Text('›')
+        .fontSize(fs(16))
+        .fontColor(this.c.textTertiary)
+        .margin({ left: 6 })
+    }
+    .width('100%')
+    .height(54)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { onTap(); })
+  }
+
+  // 选择器选项行（label + 当前选中 ✓）
+  @Builder
+  private PickerOptionRow(label: string, selected: boolean, onSelect: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+      if (selected) {
+        Text('✓')
+          .fontSize(fs(16))
+          .fontColor(this.c.primary)
+      }
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { onSelect(); })
+  }
+
+  // 语音设置选择器 sheet（语言/声音两态；Scroll 承载长列表，对照 ImagePreviewSheet bindSheet 范式）
+  @Builder
+  private VoicePickerSheet() {
+    Column() {
+      Row() {
+        Text(this.voiceSheetMode === 'lang' ? t('settings.voice.language') : t('settings.voice.voice'))
+          .fontSize(fs(16))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.c.textPrimary)
+          .layoutWeight(1)
+        Text('✕')
+          .fontSize(fs(18))
+          .fontColor(this.c.textSecondary)
+          .onClick(() => { this.voiceSheetOpen = false; })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 14, bottom: 12 })
+      .backgroundColor(this.c.bg)
+
+      Scroll() {
+        Column() {
+          if (this.voiceSheetMode === 'lang') {
+            ForEach(VOICE_LANGUAGES, (lang: VoiceLanguage) => {
+              this.PickerOptionRow(getLanguageDisplayName(lang),
+                VoiceSettingsService.currentLang === lang.code,
+                (): void => { this.pickLang(lang.code); })
+            }, (lang: VoiceLanguage) => lang.code)
+          } else {
+            this.PickerOptionRow(t('settings.voice.hubDefault'),
+              VoiceSettingsService.currentVoiceId === '',
+              (): void => { this.pickVoice(''); })
+            ForEach(VOICE_PRESETS, (v: VoicePreset) => {
+              this.PickerOptionRow(getPresetDisplayName(v.id, I18nService.locale),
+                VoiceSettingsService.currentVoiceId === v.id,
+                (): void => { this.pickVoice(v.id); })
+            }, (v: VoicePreset) => v.id)
+          }
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+      }
+      .layoutWeight(1)
+      .backgroundColor(this.c.bg)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.c.bg)
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -310,6 +440,22 @@ struct SettingsPage {
         }
         .width('100%')
         .backgroundColor(this.c.bg)
+
+        // 语音分组（识别语言 + 声音；tap 开 sheet 选择器，对照上游 voice 设置。下次进语音页生效）
+        this.SectionHeader(t('settings.voice.title'))
+        Column() {
+          this.VoicePickerRow(t('settings.voice.language'), this.voiceLangLabel, (): void => { this.openVoiceSheet('lang'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.VoicePickerRow(t('settings.voice.voice'), this.voiceIdLabel, (): void => { this.openVoiceSheet('voice'); })
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+        .bindSheet(this.voiceSheetOpen!!, this.VoicePickerSheet(), {
+          height: SheetSize.LARGE,
+          detents: [SheetSize.LARGE],
+          backgroundColor: this.c.bg,
+          onDisappear: () => { this.voiceSheetOpen = false; }
+        })
 
         // 连接信息分组
         this.SectionHeader(t('settings.section.connection'))
