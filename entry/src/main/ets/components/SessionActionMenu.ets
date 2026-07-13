@@ -23,11 +23,16 @@ export struct SessionActionMenu {
   @Param active: boolean = true;
   // 动作面板显隐（父控制开；onClose 回写关）
   @Param open: boolean = false;
+  // 是否在面板顶部渲染「文件 / 终端」导航行（仅对话页 ⋯ 传 true；列表长按默认 false 不显）
+  @Param showNavigation: boolean = false;
 
   // 成功回调（父决定后续动作）
   @Event onRenamed: (newName: string) => void = (newName: string) => {};
   @Event onArchived: () => void = () => {};
   @Event onDeleted: () => void = () => {};
+  // 导航行回调（仅 showNavigation=true 时触发；父 push Files/Terminal 页）
+  @Event onOpenFiles: () => void = () => {};
+  @Event onOpenTerminal: () => void = () => {};
   // 动作面板关闭回写（滑掉/蒙层/选了重命名/归档/删除）
   @Event onClose: () => void = () => {};
 
@@ -195,6 +200,33 @@ export struct SessionActionMenu {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
         .padding({ left: 20, right: 20, top: 16, bottom: 8 })
+
+      // 导航行（仅对话页 showNavigation=true；终端行 inactive 置灰——非活跃会话无可用 CLI）
+      if (this.showNavigation) {
+        Row() {
+          Text(t('sessionMenu.files')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onClose(); this.onOpenFiles(); })
+
+        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+
+        Row() {
+          Text(t('sessionMenu.terminal')).fontSize(fs(16))
+            .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .opacity(this.active ? 1 : 0.5)
+        .onClick(() => { if (this.active) { this.onClose(); this.onOpenTerminal(); } })
+
+        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+      }
 
       Row() {
         Text(t('sessionMenu.rename')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)

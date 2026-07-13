@@ -205,6 +205,16 @@ export const zhCN: Record<string, string> = {
   'terminal.cliDisconnected': 'CLI 已断开',
   'terminal.inputPlaceholder': '输入命令…',
   'terminal.send': '发送',
+  'terminal.copy': '复制',
+  'terminal.paste': '粘贴',
+  'terminal.selectAll': '全选',
+  'terminal.find': '查找',
+  'terminal.findPlaceholder': '查找…',
+  'terminal.copySuccess': '已复制',
+  'terminal.copyFailed': '复制失败',
+  'terminal.noSelection': '未选中文本',
+  'terminal.pasteEmpty': '剪贴板为空',
+  'terminal.quotaExceeded': '终端数已达上限（最多 {max}）',
 
   // —— 文件查看页 ——
   'fileViewer.fallbackTitle': '文件',
@@ -295,6 +305,8 @@ export const zhCN: Record<string, string> = {
   'sessionMenu.renameSheetTitle': '重命名会话',
   'sessionMenu.save': '保存',
   'sessionMenu.saving': '保存中…',
+  'sessionMenu.files': '文件',
+  'sessionMenu.terminal': '终端',
 
   // —— 会话配置 overlay ——
   'sessionConfig.title': '会话配置',

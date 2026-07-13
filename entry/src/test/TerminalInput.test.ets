@@ -9,6 +9,7 @@ import {
   applyModifierState,
   shouldResetModifiers,
   uuid,
+  classifyTerminalError,
   ModifierState
 } from '../main/ets/chat/TerminalInput';
 
@@ -154,6 +155,70 @@ export default function terminalInputTest(): void {
         expect(seen.has(id)).assertEqual(false);
         seen.add(id);
       }
+    });
+  });
+
+  // classifyTerminalError — terminal:error 文案分类（对照 hub/src/socket/handlers/terminal.ts 真实文案常量）。
+  //   Hub 无 terminal:quota 事件：配额超限走 error 文案。本测试用 Hub 真实字符串逐条断言分类 + max 提取。
+  describe('classifyTerminalError — 配额 (quota)', () => {
+    it('socket 级配额文案 → quota + max 提取', 0, () => {
+      const info = classifyTerminalError('Too many terminals open (max 4).');
+      expect(info.kind).assertEqual('quota');
+      expect(info.max).assertEqual(4);
+    });
+    it('session 级配额文案 → quota + max 提取', 0, () => {
+      const info = classifyTerminalError('Too many terminals open for this session (max 4).');
+      expect(info.kind).assertEqual('quota');
+      expect(info.max).assertEqual(4);
+    });
+    it('不同上限数值正确提取', 0, () => {
+      const info = classifyTerminalError('Too many terminals open (max 8).');
+      expect(info.kind).assertEqual('quota');
+      expect(info.max).assertEqual(8);
+    });
+    it('大小写无关（"TOO MANY TERMINALS"）', 0, () => {
+      const info = classifyTerminalError('too many terminals open (max 2).');
+      expect(info.kind).assertEqual('quota');
+      expect(info.max).assertEqual(2);
+    });
+    it('配额文案缺 (max N) → quota 但 max=-1', 0, () => {
+      // 防御：文案改版丢数字时仍归 quota，max 留 -1（UI 回落通用配额文案）
+      const info = classifyTerminalError('Too many terminals open.');
+      expect(info.kind).assertEqual('quota');
+      expect(info.max).assertEqual(-1);
+    });
+  });
+
+  describe('classifyTerminalError — 非配额分类', () => {
+    it('"Session is inactive or unavailable." → inactive', 0, () => {
+      expect(classifyTerminalError('Session is inactive or unavailable.').kind).assertEqual('inactive');
+    });
+    it('"CLI is not connected for this session." → cli', 0, () => {
+      expect(classifyTerminalError('CLI is not connected for this session.').kind).assertEqual('cli');
+    });
+    it('"CLI disconnected." → cli', 0, () => {
+      expect(classifyTerminalError('CLI disconnected.').kind).assertEqual('cli');
+    });
+    it('"Terminal ID is already in use." → generic', 0, () => {
+      const info = classifyTerminalError('Terminal ID is already in use.');
+      expect(info.kind).assertEqual('generic');
+      expect(info.max).assertEqual(-1);
+    });
+  });
+
+  describe('classifyTerminalError — 边界', () => {
+    it('空串 → generic', 0, () => {
+      expect(classifyTerminalError('').kind).assertEqual('generic');
+    });
+    it('未知文案 → generic', 0, () => {
+      const info = classifyTerminalError('Connection error');
+      expect(info.kind).assertEqual('generic');
+      expect(info.max).assertEqual(-1);
+    });
+    it('非配额类 max 恒为 -1', 0, () => {
+      expect(classifyTerminalError('Session is inactive or unavailable.').max).assertEqual(-1);
+      expect(classifyTerminalError('CLI disconnected.').max).assertEqual(-1);
+      expect(classifyTerminalError('Terminal ID is already in use.').max).assertEqual(-1);
     });
   });
 }

@@ -1761,23 +1761,7 @@ struct ChatPage {
         .height(40)
         .textAlign(TextAlign.Center)
         .onClick(() => { this.exportConversation(); })
-      // 文件浏览（git 改动 / 目录树 / 搜索；对照 web /sessions/$id/files）
-      Text('📁')
-        .fontSize(fs(17))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.openFiles(); })
-      // 终端（session 工作目录开交互 shell；对照 web /sessions/$id/terminal；inactive 置灰）
-      Text('>_')
-        .fontSize(fs(15))
-        .fontColor(this.isActive ? this.c.textSecondary : this.c.textTertiary)
-        .width(36)
-        .height(40)
-        .opacity(this.isActive ? 1 : 0.4)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.openTerminal(); })
+      // 文件 📁 / 终端 >_ 已收纳进 ⋯ 会话动作面板（showNavigation）—— 顶栏瘦身，对照上游 web 顶栏密度
       // 对话大纲（用户提问列表，tap 跳转；对照 web HappyThread ConversationOutlinePanel）
       Text('📋')
         .fontSize(fs(17))
@@ -2023,6 +2007,9 @@ struct ChatPage {
           title: this.sessionTitle,
           active: this.isActive,
           open: this.menuOpen,
+          showNavigation: true,
+          onOpenFiles: () => { this.openFiles(); },
+          onOpenTerminal: () => { this.openTerminal(); },
           onClose: () => { this.menuOpen = false; },
           onRenamed: (name: string) => { this.sessionTitle = name; },
           onArchived: () => { this.isActive = false; },

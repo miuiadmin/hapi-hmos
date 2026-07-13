@@ -32,15 +32,17 @@
 <body>
   <div id="term"></div>
 
-  <!-- vendored（见 NOTICE）：xterm + addon-fit + socket.io-client -->
+  <!-- vendored（见 NOTICE）：xterm + addon-fit + addon-search + socket.io-client -->
   <script src="xterm.min.js"></script>
   <script src="xterm-addon-fit.min.js"></script>
+  <script src="xterm-addon-search.min.js"></script>
   <script src="socket.io.min.js"></script>
   <script>
     'use strict';
     // —— 全局状态 ——
     var term = null;            // Terminal 实例
     var fitAddon = null;        // FitAddon 实例
+    var searchAddon = null;     // SearchAddon 实例（查找；鸿蒙增值）
     var socket = null;          // socket.io Socket（/terminal namespace）
     var cfg = null;             // { hubUrl, jwt, sessionId, terminalId, theme }
     var resizeObserver = null;
@@ -57,6 +59,10 @@
       // 恒传 number（-1 = 无退出码），避免 ArkTS 侧 number|null 联合（ArkTS 用 |undefined，proxy 编码不一致）
       var c = (code === null || code === undefined) ? -1 : code;
       try { var h = hb(); if (h && h.onExit) { h.onExit(c); } } catch (e) {}
+    }
+    // 复制选区：ArkTS 调 copySelection() → 这里读 term.getSelection() 经桥回传（免 runJavaScript 回调）
+    function cbCopy(text) {
+      try { var h = hb(); if (h && h.onCopy) { h.onCopy(text ? String(text) : ''); } } catch (e) {}
     }
 
     // 仅当前 terminalId 的事件才处理（对齐上游 isCurrentTerminal，防止跨实例串扰）
@@ -89,6 +95,14 @@
       term.loadAddon(fitAddon);
       term.open(document.getElementById('term'));
       try { fitAddon.fit(); } catch (e) {}
+
+      // 查找插件（鸿蒙增值；加载失败不影响终端/复制/粘贴）
+      try {
+        if (typeof SearchAddon !== 'undefined') {
+          searchAddon = new SearchAddon.SearchAddon();
+          term.loadAddon(searchAddon);
+        }
+      } catch (e) {}
 
       // 用户键盘输入 → CLI（数据面，直连）
       term.onData(function (d) {
@@ -181,6 +195,37 @@
       }
     };
 
+    // —— 鸿蒙增值动作（⋯ 菜单触发）——
+    // 复制选区：读 term.getSelection() 经 cbCopy 桥回传 ArkTS（空串=无选区，ArkTS 侧 toast）
+    window.copySelection = function () {
+      var s = term ? (term.getSelection() || '') : '';
+      cbCopy(s);
+    };
+    // 全选（移动端拖选不稳，全选+复制是保底路径）
+    window.selectAllTerm = function () {
+      try { if (term) { term.selectAll(); } } catch (e) {}
+    };
+    // 查找（SearchAddon；空 query → 清高亮）
+    window.findNext = function (q, caseSensitive) {
+      try {
+        if (!searchAddon) { return; }
+        var query = (typeof q === 'string') ? q : '';
+        if (query === '') { searchAddon.clearDecorations(); return; }
+        searchAddon.findNext(query, { caseSensitive: !!caseSensitive });
+      } catch (e) {}
+    };
+    window.findPrev = function (q, caseSensitive) {
+      try {
+        if (!searchAddon) { return; }
+        var query = (typeof q === 'string') ? q : '';
+        if (query === '') { searchAddon.clearDecorations(); return; }
+        searchAddon.findPrevious(query, { caseSensitive: !!caseSensitive });
+      } catch (e) {}
+    };
+    window.clearFind = function () {
+      try { if (searchAddon) { searchAddon.clearDecorations(); } } catch (e) {}
+    };
+
     // 主题切换：ArkTS 传 xterm theme 对象（{background, foreground, cursor, ...}）
     window.applyTheme = function (themeJson) {
       try {
@@ -210,6 +255,7 @@
       }
       if (term) { try { term.dispose(); } catch (e) {} term = null; }
       fitAddon = null;
+      searchAddon = null;
     };
   </script>
 </body>

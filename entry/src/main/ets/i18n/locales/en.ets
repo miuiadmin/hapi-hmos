@@ -204,6 +204,16 @@ export const en: Record<string, string> = {
   'terminal.cliDisconnected': 'CLI disconnected',
   'terminal.inputPlaceholder': 'Type a command…',
   'terminal.send': 'Send',
+  'terminal.copy': 'Copy',
+  'terminal.paste': 'Paste',
+  'terminal.selectAll': 'Select all',
+  'terminal.find': 'Find',
+  'terminal.findPlaceholder': 'Find…',
+  'terminal.copySuccess': 'Copied',
+  'terminal.copyFailed': 'Copy failed',
+  'terminal.noSelection': 'No text selected',
+  'terminal.pasteEmpty': 'Clipboard is empty',
+  'terminal.quotaExceeded': 'Terminal limit reached (max {max})',
 
   // —— File viewer ——
   'fileViewer.fallbackTitle': 'File',
@@ -294,6 +304,8 @@ export const en: Record<string, string> = {
   'sessionMenu.renameSheetTitle': 'Rename Session',
   'sessionMenu.save': 'Save',
   'sessionMenu.saving': 'Saving…',
+  'sessionMenu.files': 'Files',
+  'sessionMenu.terminal': 'Terminal',
 
   // —— Session config overlay ——
   'sessionConfig.title': 'Session Config',

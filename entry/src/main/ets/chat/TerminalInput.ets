@@ -100,3 +100,38 @@ export function uuid(): string {
   }
   return chars.join('');
 }
+
+// —— terminal:error 文案分类（对照 hub/src/socket/handlers/terminal.ts 的错误文案常量）——
+//   Hub 无 terminal:quota 事件：配额（maxTerminalsPerSocket/Session，默认 4）超限走
+//   terminal:error 文案。本函数把文案归为四类，供 TerminalPage 显示专用友好态（协议不变）。
+//     quota    → "Too many terminals open (max N)." / "...for this session (max N)."
+//     inactive → "Session is inactive or unavailable."
+//     cli      → "CLI is not connected for this session." / "CLI disconnected."
+//     generic  → 其余（含 "Terminal ID is already in use." 等）
+export type TerminalErrorKind = 'quota' | 'inactive' | 'cli' | 'generic';
+
+export interface TerminalErrorInfo {
+  kind: TerminalErrorKind;
+  max: number;   // 仅 kind='quota' 有意义（提取的 max）；其余为 -1
+}
+
+export function classifyTerminalError(message: string): TerminalErrorInfo {
+  const m: string = message;
+  if (/too many terminals/i.test(m)) {
+    let max: number = -1;
+    const match: RegExpMatchArray | null = m.match(/\(max (\d+)\)/);
+    if (match !== null && match.length > 1) {
+      const captured: string = match[1];
+      const parsed: number = parseInt(captured, 10);
+      if (!isNaN(parsed)) { max = parsed; }
+    }
+    return { kind: 'quota', max: max };
+  }
+  if (/inactive|unavailable/i.test(m)) {
+    return { kind: 'inactive', max: -1 };
+  }
+  if (/cli is not connected|cli disconnected/i.test(m)) {
+    return { kind: 'cli', max: -1 };
+  }
+  return { kind: 'generic', max: -1 };
+}
