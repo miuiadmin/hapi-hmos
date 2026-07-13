@@ -1695,6 +1695,7 @@ struct ChatPage {
   @Builder
   private ConfigSheet() {
     SessionConfigOverlay({
+      sessionId: this.sessionId,
       flavor: this.flavor,
       model: this.model,
       effort: this.effort,

@@ -1,6 +1,6 @@
 import { getHubClient } from '../api/HubClient';
 import { t } from '../i18n/I18nService';
-import { Machine, DirEntry, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
+import { Machine, DirEntry, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -33,6 +33,7 @@ struct NewSessionPage {
 
   // spawn 高级选项（对照上游 web NewSession 表单）
   @Local selectedModel: string = 'auto';          // 'auto'=默认（省略，agent 用自身默认）
+  @Local dynamicModels: ModelOption[] = [];        // codex/cursor/opencode 拉取的 live model 列表（claude/gemini/kimi 留空走静态）
   @Local selectedEffort: string = 'auto';          // 仅 claude；'auto'=省略
   @Local yolo: boolean = false;                    // --yolo（持久化 preferred_yolo）
   @Local selectedSessionType: string = 'simple';   // 'simple' | 'worktree'
@@ -85,6 +86,7 @@ struct NewSessionPage {
       this.yolo = prefYolo;
 
       await this.loadRecentFor(chosenId);
+      await this.refreshModels();   // 初始：按 agent + machine(+预填目录 for opencode) 拉一次 model 列表
     } catch (e) {
       this.loadError = e instanceof Error ? e.message : t('newSession.loadMachinesFailed');
     } finally {
@@ -97,7 +99,7 @@ struct NewSessionPage {
     const recent: string[] = await this.readRecent(machineId);
     this.recentPaths = recent;
     if (this.directory === '' && recent.length > 0) {
-      this.directory = recent[0];
+      this.applyDirectory(recent[0]);
     }
   }
 
@@ -107,6 +109,7 @@ struct NewSessionPage {
     this.directory = '';        // 切 machine 清空目录（不同机器路径不通用）
     this.recentPaths = [];
     this.loadRecentFor(this.selectedMachineId);
+    this.refreshModels();       // machine 变 → 重拉 codex/cursor/opencode 模型列表（loadRecentFor 预填目录后 opencode 另由 applyDirectory 再拉一次）
   }
 
   private onAgentSelected(index: number): void {
@@ -115,10 +118,19 @@ struct NewSessionPage {
     // 切 agent 重置 model/effort（对照上游 index.tsx:73-77，不同 agent 的模型/努力域不同）
     this.selectedModel = 'auto';
     this.selectedEffort = 'auto';
+    this.refreshModels();       // agent 变 → 按 新 agent 决定拉 codex/cursor/opencode 还是清空（claude/gemini/kimi）
   }
 
   private useRecentPath(path: string): void {
-    this.directory = path;
+    this.applyDirectory(path);
+  }
+
+  // 统一目录赋值入口：切目录时若 agent=opencode 重拉 model 列表（opencode 的可用模型随 cwd 变）。
+  //   codex/cursor 的模型列表只随 machine 变（machine/agent 切换时 refreshModels 已覆盖），此处不重复拉。
+  //   注：TextInput 手输路径不走此入口（避免逐键请求）；opencode 手输新路径时 model 列表保持现状，「默认」始终可用。
+  private applyDirectory(v: string): void {
+    this.directory = v;
+    if (this.selectedAgent === 'opencode') { this.refreshModels(); }
   }
 
   // —— Machine / Agent 下拉选项与索引（Select 需 options + selected idx + value 文本三件套）——
@@ -156,33 +168,85 @@ struct NewSessionPage {
     return opts;
   }
 
-  // —— Model 下拉（claude/gemini 静态预设 + 「默认」=auto；codex/cursor/opencode/kimi 仅「默认」）——
-  //   options 首项恒为「默认」(auto)，其后接 modelOptionsForAgent(agent) 的预设。codex/cursor/opencode 的
-  //   live model 列表未接（需 codex-models/cursor-models/opencode-models 端点），'auto' 即 agent 默认。
-  private modelPresets(): string[] {
-    return modelOptionsForAgent(this.selectedAgent);
+  // —— Model 下拉（「默认」=auto + claude/gemini 静态预设 + codex/cursor/opencode 动态拉取，按 id 去重）——
+  //   codex/cursor/opencode 的 live model 列表经 refreshModels() 从 Hub 拉（对应上游 codex-models /
+  //   cursor-models / opencode-models 端点）；claude/gemini/kimi 走静态预设，dynamicModels 留空。
+  //   条目顺序：[auto 默认] + modelOptionsForAgent(agent) 静态预设 + dynamicModels 动态，id 去重（auto/静态优先）。
+  private appendUnique(list: ModelOption[], id: string, label: string): void {
+    for (let i = 0; i < list.length; i++) { if (list[i].id === id) { return; } }
+    const o: ModelOption = new ModelOption();
+    o.id = id;
+    o.label = label;
+    list.push(o);
+  }
+  private modelEntries(): ModelOption[] {
+    const out: ModelOption[] = [];
+    this.appendUnique(out, MODEL_AUTO, t('newSession.model.default'));
+    const presets: string[] = modelOptionsForAgent(this.selectedAgent);
+    for (let i = 0; i < presets.length; i++) {
+      this.appendUnique(out, presets[i], modelDisplayName(this.selectedAgent, presets[i]));
+    }
+    for (let i = 0; i < this.dynamicModels.length; i++) {
+      this.appendUnique(out, this.dynamicModels[i].id, this.dynamicModels[i].label);
+    }
+    return out;
   }
   private modelIndex(): number {
-    if (this.selectedModel === 'auto' || this.selectedModel === '') { return 0; }
-    const presets: string[] = this.modelPresets();
-    for (let i = 0; i < presets.length; i++) {
-      if (presets[i] === this.selectedModel) { return i + 1; }
+    const entries: ModelOption[] = this.modelEntries();
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].id === this.selectedModel) { return i; }
     }
-    return 0;   // 选中的不在预设列表 → 回退「默认」
+    return 0;   // 选中的不在列表 → 回退「默认」(auto)
   }
   private modelOptions(): SelectOption[] {
-    const opts: SelectOption[] = [{ value: t('newSession.model.default') }];
-    const presets: string[] = this.modelPresets();
-    for (let i = 0; i < presets.length; i++) {
-      opts.push({ value: modelDisplayName(this.selectedAgent, presets[i]) });
-    }
+    const entries: ModelOption[] = this.modelEntries();
+    const opts: SelectOption[] = [];
+    for (let i = 0; i < entries.length; i++) { opts.push({ value: entries[i].label }); }
     return opts;
   }
   private onModelSelected(index: number): void {
-    if (index === 0) { this.selectedModel = 'auto'; return; }
-    const presets: string[] = this.modelPresets();
-    const i: number = index - 1;
-    if (i >= 0 && i < presets.length) { this.selectedModel = presets[i]; }
+    const entries: ModelOption[] = this.modelEntries();
+    if (index >= 0 && index < entries.length) { this.selectedModel = entries[index].id; }
+  }
+  // Select 折叠态显示文本：按 selectedModel 在 modelEntries() 查 label（与下拉列表项一致；动态模型的 Hub label
+  //   如 'GPT-5' 而非 id 'gpt-5'）；未命中（理论上不会，auto 必在）回落「默认」。
+  private modelValueDisplay(): string {
+    const entries: ModelOption[] = this.modelEntries();
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].id === this.selectedModel) { return entries[i].label; }
+    }
+    return t('newSession.model.default');
+  }
+
+  // 按 agent + machine（opencode 另带 cwd）拉 live model 列表 → 写 @Local dynamicModels。
+  //   claude/gemini/kimi：纯静态预设，无需拉取 → 清空。
+  //   codex：getMachineCodexModels(machineId)；cursor：getMachineCursorModels(machineId)。
+  //   opencode：依赖 cwd，directory 空 → 跳过（上游对空 cwd 不探测，避免误报）；非空 → getMachineOpencodeModels(machineId, cwd)。
+  //   失败静默 → 清空（回落「默认」=auto 单选，不阻塞建会话）。防竞态：await 后若 agent/machine 已变则丢弃过期结果。
+  private async refreshModels(): Promise<void> {
+    const agent: string = this.selectedAgent;
+    const machineId: string = this.selectedMachineId;
+    if (agent !== 'codex' && agent !== 'cursor' && agent !== 'opencode') {
+      this.dynamicModels = [];
+      return;
+    }
+    if (machineId === '') { this.dynamicModels = []; return; }
+    try {
+      let models: ModelOption[] = [];
+      if (agent === 'codex') {
+        models = await getHubClient().getMachineCodexModels(machineId);
+      } else if (agent === 'cursor') {
+        models = await getHubClient().getMachineCursorModels(machineId);
+      } else {   // opencode
+        const cwd: string = this.directory.trim();
+        if (cwd === '') { this.dynamicModels = []; return; }
+        models = await getHubClient().getMachineOpencodeModels(machineId, cwd);
+      }
+      if (this.selectedAgent !== agent || this.selectedMachineId !== machineId) { return; }   // 过期结果丢弃
+      this.dynamicModels = models;
+    } catch (e) {
+      this.dynamicModels = [];   // 静默回落
+    }
   }
 
   // —— Effort 下拉（仅 claude；'auto'=省略）——
@@ -271,7 +335,7 @@ struct NewSessionPage {
     if (p !== this.browserPath) { this.loadBrowserDir(p); }
   }
   private pickCurrentDir(): void {
-    this.directory = this.browserPath;
+    this.applyDirectory(this.browserPath);   // 走统一入口：opencode 随新 cwd 重拉 model 列表
     this.browserVisible = false;
   }
   // 目录排序：文件夹在前，再按名升序
@@ -578,12 +642,12 @@ struct NewSessionPage {
               .padding({ left: 16, right: 16 })
               .backgroundColor(this.c.bg)
 
-              // 模型（claude/gemini 静态预设 + 「默认」=auto；其余 agent 仅「默认」）
+              // 模型（「默认」=auto + claude/gemini 静态预设 + codex/cursor/opencode 动态拉取）
               this.FieldLabel(t('newSession.model'))
               Column() {
                 Select(this.modelOptions())
                   .selected(this.modelIndex())
-                  .value(modelDisplayName(this.selectedAgent, this.selectedModel))
+                  .value(this.modelValueDisplay())
                   .onSelect((index: number, text: string) => { this.onModelSelected(index); })
                   .width('100%')
                   .height(50)

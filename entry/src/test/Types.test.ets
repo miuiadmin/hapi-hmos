@@ -15,6 +15,8 @@ import {
   parseMachinesResponse,
   parseListDirectoryResponse,
   parseSpawnResponse,
+  parseCodexModelsResponse,
+  parseOpencodeModelsResponse,
   parseTeamState,
   parseTodoList,
   parseSlashCommandsResponse,
@@ -724,6 +726,80 @@ export default function typesTest(): void {
     });
     it('非法 JSON → []', 0, () => {
       expect(parseSkillsResponse('not json').length).assertEqual(0);
+    });
+  });
+
+  describe('parseCodexModelsResponse', () => {
+    it('解析 models → ModelOption[]（label=displayName，缺 displayName 回落 id）', 0, () => {
+      const r = parseCodexModelsResponse(
+        '{"models":[' +
+        '{"id":"gpt-5","displayName":"GPT-5","isDefault":true},' +
+        '{"id":"o3"}' +
+        ']}');
+      expect(r.length).assertEqual(2);
+      expect(r[0].id).assertEqual('gpt-5');
+      expect(r[0].label).assertEqual('GPT-5');
+      expect(r[1].id).assertEqual('o3');
+      expect(r[1].label).assertEqual('o3');   // 缺 displayName → 回落 id
+    });
+
+    it('过滤空 id 与 auto（UI 自加「默认」=auto 项，避免重复）', 0, () => {
+      const r = parseCodexModelsResponse(
+        '{"models":[{"id":"","displayName":"空"},{"id":"auto"},{"id":"real"}]}');
+      expect(r.length).assertEqual(1);
+      expect(r[0].id).assertEqual('real');
+    });
+
+    it('非法 JSON → []', 0, () => {
+      expect(parseCodexModelsResponse('not json').length).assertEqual(0);
+    });
+
+    it('缺 models / 非数组 → []', 0, () => {
+      expect(parseCodexModelsResponse('{"foo":1}').length).assertEqual(0);
+      expect(parseCodexModelsResponse('{"models":"nope"}').length).assertEqual(0);
+    });
+
+    it('过滤非对象项', 0, () => {
+      const r = parseCodexModelsResponse('{"models":["a",null,{"id":"ok"}]}');
+      expect(r.length).assertEqual(1);
+      expect(r[0].id).assertEqual('ok');
+    });
+  });
+
+  describe('parseOpencodeModelsResponse', () => {
+    it('解析 availableModels → ModelOption[]（id=modelId，label=name ?? modelId）', 0, () => {
+      const r = parseOpencodeModelsResponse(
+        '{"availableModels":[' +
+        '{"modelId":"anthropic/claude","name":"Claude"},' +
+        '{"modelId":"openai/gpt"}' +
+        '],"currentModelId":"anthropic/claude"}');
+      expect(r.length).assertEqual(2);
+      expect(r[0].id).assertEqual('anthropic/claude');
+      expect(r[0].label).assertEqual('Claude');
+      expect(r[1].id).assertEqual('openai/gpt');
+      expect(r[1].label).assertEqual('openai/gpt');   // 缺 name → 回落 modelId
+    });
+
+    it('过滤空 modelId 与 auto', 0, () => {
+      const r = parseOpencodeModelsResponse(
+        '{"availableModels":[{"modelId":""},{"modelId":"auto"},{"modelId":"real"}]}');
+      expect(r.length).assertEqual(1);
+      expect(r[0].id).assertEqual('real');
+    });
+
+    it('非法 JSON → []', 0, () => {
+      expect(parseOpencodeModelsResponse('not json').length).assertEqual(0);
+    });
+
+    it('缺 availableModels / 非数组 → []', 0, () => {
+      expect(parseOpencodeModelsResponse('{"foo":1}').length).assertEqual(0);
+      expect(parseOpencodeModelsResponse('{"availableModels":"nope"}').length).assertEqual(0);
+    });
+
+    it('过滤非对象项', 0, () => {
+      const r = parseOpencodeModelsResponse('{"availableModels":["a",null,{"modelId":"ok"}]}');
+      expect(r.length).assertEqual(1);
+      expect(r[0].id).assertEqual('ok');
     });
   });
 }

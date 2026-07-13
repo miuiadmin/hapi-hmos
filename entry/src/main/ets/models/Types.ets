@@ -188,15 +188,22 @@ export function agentDisplayName(flavor: string): string {
   return flavor;
 }
 
-// —— spawn 高级选项（静态枚举/预设，对照上游 web/src/components/NewSession）——
-//   model 列表：claude/gemini 用 shared/src/models.ts 静态预设；codex/cursor/opencode 走 'auto'
-//   （上游需 live model 端点 codex-models/cursor-models/opencode-models，本项目暂不接，'auto'=agent 默认）。
+// —— spawn 高级选项（静态预设 + 动态拉取，对照上游 web/src/components/NewSession + @hapi/protocol）——
+//   claude/gemini：shared/src/models.ts 静态预设（无端点）。
+//   codex/cursor/opencode：live model 端点拉取（GET .../{codex,cursor,opencode}-models[?cwd=]），
+//     解析为 ModelOption[]，UI 与静态预设合并（「默认」=auto + 静态 + 动态，去重）。
 export const MODEL_AUTO: string = 'auto';
 export const CLAUDE_MODEL_PRESETS: string[] = ['sonnet', 'sonnet[1m]', 'opus', 'opus[1m]'];
 export const GEMINI_MODEL_PRESETS: string[] = [
   'gemini-3.1-pro-preview', 'gemini-3-flash-preview',
   'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'
 ];
+
+// 动态拉取的 model 项（id=模型标识，发 spawn / setModel 用；label=显示名）。对照 CodexModelSummary / OpencodeModelSummary。
+export class ModelOption {
+  id: string = '';
+  label: string = '';
+}
 
 // 某 agent 的可选 model（不含 'auto' 前缀，UI 自加「默认」=auto）；动态 agent 返空 → 仅 'auto'
 export function modelOptionsForAgent(agent: string): string[] {
@@ -501,6 +508,69 @@ export function parseSpawnResponse(json: string): string {
     throw new Error(t('types.spawn.noSessionId'));
   }
   return sid;
+}
+
+// —— 解析 GET .../codex-models → { models: CodexModelSummary[] }（对齐 CodexModelsResponse）——
+//   CodexModelSummary = { id, displayName, isDefault, ... }。映射为 ModelOption（id, label=displayName）。
+//   跳过空 id 与 'auto'（UI 自加「默认」=auto 项，避免重复）。容错：缺 models / 非数组 / 损坏 → []。
+export function parseCodexModelsResponse(json: string): ModelOption[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  const arr = raw['models'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) {
+    return [];
+  }
+  const result: ModelOption[] = [];
+  const list = arr as Object[];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item === null || item === undefined || typeof item !== 'object') { continue; }
+    const r = item as Record<string, Object>;
+    const id = pickStr(r, 'id');
+    if (id === '' || id === MODEL_AUTO) { continue; }
+    const opt = new ModelOption();
+    opt.id = id;
+    const dn = pickStr(r, 'displayName');
+    opt.label = dn !== '' ? dn : id;
+    result.push(opt);
+  }
+  return result;
+}
+
+// —— 解析 GET .../cursor-models | opencode-models → { availableModels: OpencodeModelSummary[], currentModelId? }
+//   对齐 OpencodeModelsResponse（cursor 同形 CursorModelsResponse = OpencodeModelsResponse）。
+//   OpencodeModelSummary = { modelId, name? }。映射为 ModelOption（id=modelId, label=name ?? modelId）。
+//   跳过空 modelId 与 'auto'（上游 cursor 显式过滤 auto；opencode 同款，避免与「默认」项重复）。
+export function parseOpencodeModelsResponse(json: string): ModelOption[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  const arr = raw['availableModels'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) {
+    return [];
+  }
+  const result: ModelOption[] = [];
+  const list = arr as Object[];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item === null || item === undefined || typeof item !== 'object') { continue; }
+    const r = item as Record<string, Object>;
+    const modelId = pickStr(r, 'modelId');
+    if (modelId === '' || modelId === MODEL_AUTO) { continue; }
+    const opt = new ModelOption();
+    opt.id = modelId;
+    const nm = pickStr(r, 'name');
+    opt.label = nm !== '' ? nm : modelId;
+    result.push(opt);
+  }
+  return result;
 }
 
 // —— 解析 POST /api/sessions/:id/resume → { sessionId }（对照 web resumeSession client.ts:312）

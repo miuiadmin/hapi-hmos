@@ -382,6 +382,7 @@ export const en: Record<string, string> = {
   'api.requestFailed': 'Request failed: {detail}',
   'api.emptyImage': 'Empty image',
   'api.loadMachinesFailed': 'Failed to load machines ({code})',
+  'api.loadModelsFailed': 'Failed to load models ({code})',
   'api.browseDirFailed': 'Failed to browse directory ({code})',
   'api.spawnFailed': 'Failed to start session ({code})',
   'api.loadSessionsFailed': 'Failed to load sessions ({code})',

@@ -2,7 +2,7 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t } from '../i18n/I18nService';
@@ -312,6 +312,60 @@ export class HubClient {
       throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.spawnFailed', { code: resp.statusCode }));
     }
     return parseSpawnResponse(resp.data);   // 业务 error（type:'error'）在此抛
+  }
+
+  // —— 拉取 agent 可用 model 列表（对照 web client.ts:480-514）——
+  //   codex：CodexModelsResponse{models[]}；cursor/opencode：OpencodeModelsResponse{availableModels[]}（cursor 同形）。
+  //   machine 作用域（NewSession 选模型，opencode 需 cwd）；session 作用域（SessionConfigOverlay 改模型）。
+  //   返回 ModelOption[]（parse 已过滤 'auto'，UI 自加「默认」项）；HTTP 失败抛 Error。
+  async getMachineCodexModels(machineId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/machines/${machineId}/codex-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseCodexModelsResponse(resp.data);
+  }
+  async getSessionCodexModels(sessionId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/codex-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseCodexModelsResponse(resp.data);
+  }
+  async getMachineCursorModels(machineId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/machines/${machineId}/cursor-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseOpencodeModelsResponse(resp.data);
+  }
+  async getSessionCursorModels(sessionId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/cursor-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseOpencodeModelsResponse(resp.data);
+  }
+  // opencode 的 model 列表依赖 cwd（上游 client.ts:510-513 带 ?cwd=，按目录探测可用模型）；cwd 经 encodeURIComponent。
+  async getMachineOpencodeModels(machineId: string, cwd: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/machines/${machineId}/opencode-models?cwd=${encodeURIComponent(cwd)}`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseOpencodeModelsResponse(resp.data);
+  }
+  async getSessionOpencodeModels(sessionId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/opencode-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+    }
+    return parseOpencodeModelsResponse(resp.data);
   }
 
   async fetchSessions(): Promise<SessionSummary[]> {

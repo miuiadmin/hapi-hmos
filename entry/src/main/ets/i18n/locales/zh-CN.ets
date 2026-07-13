@@ -383,6 +383,7 @@ export const zhCN: Record<string, string> = {
   'api.requestFailed': '请求失败: {detail}',
   'api.emptyImage': '图片为空',
   'api.loadMachinesFailed': '加载机器失败 ({code})',
+  'api.loadModelsFailed': '加载模型列表失败 ({code})',
   'api.browseDirFailed': '浏览目录失败 ({code})',
   'api.spawnFailed': '启动会话失败 ({code})',
   'api.loadSessionsFailed': '加载会话失败 ({code})',
