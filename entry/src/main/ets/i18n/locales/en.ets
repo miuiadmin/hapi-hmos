@@ -192,6 +192,19 @@ export const en: Record<string, string> = {
   'files.search.noResults': 'No files match your search',
   'files.search.failed': 'Search failed',
 
+  // —— Terminal (web /sessions/$id/terminal) ——
+  'terminal.title': 'Terminal',
+  'terminal.state.connecting': 'Connecting…',
+  'terminal.state.ready': 'Connected',
+  'terminal.state.reconnecting': 'Reconnecting…',
+  'terminal.state.error': 'Connection error',
+  'terminal.state.exited': 'Process exited',
+  'terminal.exitWithCode': 'Process exited (code {code})',
+  'terminal.sessionInactive': 'Session inactive',
+  'terminal.cliDisconnected': 'CLI disconnected',
+  'terminal.inputPlaceholder': 'Type a command…',
+  'terminal.send': 'Send',
+
   // —— File viewer ——
   'fileViewer.fallbackTitle': 'File',
   'fileViewer.loading': 'Loading file…',

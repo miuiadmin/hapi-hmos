@@ -1,0 +1,44 @@
+terminal/ — 终端页 Web 组件托管资源
+================================================
+
+本目录托管终端页运行所需的第三方 JS 库 + 自写 HTML，由 ArkWeb 在 Web 组件内加载。
+渲染（xterm.js）与传输（socket.io-client）都在 Web 组件内的同一 JS 上下文运行，
+数据面（PTY 输出 → term.write / 用户输入 → terminal:write）不过 ArkTS↔JS 桥。
+
+------------------------------------------------------------
+第三方库（vendored，均为 MIT，版权头见各自 LICENSE 文件）
+------------------------------------------------------------
+
+1. xterm.js  — @xterm/xterm@6.0.0
+   文件: xterm.min.js, xterm.css
+   来源: https://www.npmjs.com/package/@xterm/xterm
+   协议: MIT（见 LICENSE.xterm）
+   用途: 终端渲染器（Terminal 类 + ANSI 解析 + canvas 渲染）
+
+2. xterm-addon-fit  — @xterm/addon-fit@0.11.0
+   文件: xterm-addon-fit.min.js
+   来源: https://www.npmjs.com/package/@xterm/addon-fit
+   协议: MIT（同 xterm.js 作者，版权头见 LICENSE.xterm）
+   用途: 按容器尺寸自测 cols/rows → term.resize
+
+3. socket.io-client  — socket.io-client@4.8.3
+   文件: socket.io.min.js
+   来源: https://www.npmjs.com/package/socket.io-client
+   协议: MIT（见 LICENSE.socketio）
+   用途: 连 Hub 的 /terminal namespace（ws-only，JWT auth）
+         版本与 Hub 端 socket.io@^4.8.3 对齐 → 协议/帧天然保真
+
+MIT 协议与本项目 AGPL-3.0 兼容；保留上述版权与许可声明（AGPL 合规）。
+
+------------------------------------------------------------
+自写文件
+------------------------------------------------------------
+
+terminal.html — 终端页 Web 组件入口：
+  - 移植 hapi web/src/hooks/useTerminalSocket.ts（socket 生命周期/事件）
+    + web/src/routes/sessions/terminal.tsx（resize/清理）为纯浏览器 JS
+  - 暴露 window.{bootTerminal, sendInput, applyTheme, fitTerminal,
+    disconnectTerminal, focusTerminal} 供 ArkTS 经 runJavaScript 调用
+  - 经 window.HostBridge（ArkTS javaScriptProxy 注入）回报
+    onReady/onError/onExit/onReconnecting
+  - 协议权威来源：参考源码/hapi/shared/src/socket.ts（只读对照）

@@ -24,6 +24,11 @@
       "name": "FileViewerPage",
       "pageSourceFile": "src/main/ets/pages/FileViewerPage.ets",
       "buildFunction": "FileViewerPageBuilder"
+    },
+    {
+      "name": "TerminalPage",
+      "pageSourceFile": "src/main/ets/pages/TerminalPage.ets",
+      "buildFunction": "TerminalPageBuilder"
     }
   ]
 }

@@ -26,6 +26,7 @@ import { getSessionSeenService } from '../services/SessionAttention';
 import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
 import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
+import { TerminalRouteParams } from './TerminalPage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
 import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -365,6 +366,14 @@ struct ChatPage {
     const p: FilesRouteParams = new FilesRouteParams();
     p.sessionId = this.sessionId;
     this.navPathStack.pushPath({ name: 'FilesPage', param: p });
+  }
+
+  // 进终端页（session 工作目录开交互 shell；对照 web /sessions/$id/terminal）
+  private openTerminal(): void {
+    if (!this.isActive || this.sessionId === '' || this.navPathStack === null) { return; }
+    const p: TerminalRouteParams = new TerminalRouteParams();
+    p.sessionId = this.sessionId;
+    this.navPathStack.pushPath({ name: 'TerminalPage', param: p });
   }
 
   // elapsed 实时 ticker：仅当 thinking 或有 running 工具卡时每秒 bump nowTick（否则不 bump，避免无谓 rebuild）
@@ -1760,6 +1769,15 @@ struct ChatPage {
         .height(40)
         .textAlign(TextAlign.Center)
         .onClick(() => { this.openFiles(); })
+      // 终端（session 工作目录开交互 shell；对照 web /sessions/$id/terminal；inactive 置灰）
+      Text('>_')
+        .fontSize(fs(15))
+        .fontColor(this.isActive ? this.c.textSecondary : this.c.textTertiary)
+        .width(36)
+        .height(40)
+        .opacity(this.isActive ? 1 : 0.4)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.openTerminal(); })
       // 对话大纲（用户提问列表，tap 跳转；对照 web HappyThread ConversationOutlinePanel）
       Text('📋')
         .fontSize(fs(17))

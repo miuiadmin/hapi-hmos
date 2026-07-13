@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+  terminal.html — 终端页 Web 组件入口（自写，AGPL-3.0）
+  移植自 hapi（参考源码/hapi，只读对照）：
+    - web/src/hooks/useTerminalSocket.ts  → socket 生命周期 + /terminal 事件接线
+    - web/src/routes/sessions/terminal.tsx → resize / 清理 / focus
+  协议权威：参考源码/hapi/shared/src/socket.ts
+  数据面（output→term.write / onData→terminal:write）在 JS 内直连，不过 ArkTS↔JS 桥；
+  控制面（ready/error/exit/reconnecting）经 window.HostBridge 回报 ArkTS。
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Terminal</title>
+  <link rel="stylesheet" href="xterm.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+    #term { height: 100%; width: 100%; padding: 4px 6px; box-sizing: border-box; }
+    /* 触屏：禁系统长按菜单 / 选区 / 点击高亮，避免误触 */
+    * {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* xterm 视口铺满 + 透明背景（由 theme.background 控制实际色） */
+    .xterm { height: 100%; }
+    .xterm-viewport { background-color: transparent !important; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+
+  <!-- vendored（见 NOTICE）：xterm + addon-fit + socket.io-client -->
+  <script src="xterm.min.js"></script>
+  <script src="xterm-addon-fit.min.js"></script>
+  <script src="socket.io.min.js"></script>
+  <script>
+    'use strict';
+    // —— 全局状态 ——
+    var term = null;            // Terminal 实例
+    var fitAddon = null;        // FitAddon 实例
+    var socket = null;          // socket.io Socket（/terminal namespace）
+    var cfg = null;             // { hubUrl, jwt, sessionId, terminalId, theme }
+    var resizeObserver = null;
+    var fitHandler = null;      // window resize 回调引用（便于注销）
+
+    // —— JS → ArkTS 桥（ArkTS 经 javaScriptProxy 注入 window.HostBridge；早期可能未就绪 → try/catch）——
+    function hb() { return (typeof window.HostBridge !== 'undefined') ? window.HostBridge : null; }
+    function cbReady() { try { var h = hb(); if (h && h.onReady) { h.onReady(); } } catch (e) {} }
+    function cbReconnecting() { try { var h = hb(); if (h && h.onReconnecting) { h.onReconnecting(); } } catch (e) {} }
+    function cbError(msg) {
+      try { var h = hb(); if (h && h.onError) { h.onError(msg ? String(msg) : 'Connection error'); } } catch (e) {}
+    }
+    function cbExit(code) {
+      // 恒传 number（-1 = 无退出码），避免 ArkTS 侧 number|null 联合（ArkTS 用 |undefined，proxy 编码不一致）
+      var c = (code === null || code === undefined) ? -1 : code;
+      try { var h = hb(); if (h && h.onExit) { h.onExit(c); } } catch (e) {}
+    }
+
+    // 仅当前 terminalId 的事件才处理（对齐上游 isCurrentTerminal，防止跨实例串扰）
+    function isCurrent(payload) { return !!payload && String(payload.terminalId) === String(cfg.terminalId); }
+
+    // —— ArkTS → JS 入口：启动终端（建 xterm + 连 socket + 接事件）——
+    // cfgJson: JSON 字符串或对象 { hubUrl, jwt, sessionId, terminalId, theme? }
+    window.bootTerminal = function (cfgJson) {
+      disconnectTerminal();   // 幂等：重复 boot 先清旧实例
+      try {
+        cfg = (typeof cfgJson === 'string') ? JSON.parse(cfgJson) : cfgJson;
+      } catch (e) { cbError('Invalid boot config'); return; }
+      if (!cfg || !cfg.hubUrl || !cfg.jwt || !cfg.sessionId || !cfg.terminalId) {
+        cbError('Missing terminal credentials.');
+        return;
+      }
+      var theme = cfg.theme || { background: '#000000', foreground: '#e6e6e6', cursor: '#e6e6e6' };
+
+      // xterm 实例
+      term = new Terminal({
+        fontFamily: 'monospace, "Cascadia Code", "Menlo", "Consolas", monospace',
+        fontSize: 13,
+        lineHeight: 1.1,
+        cursorBlink: true,
+        theme: theme,
+        scrollback: 5000,
+        convertEol: false
+      });
+      fitAddon = new FitAddon.FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(document.getElementById('term'));
+      try { fitAddon.fit(); } catch (e) {}
+
+      // 用户键盘输入 → CLI（数据面，直连）
+      term.onData(function (d) {
+        if (socket && socket.connected) {
+          socket.emit('terminal:write', { terminalId: cfg.terminalId, data: d });
+        }
+      });
+      // 尺寸变化 → CLI（resize）
+      term.onResize(function (size) {
+        if (socket && socket.connected) {
+          socket.emit('terminal:resize', { terminalId: cfg.terminalId, cols: size.cols, rows: size.rows });
+        }
+      });
+
+      // 容器尺寸自测：ResizeObserver + window resize → fit →（onResize 链式触发 socket resize）
+      fitHandler = function () { try { if (fitAddon) { fitAddon.fit(); } } catch (e) {} };
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(fitHandler);
+        resizeObserver.observe(document.getElementById('term'));
+      }
+      window.addEventListener('resize', fitHandler);
+
+      // socket.io /terminal namespace；ws-only（绕 polling 的 CORS + 明文 HTTP）；自动重连；JWT auth
+      socket = io(cfg.hubUrl + '/terminal', {
+        path: '/socket.io/',
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        auth: { token: cfg.jwt }
+      });
+
+      // 已连 socket → 发 terminal:create，等 terminal:ready 才算 ready
+      socket.on('connect', function () {
+        var c = term ? term.cols : 80;
+        var r = term ? term.rows : 24;
+        socket.emit('terminal:create', {
+          sessionId: cfg.sessionId,
+          terminalId: cfg.terminalId,
+          cols: c,
+          rows: r
+        });
+      });
+
+      socket.on('terminal:ready', function (payload) {
+        if (!isCurrent(payload)) { return; }
+        cbReady();
+      });
+
+      socket.on('terminal:output', function (payload) {
+        if (!isCurrent(payload)) { return; }
+        if (term && payload && typeof payload.data === 'string') { term.write(payload.data); }
+      });
+
+      socket.on('terminal:exit', function (payload) {
+        if (!isCurrent(payload)) { return; }
+        if (term) {
+          var code = payload ? payload.code : null;
+          var banner = '\r\n[process exited' +
+            (code !== null && code !== undefined ? (' with code ' + code) : '') + ']\r\n';
+          term.write(banner);
+        }
+        cbExit(payload ? payload.code : null);
+      });
+
+      socket.on('terminal:error', function (payload) {
+        if (!isCurrent(payload)) { return; }
+        cbError(payload ? payload.message : 'Terminal error');
+      });
+
+      // 鉴权 / 握手失败 → 立即上报错误（区别于短暂断网的 reconnecting）
+      socket.on('connect_error', function (err) {
+        cbError(err && err.message ? err.message : 'Connection error');
+      });
+
+      // 主动断开（io client disconnect）不报；其余（网络抖动等）→ 重连中
+      socket.on('disconnect', function (reason) {
+        if (reason === 'io client disconnect') { return; }
+        cbReconnecting();
+      });
+
+      socket.connect();
+    };
+
+    // 快捷键栏 / 自由输入框：发一段序列（数据面，直连）
+    window.sendInput = function (seq) {
+      if (socket && socket.connected && typeof seq === 'string') {
+        socket.emit('terminal:write', { terminalId: cfg.terminalId, data: seq });
+      }
+    };
+
+    // 主题切换：ArkTS 传 xterm theme 对象（{background, foreground, cursor, ...}）
+    window.applyTheme = function (themeJson) {
+      try {
+        var theme = (typeof themeJson === 'string') ? JSON.parse(themeJson) : themeJson;
+        if (term && theme) { term.options.theme = theme; }
+      } catch (e) {}
+    };
+
+    // 布局变化时 ArkTS 可显式触发（ResizeObserver 通常已覆盖；转屏等保险调用）
+    window.fitTerminal = function () {
+      try { if (fitAddon) { fitAddon.fit(); } } catch (e) {}
+    };
+
+    // 焦点终端（快捷键 / 输入操作后回焦，唤起软键盘）
+    window.focusTerminal = function () {
+      try { if (term && term.textarea) { term.textarea.focus(); } } catch (e) {}
+    };
+
+    // 离开页清理：socket 移除监听 + 断开（Hub 收 disconnect 即关 PTY）+ term.dispose
+    window.disconnectTerminal = function () {
+      try { if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; } } catch (e) {}
+      if (fitHandler) { try { window.removeEventListener('resize', fitHandler); } catch (e) {} fitHandler = null; }
+      if (socket) {
+        try { socket.removeAllListeners(); } catch (e) {}
+        try { socket.disconnect(); } catch (e) {}
+        socket = null;
+      }
+      if (term) { try { term.dispose(); } catch (e) {} term = null; }
+      fitAddon = null;
+    };
+  </script>
+</body>
+</html>

@@ -115,6 +115,7 @@ export class Session {
   permissionMode: string = '';               // 权限模式（/permission-mode 端点；optional → ''；claude: default/acceptEdits/bypassPermissions/plan）
   collaborationMode: string = '';            // codex 协作模式（/collaboration-mode 端点；optional → ''；default/plan）
   flavor: string = '';                       // metadata.flavor（claude/codex/…；ContextStatusBar 算预算 + 配置 overlay 门控用）
+  path: string = '';                         // metadata.path（会话工作目录；终端页顶栏显示 cwd）
   agentStateVersion: number = 0;
   // 原始 agentState（{controlledByUser, requests, completedRequests}），由 chat/parseAgentState 解析。
   // 存原始 Record 而非已解析对象，避免 models/ 反向依赖 chat/。
@@ -318,6 +319,7 @@ export function parseSessionDetail(json: string): Session {
   const detailMeta = pickObj(raw, 'metadata');
   if (detailMeta !== null) {
     s.flavor = pickStr(detailMeta, 'flavor');
+    s.path = pickStr(detailMeta, 'path');
   }
   s.agentStateVersion = pickNum(raw, 'agentStateVersion');
   s.agentStateRaw = pickObj(raw, 'agentState');

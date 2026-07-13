@@ -193,6 +193,19 @@ export const zhCN: Record<string, string> = {
   'files.search.noResults': '没有匹配的文件',
   'files.search.failed': '搜索失败',
 
+  // —— 终端页（对照 web /sessions/$id/terminal）——
+  'terminal.title': '终端',
+  'terminal.state.connecting': '连接中…',
+  'terminal.state.ready': '已连接',
+  'terminal.state.reconnecting': '重连中…',
+  'terminal.state.error': '连接错误',
+  'terminal.state.exited': '进程已退出',
+  'terminal.exitWithCode': '进程已退出（代码 {code}）',
+  'terminal.sessionInactive': '会话未活跃',
+  'terminal.cliDisconnected': 'CLI 已断开',
+  'terminal.inputPlaceholder': '输入命令…',
+  'terminal.send': '发送',
+
   // —— 文件查看页 ——
   'fileViewer.fallbackTitle': '文件',
   'fileViewer.loading': '加载文件…',

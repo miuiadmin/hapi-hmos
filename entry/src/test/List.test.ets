@@ -20,6 +20,7 @@ import skillsTest from './Skills.test';
 import sessionAttentionTest from './SessionAttention.test';
 import outlineTest from './Outline.test';
 import translateTest from './Translate.test';
+import terminalInputTest from './TerminalInput.test';
 
 export default function testsuite() {
   diffTest();
@@ -41,4 +42,5 @@ export default function testsuite() {
   sessionAttentionTest();
   outlineTest();
   translateTest();
+  terminalInputTest();
 }
