@@ -24,6 +24,7 @@ import terminalInputTest from './TerminalInput.test';
 import generatedImageCacheUtilsTest from './GeneratedImageCacheUtils.test';
 import terminalToolDisplayTest from './TerminalToolDisplay.test';
 import sessionGroupingTest from './SessionGrouping.test';
+import codeHighlightTest from './CodeHighlight.test';
 
 export default function testsuite() {
   diffTest();
@@ -49,4 +50,5 @@ export default function testsuite() {
   generatedImageCacheUtilsTest();
   terminalToolDisplayTest();
   sessionGroupingTest();
+  codeHighlightTest();
 }

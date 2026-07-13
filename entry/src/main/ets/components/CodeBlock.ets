@@ -1,15 +1,20 @@
-// CodeBlock —— 对照 web/src/components/CodeBlock.tsx（降级：无 Shiki 语法高亮）
-// 等宽纯文本 + 行号 + 长内容折叠（>18 行或 >1800 字符 → 折叠到 260 + 「已截断」角标）。
+// CodeBlock —— 对照 web/src/components/CodeBlock.tsx（上游 Shiki 高亮；本项目自包含轻量扫描器）
+// 等宽文本 + 行号 + 长内容折叠（>18 行或 >1800 字符 → 折叠到 260 + 「已截断」角标）。
 // 宽行按 maxLines(1) 截断（窄屏取舍：完整内容在详情 sheet 可纵向滚动查看）。
+// 语法高亮：逐行 tokenizeLine → 按 token 类型染色的 Span 序列（chat/CodeHighlight 纯层；
+//   keyword=primary/string=success/number=warning/comment=codeMuted/plain=codeText）。
+//   text 语言全 plain（零回归）；大文件（>20k 字符）降级 text 免扫描 jank。
 // V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight；@Computed allLines/isCollapsed/visibleLines/label。
 
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { tokenizeLine, HighlightToken, HighlightTokenType } from '../chat/CodeHighlight';
 
 const COLLAPSE_LINE_THRESHOLD: number = 18;
 const COLLAPSE_CHAR_THRESHOLD: number = 1800;
 const COLLAPSED_HEIGHT: number = 260;
 const SCROLL_HEIGHT: number = 420;
+const HIGHLIGHT_CHAR_CAP: number = 20000;   // 超此长度降级 text（免逐行扫描 jank）
 
 // 按行切分（对照上游 countCodeLines/splitDiffLines）：空串 → ['']；末尾 '\n' 产生的空串丢弃
 function splitCodeLines(code: string): string[] {
@@ -26,7 +31,7 @@ function splitCodeLines(code: string): string[] {
 @ComponentV2
 struct CodeBlock {
   @Param code: string = '';
-  @Param language: string = 'text';      // 仅用于 label 兜底（无语法高亮）
+  @Param language: string = 'text';      // 语法高亮 + label 兜底（CodeHighlight 归一）
   @Param title: string = '';             // 非空时作 label
   @Param collapseLongContent: boolean = false;
   @Param scrollY: boolean = false;
@@ -79,6 +84,27 @@ struct CodeBlock {
 
   private bodyMaxHeight(): number {
     return this.maxHeight > 0 ? this.maxHeight : SCROLL_HEIGHT;
+  }
+
+  // 大文件降级：超 HIGHLIGHT_CHAR_CAP 字符走 text（免逐行扫描 jank）。
+  //   collapseLongContent 的工具卡走折叠分支不命中；FileViewerPage scrollY 大文件才需此守卫。
+  private get effectiveLanguage(): string {
+    return this.code.length > HIGHLIGHT_CHAR_CAP ? 'text' : this.language;
+  }
+
+  // 逐行 tokenize（chat/CodeHighlight 纯层）。空行透传 ' '（tokenizeLine 自带占位）。
+  private highlight(line: string): HighlightToken[] {
+    return tokenizeLine(line, this.effectiveLanguage);
+  }
+
+  // token 类型 → 既有 palette（不新增调色板项）。
+  //   keyword=primary / string=success / number=warning / comment=codeMuted / plain=codeText。
+  private colorForToken(type: HighlightTokenType): string {
+    if (type === 'keyword') { return this.c.primary; }
+    if (type === 'string') { return this.c.success; }
+    if (type === 'number') { return this.c.warning; }
+    if (type === 'comment') { return this.c.codeMuted; }
+    return this.c.codeText;
   }
 
   build() {
@@ -144,13 +170,21 @@ struct CodeBlock {
             .fontColor(this.c.codeMuted)
             .width(this.numColWidth())
             .textAlign(TextAlign.End)
-          Text(line.length > 0 ? line : ' ')
-            .fontSize(fs(11))
-            .fontColor(this.c.codeText)
-            .layoutWeight(1)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ left: 8 })
+          // 行内容：逐 token 染色 Span 序列（CodeHighlight）；text 语言全 plain 等价旧行为。
+          //   父 Text 持 fontSize/maxLines/textOverflow/margin；Span 仅 fontColor + fontFamily。
+          Text() {
+            ForEach(this.highlight(line.length > 0 ? line : ' '), (tk: HighlightToken, idx: number) => {
+              Span(tk.text)
+                .fontColor(this.colorForToken(tk.type))
+                .fontFamily('monospace')
+            }, (tk: HighlightToken, idx: number) => `${idx}`)
+          }
+          .fontSize(fs(11))
+          .fontColor(this.c.codeText)
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ left: 8 })
         }
         .width('100%')
       }, (line: string, idx: number) => `${idx}`)
