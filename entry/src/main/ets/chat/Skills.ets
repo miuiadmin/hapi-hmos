@@ -11,7 +11,7 @@
 //   上限 200（按 timestamp 降序截断）。ArkTS getString/putString 均 async，故 load/mark 为 Promise。
 
 import { SkillItem } from '../models/Types';
-import { getPreferencesService } from '../services/PreferencesService';
+import { KvStore } from '../services/KvStore';
 import { PreferenceKeys } from '../config/Keys';
 import { levenshteinDistance } from './SlashCommands';
 
@@ -84,9 +84,24 @@ export function skillSuggestions(skills: SkillItem[], query: string, recent: Map
 }
 
 // 读最近使用技能 map（name→timestamp）。JSON 损坏/空 → 空 map（对照 getRecentSkills 容错）。
-export async function loadRecentSkills(): Promise<Map<string, number>> {
+export async function loadRecentSkills(store: KvStore): Promise<Map<string, number>> {
+  const raw: string = await store.getString(PreferenceKeys.RECENT_SKILLS, '');
+  return parseRecentSkills(raw);
+}
+
+// 标记技能已使用：name=Date.now()，按 timestamp 降序截断 200，持久化（对照 markSkillUsed）。
+//   空名静默跳过；持久化失败由调用方 catch（不阻塞选中回填）。
+export async function markSkillUsed(skillName: string, store: KvStore): Promise<void> {
+  const name: string = skillName.trim();
+  if (name === '') { return; }
+  const map: Map<string, number> = await loadRecentSkills(store);
+  const raw: string = mergeRecentSkill(map, name, Date.now());
+  await store.putString(PreferenceKeys.RECENT_SKILLS, raw);
+}
+
+// 纯：raw JSON 串 → recent map。空/损坏 → 空 map；跳过空 key 与非 number 值（对照 loadRecentSkills 容错）。
+export function parseRecentSkills(raw: string): Map<string, number> {
   const map: Map<string, number> = new Map();
-  const raw: string = await getPreferencesService().getString(PreferenceKeys.RECENT_SKILLS, '');
   if (raw === '') { return map; }
   let parsed: Record<string, Object>;
   try {
@@ -104,17 +119,15 @@ export async function loadRecentSkills(): Promise<Map<string, number>> {
   return map;
 }
 
-// 标记技能已使用：name=Date.now()，按 timestamp 降序截断 200，持久化（对照 markSkillUsed）。
-//   空名静默跳过；持久化失败由调用方 catch（不阻塞选中回填）。
-export async function markSkillUsed(skillName: string): Promise<void> {
-  const name: string = skillName.trim();
-  if (name === '') { return; }
-  const map: Map<string, number> = await loadRecentSkills();
-  map.set(name, Date.now());
-  // 收集 entry → 按 timestamp 降序 → 取前 200 → 落 Record
+// 纯：recent map + 本次使用(name, ts) → 截断 MAX_RECENT_SKILLS(200) 的 JSON 串。
+//   不修改入参 map（拷贝后 set）；空 name → 仅序列化原 map（无新增）。
+export function mergeRecentSkill(map: Map<string, number>, name: string, ts: number): string {
+  const merged: Map<string, number> = new Map<string, number>();
+  map.forEach((v: number, k: string) => { merged.set(k, v); });
+  if (name.trim() !== '') { merged.set(name, ts); }
   const names: string[] = [];
   const tss: number[] = [];
-  map.forEach((v: number, k: string) => { names.push(k); tss.push(v); });
+  merged.forEach((v: number, k: string) => { names.push(k); tss.push(v); });
   const order: number[] = [];
   for (let i = 0; i < names.length; i++) { order.push(i); }
   order.sort((a: number, b: number): number => tss[b] - tss[a]);
@@ -123,5 +136,5 @@ export async function markSkillUsed(skillName: string): Promise<void> {
   for (let i = 0; i < limit; i++) {
     obj[names[order[i]]] = tss[order[i]];
   }
-  await getPreferencesService().putString(PreferenceKeys.RECENT_SKILLS, JSON.stringify(obj));
+  return JSON.stringify(obj);
 }

@@ -4,7 +4,7 @@
 //       排序（score 升序 → recency 降序 → name 升序）、recency key 为原样名（区分大小写）、无匹配→空。
 
 import { describe, it, expect } from '@ohos/hypium';
-import { skillSuggestions } from '../main/ets/chat/Skills';
+import { skillSuggestions, parseRecentSkills, mergeRecentSkill } from '../main/ets/chat/Skills';
 import { SkillItem } from '../main/ets/models/Types';
 
 function skill(name: string, desc: string = ''): SkillItem {
@@ -94,6 +94,70 @@ export default function skillsTest(): void {
       // 空查询：git(100) 在前，Git(0) 在后
       const r = skillSuggestions(skills, '', recent);
       expect(namesOf(r)).assertEqual(['git', 'Git']);
+    });
+  });
+
+  // —— 持久化纯函数（recent-skills 序列化 / 截断）。原本埋在 async load/mark 里不可测，
+  //     拆纯层后剥离出来，可 sync 单测（@kit 只停在注入的 store 边界）。load/mark 本身不单测（同 I18nService.t）。
+  describe('parseRecentSkills', () => {
+    it('空串 → 空 map', 0, () => {
+      expect(parseRecentSkills('').size).assertEqual(0);
+    });
+    it('损坏 JSON → 空 map', 0, () => {
+      expect(parseRecentSkills('{bad json').size).assertEqual(0);
+    });
+    it('正常解析 name→timestamp', 0, () => {
+      const map = parseRecentSkills('{"git":100,"vim":200}');
+      expect(map.size).assertEqual(2);
+      expect(map.get('git')).assertEqual(100);
+      expect(map.get('vim')).assertEqual(200);
+    });
+    it('跳过空 key 与非 number 值', 0, () => {
+      const map = parseRecentSkills('{"git":1,"  ":2,"bad":"x","ok":3}');
+      expect(map.size).assertEqual(2);
+      expect(map.get('git')).assertEqual(1);
+      expect(map.get('ok')).assertEqual(3);
+    });
+  });
+
+  describe('mergeRecentSkill', () => {
+    it('空 map + 新 name → 单项', 0, () => {
+      const raw: string = mergeRecentSkill(new Map<string, number>(), 'git', 100);
+      const parsed: Record<string, number> = JSON.parse(raw) as Record<string, number>;
+      expect(parsed['git']).assertEqual(100);
+    });
+    it('空 name → 不新增（仅序列化原 map）', 0, () => {
+      const map: Map<string, number> = new Map<string, number>();
+      map.set('git', 5);
+      const raw: string = mergeRecentSkill(map, '', 999);
+      const parsed: Record<string, number> = JSON.parse(raw) as Record<string, number>;
+      expect(Object.keys(parsed).length).assertEqual(1);
+      expect(parsed['git']).assertEqual(5);   // 新 ts 999 未写入
+    });
+    it('同名新 ts 覆盖旧 ts', 0, () => {
+      const map: Map<string, number> = new Map<string, number>();
+      map.set('git', 100);
+      const raw: string = mergeRecentSkill(map, 'git', 200);
+      const parsed: Record<string, number> = JSON.parse(raw) as Record<string, number>;
+      expect(parsed['git']).assertEqual(200);
+    });
+    it('超过 200 按 timestamp 降序截断（保留最大 200）', 0, () => {
+      const big: Map<string, number> = new Map<string, number>();
+      for (let i = 1; i <= 201; i++) { big.set('s' + i, i); }
+      const raw: string = mergeRecentSkill(big, '', 0);   // 空 name → 不新增，仅截断
+      const parsed: Record<string, number> = JSON.parse(raw) as Record<string, number>;
+      const keys: string[] = Object.keys(parsed);
+      expect(keys.length).assertEqual(200);
+      expect(keys.indexOf('s1') < 0).assertEqual(true);       // ts 最小被截
+      expect(keys.indexOf('s201') >= 0).assertEqual(true);    // ts 最大保留
+      expect(parsed['s201']).assertEqual(201);
+    });
+    it('不修改入参 map', 0, () => {
+      const map: Map<string, number> = new Map<string, number>();
+      map.set('git', 1);
+      mergeRecentSkill(map, 'vim', 2);
+      expect(map.size).assertEqual(1);
+      expect(map.get('vim')).assertEqual(undefined);
     });
   });
 }

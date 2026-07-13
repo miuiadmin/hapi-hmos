@@ -8,7 +8,9 @@ import {
   classifyScheme,
   hasScheme,
   extractScheme,
-  isAllowedScheme
+  isAllowedScheme,
+  parseAllowedSchemes,
+  addAllowedScheme
 } from '../main/ets/utils/ExternalLink';
 
 export default function externalLinkTest(): void {
@@ -127,6 +129,59 @@ export default function externalLinkTest(): void {
 
     it('false for empty scheme (never allowlisted)', 0, () => {
       expect(isAllowedScheme('', ['intent'])).assertEqual(false);
+    });
+  });
+
+  // —— 持久化纯函数（allowed scheme 序列化 / 追加）。拆纯层后剥离，可 sync 单测。
+  describe('parseAllowedSchemes', () => {
+    it('空串 → []', 0, () => {
+      expect(parseAllowedSchemes('').length).assertEqual(0);
+    });
+    it('损坏 JSON → []', 0, () => {
+      expect(parseAllowedSchemes('[bad').length).assertEqual(0);
+    });
+    it('非数组（对象）→ []', 0, () => {
+      expect(parseAllowedSchemes('{"a":1}').length).assertEqual(0);
+    });
+    it('正常数组原样返回', 0, () => {
+      const r: string[] = parseAllowedSchemes('["intent","market"]');
+      expect(r.length).assertEqual(2);
+      expect(r[0]).assertEqual('intent');
+      expect(r[1]).assertEqual('market');
+    });
+    it('过滤 deny scheme', 0, () => {
+      const r: string[] = parseAllowedSchemes('["intent","javascript","file"]');
+      expect(r.length).assertEqual(1);
+      expect(r[0]).assertEqual('intent');
+    });
+    it('过滤非 string 元素', 0, () => {
+      const r: string[] = parseAllowedSchemes('["intent",5,true,"market"]');
+      expect(r.length).assertEqual(2);
+      expect(r[0]).assertEqual('intent');
+      expect(r[1]).assertEqual('market');
+    });
+  });
+
+  describe('addAllowedScheme', () => {
+    it('空 scheme → 返回同引用（无变更）', 0, () => {
+      const list: string[] = ['intent'];
+      expect(addAllowedScheme(list, '') === list).assertEqual(true);
+    });
+    it('已在列 → 返回同引用（幂等）', 0, () => {
+      const list: string[] = ['intent', 'market'];
+      expect(addAllowedScheme(list, 'intent') === list).assertEqual(true);
+    });
+    it('新 scheme → 返回新数组（含新项，不同引用）', 0, () => {
+      const list: string[] = ['intent'];
+      const next: string[] = addAllowedScheme(list, 'market');
+      expect(next === list).assertEqual(false);
+      expect(next.length).assertEqual(2);
+      expect(next[1]).assertEqual('market');
+    });
+    it('不修改入参数组', 0, () => {
+      const list: string[] = ['intent'];
+      addAllowedScheme(list, 'market');
+      expect(list.length).assertEqual(1);
     });
   });
 }

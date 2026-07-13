@@ -1,12 +1,14 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { KvStore } from './KvStore';
 
 // Preferences 文件名
 const PREFERENCES_NAME: string = 'hapi_preferences';
 
 // Preferences 单例封装（对照 chatcube PreferencesService）
 // 初始化必须在 loadContent 之前完成（EntryAbility.onWindowStageCreate 里 await）
-export class PreferencesService {
+// implements KvStore：显式声明满足 @kit-free 存储接口，供纯逻辑模块（Skills/ExternalLink）注入。
+export class PreferencesService implements KvStore {
   private static instance: PreferencesService | null = null;
   private dataPreferences: preferences.Preferences | null = null;
   private isInitialized: boolean = false;

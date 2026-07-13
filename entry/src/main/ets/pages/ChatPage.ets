@@ -453,7 +453,7 @@ struct ChatPage {
       this.serverSlashCommands = serverCommandsToSlash(await getHubClient().getSlashCommands(this.sessionId));
       // 拉 $ 技能 + 最近使用 map（失败静默返 [] / 空 map；技能联想数据源）——对照上游 useSkills + recent-skills
       this.serverSkills = await getHubClient().getSkills(this.sessionId);
-      this.recentSkills = await loadRecentSkills();
+      this.recentSkills = await loadRecentSkills(getPreferencesService());
       this.isPinnedToBottom = true;
       // 进会话定位：有未读（entryLastSeenAt>0 且存在更新的块）→ 滚到首条未读、不贴底（新消息到达显浮标）；
       //   否则滚底（对照上游总滚底行为）。首次进入 entryLastSeenAt=0 → 无未读 → 滚底。
@@ -962,7 +962,7 @@ struct ChatPage {
     this.textAreaController.caretPosition(applied.cursorPosition);
     // recency：本地即时置顶（再联想排序立即生效），异步落盘（失败静默不阻塞）
     this.recentSkills.set(skill.name, Date.now());
-    markSkillUsed(skill.name).catch((): void => {});
+    markSkillUsed(skill.name, getPreferencesService()).catch((): void => {});
   }
 
   // —— 附件上传（对照 web client.ts uploadFile；数据流：picker 选 → 读 base64 → POST /upload → 入待发列）——

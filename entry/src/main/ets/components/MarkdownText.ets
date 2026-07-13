@@ -17,6 +17,7 @@ import {
   loadAllowedSchemes,
   saveAllowedScheme
 } from '../utils/ExternalLink';
+import { getPreferencesService } from '../services/PreferencesService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
 
 // 极简 Markdown 渲染组件：封装 @cangjie-tpc/markdown_hybrid（Apache-2.0）的 CJMarkdown
@@ -181,7 +182,7 @@ export struct MarkdownText {
     }
     // custom scheme：查 allowlist
     const scheme: string = extractScheme(url);
-    loadAllowedSchemes()
+    loadAllowedSchemes(getPreferencesService())
       .then((allowed: string[]): void => {
         if (isAllowedScheme(scheme, allowed)) {
           this.openSafeLink(url);
@@ -220,7 +221,7 @@ export struct MarkdownText {
         { text: t('common.cancel'), color: this.c.textSecondary },
         { text: t('markdown.open'), color: this.c.primary, action: (): void => { this.openSafeLink(url); } },
         { text: t('markdown.alwaysAllow'), color: this.c.primary, action: (): void => {
-          saveAllowedScheme(scheme).then((): void => { this.openSafeLink(url); });
+          saveAllowedScheme(scheme, getPreferencesService()).then((): void => { this.openSafeLink(url); });
         } }
       ]
     });

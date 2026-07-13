@@ -4,7 +4,7 @@
 //   其余 custom scheme → 首次确认，确认后持久化进 allowed 列表免再确认。
 // ArkTS 无 Set/Map 字面量惯用，安全集合用 string[] + indexOf；Preferences 无数组助手 → JSON 串存。
 
-import { getPreferencesService } from '../services/PreferencesService';
+import { KvStore } from '../services/KvStore';
 
 const IANA_SAFE_SCHEMES: string[] = ['http', 'https', 'irc', 'ircs', 'mailto', 'xmpp'];
 const DENY_SCHEMES: string[] = ['javascript', 'data', 'vbscript', 'file'];
@@ -70,36 +70,49 @@ export function isAllowedScheme(scheme: string, allowed: string[]): boolean {
 }
 
 // 读持久化 allowed custom scheme 列表（JSON 数组；非法/含 deny 项过滤）。
-export async function loadAllowedSchemes(): Promise<string[]> {
-  try {
-    const raw: string = await getPreferencesService().getString(ALLOWED_SCHEMES_KEY, '');
-    if (raw === '') { return []; }
-    const parsed: Object = JSON.parse(raw);
-    if (!Array.isArray(parsed)) { return []; }
-    const arr: Object[] = parsed as Object[];
-    const out: string[] = [];
-    for (let i = 0; i < arr.length; i++) {
-      const s: Object = arr[i];
-      if (typeof s === 'string') {
-        const str: string = s as string;
-        if (DENY_SCHEMES.indexOf(str) < 0) { out.push(str); }
-      }
-    }
-    return out;
-  } catch (e) {
-    return [];
-  }
+export async function loadAllowedSchemes(store: KvStore): Promise<string[]> {
+  const raw: string = await store.getString(ALLOWED_SCHEMES_KEY, '');
+  return parseAllowedSchemes(raw);
 }
 
 // 追加一个 allowed scheme 并持久化（已存在则幂等）。
-export async function saveAllowedScheme(scheme: string): Promise<void> {
-  if (scheme === '') { return; }
-  const list: string[] = await loadAllowedSchemes();
-  if (list.indexOf(scheme) >= 0) { return; }
-  list.push(scheme);
+export async function saveAllowedScheme(scheme: string, store: KvStore): Promise<void> {
+  const list: string[] = await loadAllowedSchemes(store);
+  const next: string[] = addAllowedScheme(list, scheme);
+  if (next === list) { return; }   // 空 scheme 或已在列 → 无变更
   try {
-    await getPreferencesService().putString(ALLOWED_SCHEMES_KEY, JSON.stringify(list));
+    await store.putString(ALLOWED_SCHEMES_KEY, JSON.stringify(next));
   } catch (e) {
     // 持久化失败忽略（本次确认仍生效）
   }
+}
+
+// 纯：raw JSON 串 → allowed scheme 列表。仅留 string 元素并过滤 deny scheme；空/损坏/非数组 → []。
+export function parseAllowedSchemes(raw: string): string[] {
+  if (raw === '') { return []; }
+  let parsed: Object;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+  if (!Array.isArray(parsed)) { return []; }
+  const arr: Object[] = parsed as Object[];
+  const out: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const s: Object = arr[i];
+    if (typeof s === 'string') {
+      const str: string = s as string;
+      if (DENY_SCHEMES.indexOf(str) < 0) { out.push(str); }
+    }
+  }
+  return out;
+}
+
+// 纯：追加 scheme（去重；空 / 已在列 → 原样返回同引用，供调用方判无变更）。不修改入参数组。
+export function addAllowedScheme(existing: string[], scheme: string): string[] {
+  if (scheme === '' || existing.indexOf(scheme) >= 0) { return existing; }
+  const out: string[] = existing.slice();
+  out.push(scheme);
+  return out;
 }
