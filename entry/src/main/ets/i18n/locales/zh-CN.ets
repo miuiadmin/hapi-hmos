@@ -104,10 +104,13 @@ export const zhCN: Record<string, string> = {
   'newSession.pleaseSelectMachineFirst': '请先选择机器',
   'newSession.browseFailed': '浏览目录失败',
   'newSession.spawnFailed': '启动会话失败',
+  'newSession.directoryNotFound': '该目录在机器上不存在，请检查路径',
 
   // —— 会话列表页 ——
   'sessions.title': '会话',
   'sessions.new': '新建会话',
+  'sessions.group.other': '其他目录',
+  'sessions.group.unknownMachine': '未知机器',
   'sessions.errorTitle': '加载失败',
   'sessions.loadFailed': '加载会话失败',
   'sessions.thinking': '思考中…',

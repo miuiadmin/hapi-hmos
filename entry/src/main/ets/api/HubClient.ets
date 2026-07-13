@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t } from '../i18n/I18nService';
@@ -284,6 +284,31 @@ export class HubClient {
       throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', { code: resp.statusCode }));
     }
     return parseListDirectoryResponse(resp.data);
+  }
+
+  // 校验机器上某路径是否存在（POST /api/machines/:id/paths/exists body { paths } → { exists: Record<path,boolean> }，
+  //   对照 web checkMachinePathsExists）。新建会话路径存在性校验用：发送单路径 [path]，返回该 path 的 exists 布尔。
+  //   调用方约定：探测本身抛错（网络/解析）应放行，交 spawn 兜底（避免瞬态误拦）。
+  async checkMachinePathExists(machineId: string, path: string): Promise<boolean> {
+    const body = new MachinePathsExistsRequest();
+    body.paths.push(path);
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/machines/${machineId}/paths/exists`, body, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.requestFailed', { code: resp.statusCode }));
+    }
+    let root: Record<string, Object>;
+    try {
+      root = JSON.parse(resp.data) as Record<string, Object>;
+    } catch (_e) {
+      throw new Error(t('api.requestFailed', { code: resp.statusCode }));
+    }
+    const existsRaw: Object | undefined = root['exists'];
+    if (existsRaw === undefined || existsRaw === null) { return false; }
+    const existsMap: Record<string, Object> = existsRaw as Record<string, Object>;
+    const v: Object | undefined = existsMap[path];
+    if (v === undefined || v === null) { return false; }
+    return v === true;
   }
 
   // 新建会话：spawn agent（POST /api/machines/:id/spawn → { type, sessionId }，对照 web spawnSession）

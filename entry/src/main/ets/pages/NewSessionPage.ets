@@ -20,6 +20,13 @@ const KEY_PREFERRED_YOLO: string = 'preferred_yolo';
 const KEY_RECENT_PREFIX: string = 'recent_paths_';   // + machineId
 const RECENT_MAX: number = 8;
 
+// 路由参数（对照 ChatPageRouteParams）：会话列表「本目录新建」+ 按钮预填 machine + directory。
+//   Index pushPath({name:'NewSessionPage', param}) 透传；NewSessionPageBuilder 转 @Param routeParamsSeed。
+export class NewSessionPageRouteParams {
+  machineId: string = '';
+  directory: string = '';
+}
+
 @ComponentV2
 struct NewSessionPage {
   @Local machines: Machine[] = [];
@@ -49,17 +56,28 @@ struct NewSessionPage {
   @Local browserLoading: boolean = false;
   @Local browserError: string = '';
 
+  // 路由预填（会话列表「本目录新建」+ 按钮透传 machine + directory；对照 ChatPage routeParamsSeed）。
+  //   空值（普通 + 入口）→ null，aboutToAppear 走默认选机 + 最近路径。
+  @Param routeParamsSeed: NewSessionPageRouteParams | null = null;
+
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
 
   private navPathStack: NavPathStack | null = null;
 
   aboutToAppear(): void {
-    this.loadMachines();
+    // 路由预填（「本目录新建」）：directory 直播种（loadRecentFor 见非空不再覆盖）；
+    //   machineId 作为优先候选传 loadMachines（命中即选，覆盖 last_machine_id）。
+    const seed: NewSessionPageRouteParams | null = this.routeParamsSeed;
+    const preMachine: string = (seed !== null && seed !== undefined) ? seed.machineId : '';
+    const preDirectory: string = (seed !== null && seed !== undefined) ? seed.directory : '';
+    if (preDirectory !== '') { this.directory = preDirectory; }
+    this.loadMachines(preMachine);
   }
 
-  // 拉机器列表 → 选默认（持久化 last_machine_id 命中 → 否则 machines[0]）→ 读偏好 agent + 最近路径
-  private async loadMachines(): Promise<void> {
+  // 拉机器列表 → 选默认（路由预填机器命中 → 否则 last_machine_id → 否则 machines[0]）→ 读偏好 agent + 最近路径。
+  //   preferredMachineId 来自路由预填（「本目录新建」）；非空且命中列表时优先于持久化 last_machine_id。
+  private async loadMachines(preferredMachineId: string = ''): Promise<void> {
     this.loadingMachines = true;
     this.loadError = '';
     try {
@@ -69,13 +87,23 @@ struct NewSessionPage {
         this.loadError = t('newSession.noMachinesHint');
         return;
       }
-      const lastId: string = await getPreferencesService().getString(KEY_LAST_MACHINE, '');
       let chosenId: string = '';
-      if (lastId !== '') {
+      // 1. 路由预填机器优先（「本目录新建」明确指定了 machine）
+      if (preferredMachineId !== '') {
         for (let i = 0; i < list.length; i++) {
-          if (list[i].id === lastId) { chosenId = lastId; break; }
+          if (list[i].id === preferredMachineId) { chosenId = preferredMachineId; break; }
         }
       }
+      // 2. 持久化 last_machine_id
+      if (chosenId === '') {
+        const lastId: string = await getPreferencesService().getString(KEY_LAST_MACHINE, '');
+        if (lastId !== '') {
+          for (let i = 0; i < list.length; i++) {
+            if (list[i].id === lastId) { chosenId = lastId; break; }
+          }
+        }
+      }
+      // 3. 首台兜底
       if (chosenId === '') { chosenId = list[0].id; }
       this.selectedMachineId = chosenId;
 
@@ -358,6 +386,12 @@ struct NewSessionPage {
     if (this.selectedMachineId === '') { this.spawnError = t('newSession.selectMachine'); return; }
     const dir: string = this.directory.trim();
     if (dir === '') { this.spawnError = t('newSession.directoryRequired'); return; }
+    // 路径存在性校验（对照上游 POST /api/machines/:id/paths/exists）：目录不存在即拦（用户选「统一拦截」）。
+    //   探测本身抛错（网络/解析）放行，交 spawn 兜底——避免瞬态网络抖动误拦合法路径。
+    try {
+      const exists: boolean = await getHubClient().checkMachinePathExists(this.selectedMachineId, dir);
+      if (!exists) { this.spawnError = t('newSession.directoryNotFound'); return; }
+    } catch (_e) { /* 探测失败放行，spawn 兜底 */ }
     this.isSpawning = true;
     try {
       // worktree 自定义名：trim 后透传（空则服务端自动生成，上游 worktreeName 非必填）
@@ -768,5 +802,5 @@ struct NewSessionPage {
 // 系统路由表 buildFunction（router_map.json 引用）
 @Builder
 export function NewSessionPageBuilder(name: string, param: Object) {
-  NewSessionPage()
+  NewSessionPage({ routeParamsSeed: param as NewSessionPageRouteParams })
 }

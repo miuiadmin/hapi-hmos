@@ -23,6 +23,7 @@ import translateTest from './Translate.test';
 import terminalInputTest from './TerminalInput.test';
 import generatedImageCacheUtilsTest from './GeneratedImageCacheUtils.test';
 import terminalToolDisplayTest from './TerminalToolDisplay.test';
+import sessionGroupingTest from './SessionGrouping.test';
 
 export default function testsuite() {
   diffTest();
@@ -47,4 +48,5 @@ export default function testsuite() {
   terminalInputTest();
   generatedImageCacheUtilsTest();
   terminalToolDisplayTest();
+  sessionGroupingTest();
 }

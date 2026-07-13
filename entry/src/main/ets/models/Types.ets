@@ -158,6 +158,13 @@ export class ListDirectoryRequest {
   path: string = '';
 }
 
+// —— 批量校验远端路径存在性请求体（对齐 MachinePathsExistsRequest：paths 非空数组，上限 1000）——
+//   POST /api/machines/:id/paths/exists → { exists: Record<path, boolean> }。
+//   新建会话路径存在性校验用（对照 web checkMachinePathsExists）。
+export class MachinePathsExistsRequest {
+  paths: string[] = [];
+}
+
 // —— 服务端斜杠命令（对齐 shared/src/apiTypes.ts SlashCommand，取所需字段）——
 //   GET /api/sessions/:id/slash-commands 返回用户/项目/插件命令（source != 'builtin'）。
 //   渲染层用 chat/SlashCommand；本类是解析中间态（models 不依赖 chat），由 serverCommandsToSlash 映射。

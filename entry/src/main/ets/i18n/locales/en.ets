@@ -103,10 +103,13 @@ export const en: Record<string, string> = {
   'newSession.pleaseSelectMachineFirst': 'Please select a machine first',
   'newSession.browseFailed': 'Failed to browse directory',
   'newSession.spawnFailed': 'Failed to start session',
+  'newSession.directoryNotFound': 'This directory does not exist on the machine. Please check the path.',
 
   // —— Sessions list ——
   'sessions.title': 'Sessions',
   'sessions.new': 'New Session',
+  'sessions.group.other': 'Other',
+  'sessions.group.unknownMachine': 'Unknown machine',
   'sessions.errorTitle': 'Failed to load',
   'sessions.loadFailed': 'Failed to load sessions',
   'sessions.thinking': 'Thinking…',

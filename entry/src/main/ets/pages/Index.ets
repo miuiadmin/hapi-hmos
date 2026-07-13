@@ -1,8 +1,22 @@
 import { getHubClient } from '../api/HubClient';
 import { getSSEClient, SSESubscription, SSEConnectionState } from '../api/SSEClient';
-import { SessionSummary } from '../models/Types';
+import { SessionSummary, Machine } from '../models/Types';
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { ChatPageRouteParams } from './ChatPage';
+import { NewSessionPageRouteParams } from './NewSessionPage';
+import {
+  UNKNOWN_MACHINE_ID,
+  OTHER_DIRECTORY,
+  MachineGroup,
+  DirectoryGroup,
+  RenderRow,
+  groupSessionsByDirectory,
+  flattenGroups,
+  isGroupCollapsed,
+  machineGroupHasActive,
+  directoryGroupHasActive,
+  directoryGroupKey
+} from '../chat/SessionGrouping';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
@@ -26,6 +40,8 @@ struct Index {
   @Local searchQuery: string = '';              // 会话搜索查询（纯客户端过滤，对照 web SessionListSearch）
   @Local isRefreshing: boolean = false;          // 下拉刷新中（Refresh 容器 refreshing 双向绑定）
   @Local sessionFilter: 'all' | 'active' | 'archived' = 'all';   // 列表 Tab 筛选：archived = 非活跃（hapi 归档即 active=false）
+  @Local machines: Machine[] = [];                                              // 机器列表（机器组头 label 用；MACHINE_UPDATED 刷新）
+  @Local collapsedOverride: Map<string, boolean> = new Map<string, boolean>();  // 用户显式折叠/展开态（true=折叠）
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -40,7 +56,18 @@ struct Index {
 
   aboutToAppear(): void {
     this.loadSessions();
+    this.loadMachines();
     this.connectSSE();
+  }
+
+  // 拉机器列表（best-effort：失败静默，机器组头回退短 id）。
+  //   分组渲染后机器组头需 displayName → 此处拉取；MACHINE_UPDATED 事件触发刷新。
+  private async loadMachines(): Promise<void> {
+    try {
+      this.machines = await getHubClient().getMachines();
+    } catch (_e) {
+      /* 静默：组头回退 machineId 短标识 */
+    }
   }
 
   // 拉取会话列表（sessionLoadSeq 防并发竞态，对照 chatcube loadSessions）
@@ -92,7 +119,7 @@ struct Index {
   // message-* 高频事件不刷列表（在对话页处理 / 局部更新角标时间）。
   //   scheduled-matured：定时消息成熟 → 会话摘要/updatedAt 变，并入重拉。
   //   toast：服务端推 Toast（后台通知；仅 Index 处理，root 恒在栈避免与对话页双监听者重复弹）。
-  //   machine-updated：无 machine UI 可消费（机器在 NewSessionPage 实时拉取），留 no-op hook。
+  //   machine-updated：机器列表变（新增/掉线/displayName 变）→ 拉机器刷新组头 label。
   private onSSEEvent(event: SyncEvent): void {
     const evtType: string = event.type;
     if (evtType === SyncEventType.SESSION_ADDED
@@ -101,6 +128,8 @@ struct Index {
       || evtType === SyncEventType.SESSION_ENDED
       || evtType === SyncEventType.SCHEDULED_MATURED) {
       this.loadSessions();
+    } else if (evtType === SyncEventType.MACHINE_UPDATED) {
+      this.loadMachines();
     } else if (evtType === SyncEventType.TOAST) {
       this.showServerToast(event);
     }
@@ -139,6 +168,14 @@ struct Index {
   // 打开新建会话页（spawn 流程，对照上游列表头「+」→ /sessions/new）
   private openNewSession(): void {
     this.navStack.pushPath({ name: 'NewSessionPage' });
+  }
+
+  // 打开新建会话页并预填 machine + directory（会话列表「本目录新建」+ 按钮，对照上游 onNewSessionInDirectory）。
+  private openNewSessionInDirectory(machineId: string, directory: string): void {
+    const params: NewSessionPageRouteParams = new NewSessionPageRouteParams();
+    params.machineId = machineId;
+    params.directory = directory;
+    this.navStack.pushPath({ name: 'NewSessionPage', param: params });
   }
 
   // 长按会话 → 记目标快照 + 开动作面板（重命名/归档/删除逻辑在 SessionActionMenu 组件内）
@@ -184,6 +221,60 @@ struct Index {
       if (this.sessionMatches(scoped[i], q)) { out.push(scoped[i]); }
     }
     return out;
+  }
+
+  // 三级分组行：filteredSessions → 机器→目录分组 → 按折叠态展平为 RenderRow[]（单层 ForEach 渲染）。
+  //   读 @Local sessions/sessionFilter/searchQuery/collapsedOverride → 任一变化 V2 自动重渲染
+  //   （同 filteredSessions getter / theme `c` getter 模式）。
+  get sessionRows(): RenderRow[] {
+    return flattenGroups(groupSessionsByDirectory(this.filteredSessions), this.isSearching(), this.collapsedOverride);
+  }
+
+  private isSearching(): boolean { return this.searchQuery.trim() !== ''; }
+
+  // 机器组头 label：displayName（命中 machines）→ 短 id（mg.label）→ 原 id → unknown i18n。
+  private resolveMachineLabel(mg: MachineGroup): string {
+    if (mg.machineId === UNKNOWN_MACHINE_ID) { return t('sessions.group.unknownMachine'); }
+    for (let i = 0; i < this.machines.length; i++) {
+      if (this.machines[i].id === mg.machineId) {
+        const name: string = this.machines[i].displayName;
+        return name !== '' ? name : mg.machineId;
+      }
+    }
+    return mg.label !== '' ? mg.label : mg.machineId;
+  }
+
+  // 目录组头 label：末两段名（displayName）→ 全路径 → Other i18n。
+  private resolveDirectoryLabel(dg: DirectoryGroup): string {
+    if (dg.directory === OTHER_DIRECTORY) { return t('sessions.group.other'); }
+    return dg.displayName !== '' ? dg.displayName : dg.directory;
+  }
+
+  // 「本目录新建」+ 按钮可见：仅真实目录 + 真实机器（Other / unknown 无 spawn 意义，对照上游 canStartInGroupDirectory）。
+  private canStartInDirectory(dg: DirectoryGroup): boolean {
+    return dg.directory !== OTHER_DIRECTORY && dg.machineId !== UNKNOWN_MACHINE_ID;
+  }
+
+  private machineCollapsed(mg: MachineGroup): boolean {
+    return isGroupCollapsed(mg.machineId, machineGroupHasActive(mg), this.isSearching(), this.collapsedOverride);
+  }
+  private directoryCollapsed(dg: DirectoryGroup): boolean {
+    return isGroupCollapsed(directoryGroupKey(dg), directoryGroupHasActive(dg), this.isSearching(), this.collapsedOverride);
+  }
+
+  // 切换折叠态：reassign 新 Map 触发 @Local 重渲染（V2 观察 @Local 重赋值，不观察 Map 内部变动）。
+  private toggleMachine(mg: MachineGroup): void {
+    this.toggleKey(mg.machineId, machineGroupHasActive(mg));
+  }
+  private toggleDirectory(dg: DirectoryGroup): void {
+    this.toggleKey(directoryGroupKey(dg), directoryGroupHasActive(dg));
+  }
+  private toggleKey(key: string, hasActive: boolean): void {
+    const cur: boolean = isGroupCollapsed(key, hasActive, this.isSearching(), this.collapsedOverride);
+    const next: Map<string, boolean> = new Map<string, boolean>();
+    this.collapsedOverride.forEach((v: boolean, k: string) => { next.set(k, v); });
+    next.set(key, !cur);
+    this.collapsedOverride = next;
   }
 
   // 筛选 Tab 文案与图标（按 tab+搜索词；filteredSessions===0 时用）
@@ -373,6 +464,64 @@ struct Index {
       .onAction(() => { this.openActionMenu(session); }))
   }
 
+  // 机器组头行（▼/▶ + 💻 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
+  @Builder
+  private MachineHeader(mg: MachineGroup) {
+    Row({ space: 6 }) {
+      Text(this.machineCollapsed(mg) ? '▶' : '▼')
+        .fontSize(fs(11))
+        .fontColor(this.c.textTertiary)
+      Text('💻').fontSize(fs(13))
+      Text(this.resolveMachineLabel(mg))
+        .fontSize(fs(13))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textSecondary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(`${mg.totalSessions}`)
+        .fontSize(fs(12))
+        .fontColor(this.c.textTertiary)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 目录组头行（▼/▶ + 📁 + label + 本组会话数 +「本目录新建」+；点击折叠/展开，对照上游 directory 分组头）。
+  //   + 按钮 hitTestBehavior(Block)：拦截点透传，避免同时触发父行折叠 toggle（对照上游 onNewSessionInDirectory）。
+  @Builder
+  private DirectoryHeader(dg: DirectoryGroup) {
+    Row({ space: 6 }) {
+      Text(this.directoryCollapsed(dg) ? '▶' : '▼')
+        .fontSize(fs(11))
+        .fontColor(this.c.textTertiary)
+      Text('📁').fontSize(fs(13))
+      Text(this.resolveDirectoryLabel(dg))
+        .fontSize(fs(13))
+        .fontColor(this.c.textSecondary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(`${dg.sessions.length}`)
+        .fontSize(fs(12))
+        .fontColor(this.c.textTertiary)
+      if (this.canStartInDirectory(dg)) {
+        Text('+')
+          .fontSize(fs(18))
+          .fontColor(this.c.primary)
+          .width(28)
+          .height(28)
+          .textAlign(TextAlign.Center)
+          .hitTestBehavior(HitTestMode.Block)
+          .onClick(() => this.openNewSessionInDirectory(dg.machineId, dg.directory))
+      }
+    }
+    .width('100%')
+    .padding({ left: 40, right: 16, top: 6, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+  }
+
   @Builder
   private EmptyState() {
     Column({ space: 10 }) {
@@ -486,16 +635,31 @@ struct Index {
           // 下拉刷新（Refresh 包 List；refreshing !! 双向绑定 + onRefreshing 触发拉取）
           Refresh({ refreshing: this.isRefreshing!! }) {
             List({ space: 0 }) {
-              ForEach(this.filteredSessions, (session: SessionSummary) => {
+              ForEach(this.sessionRows, (row: RenderRow) => {
                 ListItem() {
-                  this.SessionItem(session)
+                  if (row.kind === 'machine') {
+                    this.MachineHeader(row.machineGroup as MachineGroup)
+                  } else if (row.kind === 'directory') {
+                    this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
+                  } else {
+                    this.SessionItem(row.session as SessionSummary)
+                  }
                 }
-                .onClick(() => this.openSession(session))
-              }, (session: SessionSummary) => session.id)
+                .onClick(() => {
+                  if (row.kind === 'machine') {
+                    this.toggleMachine(row.machineGroup as MachineGroup);
+                  } else if (row.kind === 'directory') {
+                    this.toggleDirectory(row.directoryGroup as DirectoryGroup);
+                  } else {
+                    this.openSession(row.session as SessionSummary);
+                  }
+                })
+              }, (row: RenderRow) => row.key)
             }
             .width('100%')
             .height('100%')
-            .divider({ strokeWidth: 0.5, color: this.c.border, startMargin: 72, endMargin: 16 })
+            // 不用 List 级 divider：分组头与会话项混排时分隔线会切到头行底，观感凌乱；
+            //   会话项靠自身 padding 留白，组头靠缩进 + 字重区分（对照上游 SessionList 分组无全局分隔线）。
             .edgeEffect(EdgeEffect.Spring)
           }
           .width('100%')
