@@ -333,6 +333,9 @@ export const zhCN: Record<string, string> = {
   'markdown.codeGenerating': '代码还在生成中',
   'markdown.code': '代码',
 
+  // —— 斜杠补全 ——
+  'slash.customCommand': '自定义命令',
+
   // —— 生成图片卡 ——
   'genImage.caption': '生成图片 · {fileName}',
   'genImage.loadFailed': '加载失败',

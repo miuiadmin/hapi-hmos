@@ -332,6 +332,9 @@ export const en: Record<string, string> = {
   'markdown.codeGenerating': 'Code is still generating',
   'markdown.code': 'Code',
 
+  // —— Slash completion ——
+  'slash.customCommand': 'Custom command',
+
   // —— Generated image card ——
   'genImage.caption': 'Generated image · {fileName}',
   'genImage.loadFailed': 'Failed to load',

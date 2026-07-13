@@ -1,5 +1,6 @@
 import { SlashCommand } from '../chat/SlashCommands';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // 斜杠补全浮层（对照 web AssistantChat 建议列表）：渲染在 InputBar 正上方，列出按评分排序的命令；
 //   tap 选中即应用（ChatPage 调 applySuggestion 替换活动词）。纯展示 + 回调：建议数据/选中态由 ChatPage 传入。
@@ -13,6 +14,12 @@ export struct SlashMenu {
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
 
+  // 命令描述文案：builtin 有描述直用；user/plugin/project 无描述回落「自定义命令」（对照上游 useSlashCommands 同款回落）
+  private cmdDescription(cmd: SlashCommand): string {
+    if (cmd.description !== '') { return cmd.description; }
+    return cmd.source === 'builtin' ? '' : t('slash.customCommand');
+  }
+
   build() {
     Column() {
       Scroll() {
@@ -24,7 +31,7 @@ export struct SlashMenu {
                 .fontWeight(FontWeight.Medium)
                 .fontColor(this.c.primary)
                 .maxLines(1)
-              Text(cmd.description)
+              Text(this.cmdDescription(cmd))
                 .fontSize(fs(12))
                 .fontColor(this.c.textTertiary)
                 .maxLines(1)

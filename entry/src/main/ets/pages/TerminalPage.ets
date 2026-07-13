@@ -271,12 +271,16 @@ struct TerminalPage {
   }
 
   // 状态 → 文案（错误态带 Hub 上报的 message）
+  //   配额态（quotaMax>=0）显本地化配额文案 —— 与 StatusBanner 一致，避免顶栏副标题漏 Hub 原始英文
   private statusLabel(): string {
     if (!this.sessionActive) { return t('terminal.sessionInactive'); }
     if (this.state === 'connecting') { return t('terminal.state.connecting'); }
     if (this.state === 'ready') { return t('terminal.state.ready'); }
     if (this.state === 'reconnecting') { return t('terminal.state.reconnecting'); }
-    if (this.state === 'error') { return this.errorMsg !== '' ? this.errorMsg : t('terminal.state.error'); }
+    if (this.state === 'error') {
+      if (this.quotaMax >= 0) { return t('terminal.quotaExceeded', { max: this.quotaMax }); }
+      return this.errorMsg !== '' ? this.errorMsg : t('terminal.state.error');
+    }
     if (this.state === 'exited') {
       return this.exitCode >= 0
         ? t('terminal.exitWithCode', { code: this.exitCode })

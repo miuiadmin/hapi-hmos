@@ -1,5 +1,6 @@
 import { ChatBlock } from '../chat/ChatBlock';
 import { getHubClient } from '../api/HubClient';
+import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
 import { t } from '../i18n/I18nService';
@@ -29,12 +30,20 @@ export struct GeneratedImageCard {
   private async loadImage(): Promise<void> {
     this.loading = true;
     this.error = '';
-    this.dataUri = '';
-    const r = await getHubClient().fetchGeneratedImage(this.sessionId, this.block.imageId, this.block.mimeType);
-    if (r.success) {
-      this.dataUri = r.dataUri;
-    } else {
-      this.error = r.error !== '' ? r.error : t('genImage.loadFailed');
+    // 经内存缓存（key=session:image）：命中直显，未命中拉取 + 成功入缓存；同图并发去重。
+    //   失败 loader 重抛 → 不入缓存、可重试；error 文案保留 Hub 原文（空则回落 loadFailed）。
+    const key: string = this.sessionId + ':' + this.block.imageId;
+    try {
+      this.dataUri = await getGeneratedImageCache().fetch(key, async (): Promise<string> => {
+        const r = await getHubClient().fetchGeneratedImage(this.sessionId, this.block.imageId, this.block.mimeType);
+        if (r.success) {
+          return r.dataUri;
+        }
+        throw new Error(r.error);
+      });
+    } catch (e) {
+      this.dataUri = '';
+      this.error = e instanceof Error && e.message !== '' ? e.message : t('genImage.loadFailed');
     }
     this.loading = false;
   }
