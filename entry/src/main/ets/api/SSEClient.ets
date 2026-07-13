@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { getConnectionService } from '../services/ConnectionService';
-import { SyncEvent, parseSyncEvent } from '../models/SyncEvent';
+import { SyncEvent, SyncEventType, parseSyncEvent } from '../models/SyncEvent';
 import { SSEFrameParser, buildEventsUrl } from './SSEClientUtils';
 import { getHubClient } from './HubClient';
 
@@ -62,6 +62,10 @@ export class SSEClient {
   private reconnecting: boolean = false;
   private reconnectTimerId: number = -1;
 
+  // 当前 SSE 订阅 id（来自 connection-changed 事件首帧；可见性上报 /api/visibility 用。
+  //   重连 openStream 时清空，待新连接-changed 回帧再填——空时跳过上报，避免用坏订阅发请求）
+  private subscriptionId: string = '';
+
   // 订阅
   private subscription: SSESubscription = new SSESubscription();
 
@@ -81,6 +85,11 @@ export class SSEClient {
   // 当前连接状态（供 UI 横幅等在挂载时读当前态，而非只靠 onStateChange 转换）
   getState(): SSEConnectionState {
     return this.state;
+  }
+
+  // 当前 SSE 订阅 id（可见性上报用；未连/重连中返回 ''，调用方据此跳过上报）
+  getSubscriptionId(): string {
+    return this.subscriptionId;
   }
 
   // 注册监听者，返回 id（用于注销）
@@ -144,6 +153,7 @@ export class SSEClient {
   private openStream(): void {
     this.cleanupRequest();
     this.parser.reset();   // 清帧缓冲（lastEventId 保留供断点续传）
+    this.subscriptionId = '';   // 旧订阅随旧连接失效；待新 connection-changed 回帧再填
     this.setState(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 
     const httpRequest = http.createHttp();
@@ -161,6 +171,13 @@ export class SSEClient {
       for (let i = 0; i < events.length; i++) {
         const event = parseSyncEvent(events[i]);
         if (event !== null) {
+          // 捕获订阅 id（connection-changed 首帧携带；可见性上报用）
+          if (event.type === SyncEventType.CONNECTION_CHANGED) {
+            const sid = event.getString('subscriptionId');
+            if (sid !== '') {
+              this.subscriptionId = sid;
+            }
+          }
           this.dispatchToListeners(event);
         }
       }

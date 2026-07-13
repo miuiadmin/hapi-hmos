@@ -15,6 +15,7 @@ import {
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 @ComponentV2
 struct AskUserQuestionFooter {
@@ -205,7 +206,7 @@ struct AskUserQuestionFooter {
     }
     const a: string[] | null = this.validateQuestion(this.clampedStep);
     if (a === null) {
-      this.error = '请选择一个选项';
+      this.error = t('askUser.selectOptionRequired');
       return;
     }
     this.error = '';
@@ -221,7 +222,7 @@ struct AskUserQuestionFooter {
     if (qs.length === 0) {
       const a0: string[] | null = this.validateQuestion(0);
       if (a0 === null) {
-        this.error = '请选择一个选项';
+        this.error = t('askUser.selectOptionRequired');
         return;
       }
       answers['0'] = a0;
@@ -229,7 +230,7 @@ struct AskUserQuestionFooter {
       for (let i = 0; i < qs.length; i++) {
         const a: string[] | null = this.validateQuestion(i);
         if (a === null) {
-          this.error = '请选择一个选项';
+          this.error = t('askUser.selectOptionRequired');
           this.step = i;
           return;
         }
@@ -248,12 +249,12 @@ struct AskUserQuestionFooter {
       opts.answers = answers;
       const ok: boolean = await getHubClient().approvePermission(this.sessionId, p.id, opts);
       if (!ok) {
-        this.error = '提交失败';
+        this.error = t('askUser.submitFailed');
       } else {
         this.done = true;
       }
     } catch (e) {
-      this.error = e instanceof Error ? e.message : '提交失败';
+      this.error = e instanceof Error ? e.message : t('askUser.submitFailed');
     } finally {
       this.submitting = false;
     }
@@ -267,7 +268,7 @@ struct AskUserQuestionFooter {
     Column() {
       // 头：问题 badge + 进度
       Row() {
-        Text('问题')
+        Text(t('askUser.questionLabel'))
           .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
@@ -291,12 +292,12 @@ struct AskUserQuestionFooter {
 
       if (this.questions.length === 0) {
         // 兜底纯文本（questions 解析为空）
-        Text('请输入你的回答')
+        Text(t('askUser.enterAnswer'))
           .fontSize(fs(13))
           .fontColor(this.c.textSecondary)
           .width('100%')
           .margin({ top: 8 })
-        TextArea({ text: this.fallbackText, placeholder: '请输入…' })
+        TextArea({ text: this.fallbackText, placeholder: t('askUser.placeholder') })
           .fontSize(fs(13))
           .fontColor(this.c.textPrimary)
           .placeholderColor(this.c.textTertiary)
@@ -315,13 +316,13 @@ struct AskUserQuestionFooter {
       // 导航
       Row() {
         if (this.total > 1) {
-          this.NavButton('上一步', this.c.textSecondary, false, this.clampedStep === 0 || this.submitting || this.done, 'prev')
+          this.NavButton(t('askUser.prev'), this.c.textSecondary, false, this.clampedStep === 0 || this.submitting || this.done, 'prev')
         }
         Blank()
         if (this.total > 1 && this.clampedStep < this.total - 1) {
-          this.NavButton('下一步', this.c.textPrimary, false, this.submitting || this.done, 'next')
+          this.NavButton(t('askUser.next'), this.c.textPrimary, false, this.submitting || this.done, 'next')
         } else {
-          this.NavButton(this.done ? '已提交' : (this.submitting ? '提交中…' : '提交'), this.c.success, this.submitting, this.submitting || this.done, 'submit')
+          this.NavButton(this.done ? t('askUser.submitted') : (this.submitting ? t('askUser.submitting') : t('askUser.submit')), this.c.success, this.submitting, this.submitting || this.done, 'submit')
         }
       }
       .width('100%')
@@ -391,10 +392,10 @@ struct AskUserQuestionFooter {
             .fontSize(fs(15))
             .fontColor(this.currentOtherSelected() ? this.c.success : this.c.textSecondary)
           Column() {
-            Text('其他')
+            Text(t('askUser.other'))
               .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
-            Text('自定义回答')
+            Text(t('askUser.otherDescription'))
               .fontSize(fs(11))
               .fontColor(this.c.textSecondary)
               .margin({ top: 2 })
@@ -414,7 +415,7 @@ struct AskUserQuestionFooter {
 
         // Other 自填文本框
         if (this.currentOtherSelected()) {
-          TextArea({ text: this.currentOtherText(), placeholder: '请输入自定义回答…' })
+          TextArea({ text: this.currentOtherText(), placeholder: t('askUser.otherPlaceholder') })
             .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)

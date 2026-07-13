@@ -1,5 +1,6 @@
 import { pickStr, pickNum, pickObj } from './Types';
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
+import { t } from '../i18n/Translate';
 
 // Hapi 对话消息（对齐 shared/src/schemas.ts DecryptedMessage + web/src/chat 归一化）
 // ArkTS 无 Zod：手写信封解包（替代 unwrapRoleWrappedRecordEnvelope）+ 各 role 文本提取
@@ -231,13 +232,13 @@ export function sortQueuedMessages(list: ChatMessage[]): ChatMessage[] {
 export function formatScheduledIn(scheduledAt: number, now: number): string {
   if (scheduledAt <= 0) { return ''; }
   const diff: number = scheduledAt - now;
-  if (diff <= 0) { return '已到时间'; }
+  if (diff <= 0) { return t('msg.scheduledDue'); }
   const mins: number = Math.round(diff / 60000);
-  if (mins < 60) { return `${mins} 分钟后发送`; }
+  if (mins < 60) { return t('msg.scheduledInMins', { n: mins }); }
   const hours: number = Math.round(mins / 60);
-  if (hours < 24) { return `${hours} 小时后发送`; }
+  if (hours < 24) { return t('msg.scheduledInHours', { n: hours }); }
   const days: number = Math.round(hours / 24);
-  return `${days} 天后发送`;
+  return t('msg.scheduledInDays', { n: days });
 }
 
 // 取消排队消息响应（对照 shared CancelMessageResponse：cancelled | invoked 竞态分支）。
@@ -317,6 +318,13 @@ function extractAgentText(inner: Record<string, Object> | null): string {
   return extractTextFromObj(inner);
 }
 
+// 从对象按 camelCase → snake_case 顺序取首个非空字符串；均无命中返 ''（generated-image 字段两种命名兼容）。
+function pickStrFallback(r: Record<string, Object>, camel: string, snake: string): string {
+  const a: string = pickStr(r, camel);
+  if (a !== '') { return a; }
+  return pickStr(r, snake);
+}
+
 // 从 agent content（inner → data → message → content[]）提取归一化块（对照 web normalizeAssistant/normalizeUserOutput）
 // 同时覆盖 assistant（text/thinking/tool_use）与 user（text/tool_result）两类 data.type：按每块的 type 产出。
 function extractAgentBlocks(inner: Record<string, Object> | null): NormalizedAgentContent[] {
@@ -328,6 +336,24 @@ function extractAgentBlocks(inner: Record<string, Object> | null): NormalizedAge
   if (data === null) {
     return blocks;
   }
+
+  // 生成图片消息：data.type==='generated-image'，元数据在 data 顶层（imageId/fileName/mimeType），
+  //   **不在 data.message.content[]** —— 须在 message 判空之前拦截（对照 web normalizeAgent.ts:558-578）。
+  //   二进制不随报文传，渲染时按 imageId 单独 GET；此处只取元数据。字段兼容 snake_case。
+  if (pickStr(data, 'type') === 'generated-image') {
+    const imageId: string = pickStrFallback(data, 'imageId', 'image_id');
+    if (imageId !== '') {
+      const b: NormalizedAgentContent = new NormalizedAgentContent();
+      b.type = 'generated-image';
+      b.imageId = imageId;
+      const fn: string = pickStrFallback(data, 'fileName', 'file_name');
+      b.fileName = fn !== '' ? fn : 'generated-image';
+      b.mimeType = pickStrFallback(data, 'mimeType', 'mime_type');
+      blocks.push(b);
+    }
+    return blocks;
+  }
+
   const message: Record<string, Object> | null = pickObj(data, 'message');
   if (message === null) {
     return blocks;

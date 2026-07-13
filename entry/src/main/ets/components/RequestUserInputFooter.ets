@@ -15,6 +15,7 @@ import {
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 @ComponentV2
 struct RequestUserInputFooter {
@@ -147,7 +148,7 @@ struct RequestUserInputFooter {
     }
     const q: RequestUserInputQuestion = this.current;
     if (!this.validateQuestion(q)) {
-      this.error = '请选择一个选项或填写备注';
+      this.error = t('requestInput.selectOptionOrNote');
       return;
     }
     this.error = '';
@@ -161,7 +162,7 @@ struct RequestUserInputFooter {
     const qs: RequestUserInputQuestion[] = this.questions;
     for (let i = 0; i < qs.length; i++) {
       if (!this.validateQuestion(qs[i])) {
-        this.error = '请选择一个选项或填写备注';
+        this.error = t('requestInput.selectOptionOrNote');
         this.step = i;
         return;
       }
@@ -178,12 +179,12 @@ struct RequestUserInputFooter {
       opts.answers = buildRequestUserInputAnswers(this.stateByQuestion);
       const ok: boolean = await getHubClient().approvePermission(this.sessionId, p.id, opts);
       if (!ok) {
-        this.error = '提交失败';
+        this.error = t('requestInput.submitFailed');
       } else {
         this.done = true;
       }
     } catch (e) {
-      this.error = e instanceof Error ? e.message : '提交失败';
+      this.error = e instanceof Error ? e.message : t('requestInput.submitFailed');
     } finally {
       this.submitting = false;
     }
@@ -198,7 +199,7 @@ struct RequestUserInputFooter {
     Column() {
       // 头：问题 badge + 进度
       Row() {
-        Text('问题')
+        Text(t('requestInput.questionLabel'))
           .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
@@ -225,13 +226,13 @@ struct RequestUserInputFooter {
       // 导航
       Row() {
         if (this.total > 1) {
-          this.NavButton('上一步', this.c.textSecondary, false, this.clampedStep === 0 || this.submitting || this.done, 'prev')
+          this.NavButton(t('requestInput.prev'), this.c.textSecondary, false, this.clampedStep === 0 || this.submitting || this.done, 'prev')
         }
         Blank()
         if (this.total > 1 && this.clampedStep < this.total - 1) {
-          this.NavButton('下一步', this.c.textPrimary, false, this.submitting || this.done, 'next')
+          this.NavButton(t('requestInput.next'), this.c.textPrimary, false, this.submitting || this.done, 'next')
         } else {
-          this.NavButton(this.done ? '已提交' : (this.submitting ? '提交中…' : '提交'), this.c.success, this.submitting, this.submitting || this.done, 'submit')
+          this.NavButton(this.done ? t('requestInput.submitted') : (this.submitting ? t('requestInput.submitting') : t('requestInput.submit')), this.c.success, this.submitting, this.submitting || this.done, 'submit')
         }
       }
       .width('100%')
@@ -258,10 +259,10 @@ struct RequestUserInputFooter {
 
         if (this.isPureText) {
           // 纯文本题：仅备注输入框
-          Text('请输入回答')
+          Text(t('requestInput.enterAnswer'))
             .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
-          TextArea({ text: this.currentNote, placeholder: '请输入…' })
+          TextArea({ text: this.currentNote, placeholder: t('requestInput.placeholder') })
             .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)
@@ -305,10 +306,10 @@ struct RequestUserInputFooter {
           }, (opt: RequestUserInputOption, optIdx: number) => `q${this.clampedStep}:opt${optIdx}`)
 
           // 备注（有选项题也恒带）
-          Text('备注')
+          Text(t('requestInput.noteLabel'))
             .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
-          TextArea({ text: this.currentNote, placeholder: '可选：补充说明…' })
+          TextArea({ text: this.currentNote, placeholder: t('requestInput.notePlaceholder') })
             .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)

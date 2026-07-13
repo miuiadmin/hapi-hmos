@@ -5,6 +5,7 @@ import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { MarkdownText } from '../components/MarkdownText';
 import { ToolCard } from '../components/ToolCard';
 import { ReasoningBubble } from '../components/ReasoningBubble';
+import { GeneratedImageCard } from '../components/GeneratedImageCard';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { TeamPanel } from '../components/TeamPanel';
 import { TodoPanel } from '../components/TodoPanel';
@@ -13,15 +14,20 @@ import { ConnectionBanner } from '../components/ConnectionBanner';
 import { DateDivider } from '../components/DateDivider';
 import { ChatBlock } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
+import { buildConversationOutline, ConversationOutlineItem } from '../chat/Outline';
 import { blockMatchesQuery } from '../chat/ChatSearch';
-import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands } from '../chat/SlashCommands';
+import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands, mergeSlashCommands, serverCommandsToSlash } from '../chat/SlashCommands';
+import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skills';
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
+import { SkillsMenu } from '../components/SkillsMenu';
+import { getSessionSeenService } from '../services/SessionAttention';
 import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
+import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata } from '../models/Types';
+import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -29,8 +35,9 @@ import { common } from '@kit.AbilityKit';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { PreferenceKeys } from '../config/Keys';
-import { pickAndReadDocument } from '../services/FilePicker';
+import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
+import { t } from '../i18n/I18nService';
 
 // 对话页：消息流 + 输入发送 + SSE 实时接收
 // 协议对照 hapi：GET /api/sessions/:id/messages 拉历史；POST 同端点发送（{ok:true}，真实消息靠 SSE message-received 回推）
@@ -77,6 +84,10 @@ struct ChatPage {
   @Local collaborationMode: string = '';         // codex 协作模式（/collaboration-mode；首屏/SSE 播种）
   @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改）
   @Local menuOpen: boolean = false;              // ⋯ 动作面板显隐（组件 @Param open；逻辑全在 SessionActionMenu）
+  @Local outlineOpen: boolean = false;           // 对话大纲抽屉显隐（📋 用户提问列表，tap 跳转）
+  @Local outlineItems: ConversationOutlineItem[] = [];  // 大纲项（recomputeBlocks 随 blocks 重算）
+  @Local entryLastSeenAt: number = 0;            // 进入会话时的「上次已看」时间戳（markSeen 前捕获；滚到首条未读 + 未读分隔依据）
+  @Local newMessagesCount: number = 0;           // 滚在上方时累计的新消息数（>0 显「↓N条新消息」浮标）
 
   // 消息长按菜单（复制 / 重发[仅失败] / 分享）——底部动作 sheet，复用 SessionActionMenu 的 bindSheet 模式
   @Local messageMenuBlock: ChatBlock | null = null;   // 长按目标块（复制/重发/分享读其 text/userStatus）
@@ -93,6 +104,11 @@ struct ChatPage {
   @Local inputCursorEnd: number = 0;                   // TextArea 光标区终点
   @Local slashSuggestions: SlashCommand[] = [];        // 斜杠补全建议（输入 / 触发；findActiveWord→slashCommandSuggestions）
   @Local slashSelectedIndex: number = 0;               // 补全高亮项（tap 即选；预留键盘扩展）
+  @Local serverSlashCommands: SlashCommand[] = [];     // 服务端斜杠命令（loadMessages 拉；recomputeSlash 与 builtin 合并，server 覆盖同名）
+  @Local serverSkills: SkillItem[] = [];               // $ 技能（loadMessages 拉；recomputeSkill 评分数据源）
+  @Local skillSuggestionItems: SkillItem[] = [];       // $ 技能补全建议（输入 $ 触发；findActiveWord→skillSuggestions）
+  @Local skillSelectedIndex: number = 0;               // 补全高亮项（tap 即选）
+  private recentSkills: Map<string, number> = new Map();   // 技能最近使用 map（不绑 UI，仅 recomputeSkill 读；选中即时更新+持久化）
   @Local mentionItems: FileSearchItem[] = [];          // @ 文件联想结果（输入 @ 触发；debounce→searchSessionFiles）
   @Local mentionSelectedIndex: number = 0;             // 联想高亮项（tap 即选）
   @Local pendingAttachments: AttachmentMetadata[] = [];   // 待发附件（📎 选文件→upload→入列；发送随消息带走）
@@ -113,16 +129,26 @@ struct ChatPage {
   private draftTimerId: number = -1;             // 草稿去抖落盘句柄（onChange 500ms 去抖，aboutToDisappear 即时落盘）
   private nextBeforeAt: number = 0;              // 下一页「加载更旧」游标（服务端 page.nextBeforeAt，0=无更旧）
   private nextBeforeSeq: number = 0;             // 下一页游标 seq（与 nextBeforeAt 成对，禁止本地重算）
+  private nextAttachmentSeq: number = 0;         // 附件 id 自增序号（多文件并发 upload 防撞键，替代 Date.now()+length）
 
   aboutToAppear(): void {
     // @Param 在构造时已由 @Builder 注入，aboutToAppear 可读
     this.sessionId = this.routeParamsSeed !== null ? this.routeParamsSeed.sessionId : '';
     this.sessionTitle = this.routeParamsSeed !== null ? this.routeParamsSeed.title : '';
+    // 捕获「进入时上次已看」时间戳（须在 loadMessages/markSeen 前；滚到首条未读 + 未读分隔依据）。
+    //   lastSeen 返回 0=从未看过（首次进入无未读概念 → 滚底）。
+    if (this.sessionId !== '') {
+      this.entryLastSeenAt = getSessionSeenService().lastSeen(this.sessionId);
+    }
     this.loadMessages();
     this.restoreDraft();            // 恢复上次未发草稿（per-session，发送/离开落盘）
     this.loadEnterToSend();          // 读「回车发送」偏好（默认关；onChange 据此决定 Enter=发送/换行）
     this.addSSEListener();
     this.startTicker();
+    // 标记本会话已看（清未读角标；列表据此判断 updatedAt>lastSeenAt）
+    if (this.sessionId !== '') {
+      getSessionSeenService().markSeen(this.sessionId);
+    }
   }
 
   aboutToDisappear(): void {
@@ -134,6 +160,10 @@ struct ChatPage {
       this.draftTimerId = -1;
     }
     this.saveDraft();
+    // 离开时再次标记已看：将在本页期间收到的消息也视作已读（now>=updatedAt → 列表不显未读）
+    if (this.sessionId !== '') {
+      getSessionSeenService().markSeen(this.sessionId);
+    }
     if (this.sseListenerId !== -1) {
       getSSEClient().removeListener(this.sseListenerId);
       this.sseListenerId = -1;
@@ -206,7 +236,23 @@ struct ChatPage {
       const prevTs: number = i > 0 ? reduced[i - 1].createdAt : 0;
       reduced[i].dividerBefore = shouldShowDateDivider(reduced[i].createdAt, prevTs);
     }
+    // 盖「未读分隔」标记：entryLastSeenAt > 0 时，首条 createdAt>entryLastSeenAt 的块前置 unreadDividerBefore。
+    //   其余块一律 false（含上次无未读 / 首次进入 entryLastSeenAt=0 → 全 false，不显分隔）。
+    //   新消息到达不改变「首条未读」位置（新块 createdAt 更晚，首条 >entryLastSeenAt 仍是原块）；load-older 拉的是更早块，亦不跨阈值。
+    for (let i = 0; i < reduced.length; i++) {
+      reduced[i].unreadDividerBefore = false;
+    }
+    if (this.entryLastSeenAt > 0) {
+      for (let i = 0; i < reduced.length; i++) {
+        if (reduced[i].createdAt > this.entryLastSeenAt) {
+          reduced[i].unreadDividerBefore = true;
+          break;
+        }
+      }
+    }
     this.blocks = reduced;
+    // 大纲项随 blocks 一起重算（只索引 user-text 块；大纲抽屉直接读 outlineItems）
+    this.outlineItems = buildConversationOutline(reduced);
   }
 
   // 对话内搜索过滤视图（对照 Index.filteredSessions）：searchMode 关 或 空查询 → 全量；
@@ -403,10 +449,22 @@ struct ChatPage {
       } catch (e) {
         this.agentState = null;
       }
+      // 拉服务端斜杠命令（用户/项目/插件；失败静默返 [] 回落内置，不阻塞消息展示）——对照上游 useSlashCommands
+      this.serverSlashCommands = serverCommandsToSlash(await getHubClient().getSlashCommands(this.sessionId));
+      // 拉 $ 技能 + 最近使用 map（失败静默返 [] / 空 map；技能联想数据源）——对照上游 useSkills + recent-skills
+      this.serverSkills = await getHubClient().getSkills(this.sessionId);
+      this.recentSkills = await loadRecentSkills();
       this.isPinnedToBottom = true;
-      this.scrollToBottom();
+      // 进会话定位：有未读（entryLastSeenAt>0 且存在更新的块）→ 滚到首条未读、不贴底（新消息到达显浮标）；
+      //   否则滚底（对照上游总滚底行为）。首次进入 entryLastSeenAt=0 → 无未读 → 滚底。
+      if (this.entryLastSeenAt > 0 && this.hasUnreadBlock()) {
+        this.isPinnedToBottom = false;
+        this.scrollToFirstUnread();
+      } else {
+        this.scrollToBottom();
+      }
     } catch (e) {
-      this.loadError = e instanceof Error ? e.message : '加载消息失败';
+      this.loadError = e instanceof Error ? e.message : t('chat.loadError');
     } finally {
       this.isLoading = false;
     }
@@ -480,7 +538,12 @@ struct ChatPage {
       if (msgRaw !== null) {
         const msg = parseMessage(msgRaw);
         this.setMessages(mergeMessage(this.messages, msg));
-        this.maybeScrollToBottom();
+        // 贴底 → 跟随滚底；滚在上方读历史 → 不打断，累计新消息计数显浮标（对照上游 NewMessagesIndicator 思路，扩到实时新消息）
+        if (this.isPinnedToBottom) {
+          this.maybeScrollToBottom();
+        } else {
+          this.newMessagesCount = this.newMessagesCount + 1;
+        }
       }
     } else if (t === SyncEventType.MESSAGES_CONSUMED) {
       this.markMessagesConsumed(event);
@@ -640,6 +703,7 @@ struct ChatPage {
     this.pendingAttachments = [];            // 已捕获到 attachments，清空待发区
     this.slashSuggestions = [];               // 发送后清空残留补全（按钮发送不触发 recompute）
     this.clearMention();                      // 发送后清 @ 联想（含取消在途 debounce）
+    this.clearSkill();                        // 发送后清 $ 联想
     this.inputCursorStart = 0;
     this.inputCursorEnd = 0;
     this.isSending = true;
@@ -649,6 +713,21 @@ struct ChatPage {
     this.scrollToBottom();
 
     try {
+      // 非活跃会话：发送前先 resume（对齐上游 useSendMessage.resolveSessionId——
+      // session 非 active 时先复活拿【可能新的】sessionId 再发，否则 POST messages 撞 requireActive）。
+      if (!this.isActive) {
+        try {
+          const resumedId = await getHubClient().resumeSession(this.sessionId, this.permissionMode);
+          if (resumedId !== '' && resumedId !== this.sessionId) {
+            this.sessionId = resumedId;   // 后续 SSE 事件过滤 + 发送都走新 id
+          }
+          this.isActive = true;
+        } catch (e) {
+          this.updateOptimisticStatus(localId, 'failed');
+          showToast(t('chat.resumeFailed'));
+          return;
+        }
+      }
       const ok = await getHubClient().sendMessage(this.sessionId, text, localId, schedule, attachments);
       this.updateOptimisticStatus(localId, ok ? 'queued' : 'failed');
     } catch (e) {
@@ -688,6 +767,7 @@ struct ChatPage {
     this.pendingSchedule = (m.scheduledAt > 0 && m.scheduledAt > Date.now()) ? m.scheduledAt : 0;
     this.slashSuggestions = [];               // 回填后清残留补全（光标未定位，不重算）
     this.clearMention();                      // 回填后清 @ 联想（草稿可能含 @，但不主动联想）
+    this.clearSkill();                        // 回填后清 $ 联想
     this.inputCursorStart = m.text.length;
     this.inputCursorEnd = m.text.length;
     if (!m.isOptimistic && m.id !== '') {
@@ -707,7 +787,7 @@ struct ChatPage {
         this.setMessages(mergeMessage(this.messages, result.invokedMessage));
       }
     } catch (e) {
-      showToast('取消失败');
+      showToast(t('chat.cancelFailed'));
     }
   }
 
@@ -771,7 +851,9 @@ struct ChatPage {
       this.slashSelectedIndex = 0;
       return;
     }
-    const all: SlashCommand[] = getBuiltinSlashCommands(this.flavor);
+    // builtin 在前、server 在后 → mergeSlashCommands 同名 server 覆盖 builtin（对照上游 useSlashCommands:59）
+    const all: SlashCommand[] = mergeSlashCommands(
+      getBuiltinSlashCommands(this.flavor).concat(this.serverSlashCommands));
     const ranked: SlashCommand[] = slashCommandSuggestions(all, aw.activeWord);
     this.slashSuggestions = ranked.length > 6 ? ranked.slice(0, 6) : ranked;
     this.slashSelectedIndex = 0;
@@ -850,39 +932,84 @@ struct ChatPage {
     this.textAreaController.caretPosition(applied.cursorPosition);
   }
 
+  // —— $ 技能联想（对照 web useSkills.getSuggestions + lib/recent-skills）——
+  //   复用 ActiveWord 的 '$' 前缀分支（STOP_CHARACTERS 不含 '-'，$skill-name 不断词）：
+  //   光标处回溯找 '$' 活动词，命中则用 serverSkills + recentSkills 评分（精确/前缀/包含/Levenshtein）取前 6。
+  private recomputeSkill(): void {
+    const aw = findActiveWord(this.inputText, this.inputCursorStart, this.inputCursorEnd, ['$']);
+    if (aw === null || !aw.activeWord.startsWith('$')) {
+      this.clearSkill();
+      return;
+    }
+    const ranked: SkillItem[] = skillSuggestions(this.serverSkills, aw.activeWord, this.recentSkills);
+    this.skillSuggestionItems = ranked.length > 6 ? ranked.slice(0, 6) : ranked;
+    this.skillSelectedIndex = 0;
+  }
+
+  private clearSkill(): void {
+    this.skillSuggestionItems = [];
+    this.skillSelectedIndex = 0;
+  }
+
+  // 选中某技能：applySuggestion 把 '$...' 活动词替换为 '$name '；标记最近使用（本地 map 即时更新 + 异步落盘）。
+  private selectSkill(skill: SkillItem): void {
+    const applied = applySuggestion(this.inputText, this.inputCursorStart, this.inputCursorEnd,
+      `$${skill.name}`, ['$'], true);
+    this.inputText = applied.text;
+    this.inputCursorStart = applied.cursorPosition;
+    this.inputCursorEnd = applied.cursorPosition;
+    this.clearSkill();
+    this.textAreaController.caretPosition(applied.cursorPosition);
+    // recency：本地即时置顶（再联想排序立即生效），异步落盘（失败静默不阻塞）
+    this.recentSkills.set(skill.name, Date.now());
+    markSkillUsed(skill.name).catch((): void => {});
+  }
+
   // —— 附件上传（对照 web client.ts uploadFile；数据流：picker 选 → 读 base64 → POST /upload → 入待发列）——
   //   非 multipart：上游收 JSON {filename, content: base64, mimeType}，返 path 回填 AttachmentMetadata。
   //   DecryptedMessage 不带 attachments 字段，故附件只在「待发区」chip 可见；发送后由 agent 服务端消费（协议忠实）。
 
-  // 📎 按钮：选一个文件 → 读 base64 → uploadFile → 成功入 pendingAttachments；失败/取消 toast 提示。
+  // 📎 按钮：一次选多个文件 → 逐个读 base64 → uploadFile → 成功入 pendingAttachments。
+  //   单文件失败不阻断其余（toast 汇总 okCount/总数）；用户取消静默（picked 为空）。
   private async attach(): Promise<void> {
     if (this.isUploading || this.sessionId === '') { return; }
     const ctx = this.getUIContext().getHostContext();
     if (ctx === undefined || ctx === null) {
-      showToast('无法选取文件');
+      showToast(t('chat.pickFileFailed'));
       return;
     }
     this.isUploading = true;
     try {
-      const picked = await pickAndReadDocument(ctx as common.UIAbilityContext);
-      if (picked === null) {
-        // 用户取消静默；读失败给个提示
-        return;
+      const picked: PickedFile[] = await pickAndReadDocuments(ctx as common.UIAbilityContext, 10);
+      if (picked.length === 0) {
+        return;   // 用户取消静默；全失败 readPickedFile 已在 picker 层跳过，此处置空数组
       }
-      const result = await getHubClient().uploadFile(this.sessionId, picked.filename, picked.base64Content, picked.mimeType);
-      if (!result.success || result.path === '') {
-        showToast(result.error !== '' ? result.error : '上传失败');
-        return;
+      let okCount: number = 0;
+      let lastError: string = '';
+      for (let i = 0; i < picked.length; i++) {
+        const pf: PickedFile = picked[i];
+        const result = await getHubClient().uploadFile(this.sessionId, pf.filename, pf.base64Content, pf.mimeType);
+        if (!result.success || result.path === '') {
+          lastError = result.error !== '' ? result.error : t('chat.uploadFailed');
+          continue;   // 单个失败跳过，继续其余
+        }
+        const meta: AttachmentMetadata = new AttachmentMetadata();
+        meta.id = `att-${Date.now()}-${this.nextAttachmentSeq}`;
+        this.nextAttachmentSeq += 1;
+        meta.filename = pf.filename;
+        meta.mimeType = pf.mimeType;
+        meta.size = pf.size;
+        meta.path = result.path;
+        this.pendingAttachments = this.pendingAttachments.concat([meta]);
+        okCount += 1;
       }
-      const meta: AttachmentMetadata = new AttachmentMetadata();
-      meta.id = `att-${Date.now()}-${this.pendingAttachments.length}`;
-      meta.filename = picked.filename;
-      meta.mimeType = picked.mimeType;
-      meta.size = picked.size;
-      meta.path = result.path;
-      this.pendingAttachments = this.pendingAttachments.concat([meta]);
+      if (okCount === 0) {
+        showToast(lastError !== '' ? lastError : t('chat.uploadFailed'));
+      } else if (okCount < picked.length) {
+        showToast(t('chat.attachPartialFail', { ok: okCount, total: picked.length }));
+      }
     } catch (e) {
-      showToast('上传失败');
+      showToast(t('chat.uploadFailed'));
     } finally {
       this.isUploading = false;
     }
@@ -943,31 +1070,31 @@ struct ChatPage {
     const prev = this.model;
     this.model = model;
     const ok = await getHubClient().setModel(this.sessionId, model);
-    if (!ok) { this.model = prev; showToast('修改模型失败'); }
+    if (!ok) { this.model = prev; showToast(t('chat.setModelFailed')); }
   }
   private async applyPermissionMode(mode: string): Promise<void> {
     const prev = this.permissionMode;
     this.permissionMode = mode;
     const ok = await getHubClient().setPermissionMode(this.sessionId, mode);
-    if (!ok) { this.permissionMode = prev; showToast('修改权限模式失败'); }
+    if (!ok) { this.permissionMode = prev; showToast(t('chat.setPermissionFailed')); }
   }
   private async applyCollaborationMode(mode: string): Promise<void> {
     const prev = this.collaborationMode;
     this.collaborationMode = mode;
     const ok = await getHubClient().setCollaborationMode(this.sessionId, mode);
-    if (!ok) { this.collaborationMode = prev; showToast('修改协作模式失败'); }
+    if (!ok) { this.collaborationMode = prev; showToast(t('chat.setCollaborationFailed')); }
   }
   private async applyEffort(effort: string): Promise<void> {
     const prev = this.effort;
     this.effort = effort;
     const ok = await getHubClient().setEffort(this.sessionId, effort);
-    if (!ok) { this.effort = prev; showToast('修改努力度失败'); }
+    if (!ok) { this.effort = prev; showToast(t('chat.setEffortFailed')); }
   }
   private async applyReasoningEffort(effort: string): Promise<void> {
     const prev = this.modelReasoningEffort;
     this.modelReasoningEffort = effort;
     const ok = await getHubClient().setModelReasoningEffort(this.sessionId, effort);
-    if (!ok) { this.modelReasoningEffort = prev; showToast('修改推理努力失败'); }
+    if (!ok) { this.modelReasoningEffort = prev; showToast(t('chat.setReasoningFailed')); }
   }
 
   // —— 消息长按菜单（复制 / 重发 / 分享）——
@@ -987,8 +1114,8 @@ struct ChatPage {
   private copyToClipboard(text: string): void {
     const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
     pasteboard.getSystemPasteboard().setData(data)
-      .then((): void => { showToast('已复制'); })
-      .catch((): void => { showToast('复制失败'); });
+      .then((): void => { showToast(t('common.copySuccess')); })
+      .catch((): void => { showToast(t('chat.copyFailed')); });
   }
 
   private copyMessageText(): void {
@@ -1036,13 +1163,13 @@ struct ChatPage {
     }
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined || hostContext === null) {
-      showToast('无法分享');
+      showToast(t('chat.shareUnavailable'));
       return;
     }
     const ctx: common.UIAbilityContext = hostContext as common.UIAbilityContext;
     const r = await getShareService().shareText(ctx, text);
     if (!r.success) {
-      showToast('分享失败');
+      showToast(t('chat.shareFailed'));
     }
   }
 
@@ -1061,20 +1188,20 @@ struct ChatPage {
   //   经 ShareService 拉系统分享面板。上游 web 无 export，此为鸿蒙端增值（同单条分享）。
   private async exportConversation(): Promise<void> {
     if (this.blocks.length === 0) {
-      showToast('暂无可导出的消息');
+      showToast(t('chat.noMessagesToExport'));
       return;
     }
     const text: string = this.buildExportText();
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined || hostContext === null) {
-      showToast('无法分享');
+      showToast(t('chat.shareUnavailable'));
       return;
     }
     const ctx: common.UIAbilityContext = hostContext as common.UIAbilityContext;
-    const title: string = this.sessionTitle !== '' ? this.sessionTitle : '导出对话';
+    const title: string = this.sessionTitle !== '' ? this.sessionTitle : t('chat.exportTitle');
     const r = await getShareService().shareText(ctx, text, title);
     if (!r.success) {
-      showToast('分享失败');
+      showToast(t('chat.shareFailed'));
     }
   }
 
@@ -1085,20 +1212,20 @@ struct ChatPage {
   //   已知边角：若某新日首块恰好是被跳过的工具调用/思考过程，其 dividerBefore 分隔随之丢失（导出断档，屏幕正常）。
   private buildExportText(): string {
     const lines: string[] = [];
-    const title: string = this.sessionTitle !== '' ? this.sessionTitle : '对话';
+    const title: string = this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle');
     lines.push(title);
     lines.push('');
     for (let i = 0; i < this.blocks.length; i++) {
       const b: ChatBlock = this.blocks[i];
-      if (b.kind === 'tool-call' || b.kind === 'reasoning') {
-        continue;   // 工具调用 / 思考过程不导出（只导出 user/agent 对话）
+      if (b.kind === 'tool-call' || b.kind === 'reasoning' || b.kind === 'generated-image') {
+        continue;   // 工具调用 / 思考过程 / 生成图片不导出（只导出 user/agent 文本对话）
       }
       if (b.dividerBefore) {
         lines.push(`——— ${formatDateDivider(b.createdAt)} ———`);
         lines.push('');
       }
       const clock: string = b.createdAt > 0 ? formatClock(b.createdAt) : '--:--';
-      lines.push(b.kind === 'user-text' ? `${clock} 用户` : `${clock} 助手`);
+      lines.push(b.kind === 'user-text' ? t('chat.exportUser', { time: clock }) : t('chat.exportAssistant', { time: clock }));
       lines.push('');
       lines.push(b.text);
       lines.push('');
@@ -1130,15 +1257,79 @@ struct ChatPage {
     }
   }
 
+  // 是否存在「进入时未读」块（unreadDividerBefore 戳中至少一块）—— 决定进会话滚到首条未读 vs 滚底。
+  private hasUnreadBlock(): boolean {
+    for (let i = 0; i < this.blocks.length; i++) {
+      if (this.blocks[i].unreadDividerBefore) { return true; }
+    }
+    return false;
+  }
+
+  // 滚到首条未读块（unreadDividerBefore 戳中的块；进会话定位用，此时非过滤态 → blocks 索引即 List 索引）。
+  private scrollToFirstUnread(): void {
+    let idx: number = -1;
+    for (let i = 0; i < this.blocks.length; i++) {
+      if (this.blocks[i].unreadDividerBefore) { idx = i; break; }
+    }
+    if (idx < 0) { return; }
+    setTimeout((): void => { this.scroller.scrollToIndex(idx, false, ScrollAlign.START); }, 120);
+  }
+
+  // 「↓N条新消息」浮标点击：贴底 + 清计数 + 滚底。
+  private jumpToBottomFromButton(): void {
+    this.isPinnedToBottom = true;
+    this.newMessagesCount = 0;
+    this.scrollToBottom();
+  }
+
+  // 未读分隔线（首条未读块前；主色 dot + 文案，居中）。上游无对照，客户端自创。
+  @Builder
+  private UnreadDivider() {
+    Row({ space: 6 }) {
+      Column()
+        .width(5)
+        .height(5)
+        .borderRadius(2.5)
+        .backgroundColor(this.c.primary)
+      Text(t('chat.unreadDivider'))
+        .fontSize(fs(11))
+        .fontColor(this.c.primary)
+        .fontWeight(FontWeight.Medium)
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 8, bottom: 4 })
+  }
+
+  // 「↓N条新消息」浮标（贴底悬浮于列表上方；滚在上方时有新消息到达显形）。
+  @Builder
+  private NewMessagesButton() {
+    Row({ space: 6 }) {
+      Text('↓')
+        .fontSize(fs(13))
+        .fontColor(this.c.primary)
+      Text(this.newMessagesCount > 0 ? t('chat.newMessages', { n: this.newMessagesCount }) : t('chat.newMessagesShort'))
+        .fontSize(fs(13))
+        .fontColor(this.c.primary)
+        .fontWeight(FontWeight.Medium)
+    }
+    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+    .borderRadius(18)
+    .backgroundColor(this.c.bg)
+    .border({ width: 1, color: this.c.primary })
+    .margin({ bottom: 8 })
+    .onClick(() => { this.jumpToBottomFromButton(); })
+  }
+
   private statusText(s: string): string {
     if (s === 'sending') {
-      return '发送中';
+      return t('chat.statusSending');
     }
     if (s === 'queued') {
-      return '排队中';
+      return t('chat.statusQueued');
     }
     if (s === 'failed') {
-      return '发送失败';
+      return t('chat.statusFailed');
     }
     return '';
   }
@@ -1222,10 +1413,10 @@ struct ChatPage {
     Column({ space: 8 }) {
       Text('💬')
         .fontSize(fs(40))
-      Text('开始对话')
+      Text(t('chat.emptyTitle'))
         .fontSize(fs(15))
         .fontColor(this.c.textPrimary)
-      Text('向 agent 发送消息开始协作')
+      Text(t('chat.emptyHint'))
         .fontSize(fs(12))
         .fontColor(this.c.textTertiary)
     }
@@ -1238,7 +1429,7 @@ struct ChatPage {
   @Builder
   private TypingIndicator() {
     Row() {
-      Text('思考中…')
+      Text(t('chat.thinking'))
         .fontSize(fs(14))
         .fontColor(this.c.textTertiary)
         .padding({ left: 14, right: 14, top: 9, bottom: 9 })
@@ -1254,7 +1445,7 @@ struct ChatPage {
   private LoadingOlderBar() {
     Row({ space: 6 }) {
       LoadingProgress().width(16).height(16).color(this.c.textTertiary)
-      Text('加载更早消息…')
+      Text(t('chat.loadingOlder'))
         .fontSize(fs(12))
         .fontColor(this.c.textTertiary)
     }
@@ -1298,6 +1489,14 @@ struct ChatPage {
           onSelect: (item: FileSearchItem): void => { this.selectMention(item); }
         })
       }
+      // $ 技能联想浮层（输入 $ 触发；与斜杠/@ 浮层互斥——一次只可能有一个前缀活动词）
+      if (this.skillSuggestionItems.length > 0) {
+        SkillsMenu({
+          items: this.skillSuggestionItems,
+          selectedIndex: this.skillSelectedIndex,
+          onSelect: (skill: SkillItem): void => { this.selectSkill(skill); }
+        })
+      }
       // 待发附件 chip 栏（📎 选中的文件，发送前可移除；空时不渲染）
       this.AttachmentsBar()
       Row({ space: 8 }) {
@@ -1318,7 +1517,7 @@ struct ChatPage {
           .textAlign(TextAlign.Center)
           .onClick(() => { this.scheduleSheetOpen = true; })
 
-        TextArea({ text: this.inputText, placeholder: '输入消息…', controller: this.textAreaController })
+        TextArea({ text: this.inputText, placeholder: t('chat.inputPlaceholder'), controller: this.textAreaController })
           .layoutWeight(1)
           .fontSize(fs(15))
           .fontColor(this.c.textPrimary)
@@ -1338,6 +1537,7 @@ struct ChatPage {
             this.inputText = v;
             this.recomputeSlash();
             this.recomputeMention();
+            this.recomputeSkill();
             this.scheduleDraftSave();
           })
           .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
@@ -1345,9 +1545,10 @@ struct ChatPage {
             this.inputCursorEnd = selectionEnd;
             this.recomputeSlash();
             this.recomputeMention();
+            this.recomputeSkill();
           })
 
-        Button(this.isThinking ? '停止' : '发送')
+        Button(this.isThinking ? t('chat.stop') : t('chat.send'))
           .fontSize(fs(15))
           .height(40)
           .backgroundColor(this.isThinking ? this.c.surface : this.c.primary)
@@ -1389,7 +1590,7 @@ struct ChatPage {
   @Builder
   private ScheduleSheet() {
     Column() {
-      Text('定时发送')
+      Text(t('chat.scheduleSend'))
         .fontSize(fs(16))
         .fontWeight(FontWeight.Medium)
         .fontColor(this.c.textPrimary)
@@ -1424,13 +1625,13 @@ struct ChatPage {
           .padding({ top: 4, bottom: 8 })
 
         Row({ space: 12 }) {
-          Button('返回')
+          Button(t('common.back'))
             .layoutWeight(1)
             .height(42)
             .backgroundColor(this.c.surface)
             .fontColor(this.c.textPrimary)
             .onClick(() => { this.scheduleCustomMode = false; })
-          Button('确定')
+          Button(t('common.confirm'))
             .layoutWeight(1)
             .height(42)
             .backgroundColor(this.c.primary)
@@ -1441,14 +1642,14 @@ struct ChatPage {
         .padding({ left: 20, right: 20, bottom: 16 })
       } else {
         // 预设分支（对照 web ScheduleTimePicker：+5m/+30m/+1h/+4h）
-        this.scheduleOption('+5 分钟', 5 * 60 * 1000)
-        this.scheduleOption('+30 分钟', 30 * 60 * 1000)
-        this.scheduleOption('+1 小时', 60 * 60 * 1000)
-        this.scheduleOption('+4 小时', 4 * 60 * 60 * 1000)
+        this.scheduleOption(t('chat.scheduleIn5m'), 5 * 60 * 1000)
+        this.scheduleOption(t('chat.scheduleIn30m'), 30 * 60 * 1000)
+        this.scheduleOption(t('chat.scheduleIn1h'), 60 * 60 * 1000)
+        this.scheduleOption(t('chat.scheduleIn4h'), 4 * 60 * 60 * 1000)
 
         // 进自定义绝对时间分支（DatePicker+TimePicker）
         Row() {
-          Text('自定义时间…')
+          Text(t('chat.scheduleCustom'))
             .fontSize(fs(15))
             .fontColor(this.c.primary)
             .layoutWeight(1)
@@ -1463,7 +1664,7 @@ struct ChatPage {
 
         if (this.pendingSchedule > 0) {
           Row() {
-            Text('清除定时')
+            Text(t('chat.scheduleClear'))
               .fontSize(fs(15))
               .fontColor(this.c.error)
               .layoutWeight(1)
@@ -1485,7 +1686,7 @@ struct ChatPage {
     d.setHours(this.pickHour, this.pickMinute, 0, 0);
     const hh: string = this.pickHour < 10 ? `0${this.pickHour}` : `${this.pickHour}`;
     const mm: string = this.pickMinute < 10 ? `0${this.pickMinute}` : `${this.pickMinute}`;
-    const absPart: string = `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`;
+    const absPart: string = t('chat.scheduleAbsTime', { m: d.getMonth() + 1, d: d.getDate(), hh: hh, mm: mm });
     const relPart: string = formatScheduledIn(d.getTime(), Date.now());
     return `${absPart}（${relPart}）`;
   }
@@ -1506,6 +1707,29 @@ struct ChatPage {
       onSetPermissionMode: (m: string): void => { this.applyPermissionMode(m); },
       onSetCollaborationMode: (m: string): void => { this.applyCollaborationMode(m); }
     })
+  }
+
+  // 对话大纲 sheet（包 OutlinePanel；items 由 recomputeBlocks 维护，tap 调 jumpToOutline）
+  @Builder
+  private OutlineSheet() {
+    OutlinePanel({
+      items: this.outlineItems,
+      onJump: (blockId: string): void => { this.jumpToOutline(blockId); }
+    })
+  }
+
+  // 大纲跳转：在 filteredBlocks 内查 blockId 的 index → scrollToIndex(START) → 关抽屉。
+  //   ArkTS List 全量渲染 filteredBlocks，目标必在数组内（大纲即从 blocks 派生），无需上游 load-older 翻页循环。
+  private jumpToOutline(blockId: string): void {
+    const list: ChatBlock[] = this.filteredBlocks;
+    let idx: number = -1;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].id === blockId) { idx = i; break; }
+    }
+    this.outlineOpen = false;
+    if (idx < 0) { return; }   // 理论不发生（大纲源于 blocks）；防御性静默
+    // 延迟一帧等抽屉关闭动画后再滚，避免 sheet 仍在时滚动被遮挡
+    setTimeout((): void => { this.scroller.scrollToIndex(idx, true, ScrollAlign.START); }, 120);
   }
 
   // 标题栏右侧菜单（NavDestination.menus CustomBuilder，对照 chatcube SettingsNavigationMenus）：
@@ -1535,6 +1759,14 @@ struct ChatPage {
         .height(40)
         .textAlign(TextAlign.Center)
         .onClick(() => { this.openFiles(); })
+      // 对话大纲（用户提问列表，tap 跳转；对照 web HappyThread ConversationOutlinePanel）
+      Text('📋')
+        .fontSize(fs(17))
+        .fontColor(this.c.textSecondary)
+        .width(36)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.outlineOpen = true; })
       // 会话内配置（模型/权限/effort 即时改；对照 web FloatingOverlay）
       Text('🎛')
         .fontSize(fs(18))
@@ -1558,13 +1790,13 @@ struct ChatPage {
   @Builder
   private SearchBar() {
     Column({ space: 4 }) {
-      Search({ value: this.searchQuery, placeholder: '搜索对话内消息…' })
+      Search({ value: this.searchQuery, placeholder: t('chat.searchPlaceholder') })
         .height(40)
         .backgroundColor(this.c.surface)
         .placeholderColor(this.c.textTertiary)
         .onChange((value: string) => { this.searchQuery = value; })
       if (this.isFiltering()) {
-        Text(`${this.filteredBlocks.length} 个匹配`)
+        Text(t('chat.searchMatches', { n: this.filteredBlocks.length }))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
           .width('100%')
@@ -1580,7 +1812,7 @@ struct ChatPage {
   private MessageMenuSheet() {
     Column() {
       Row() {
-        Text('复制').fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        Text(t('common.copy')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
       }
       .width('100%')
       .height(52)
@@ -1595,7 +1827,7 @@ struct ChatPage {
         && this.messageMenuBlock.kind === 'user-text'
         && this.messageMenuBlock.userStatus === 'failed') {
         Row() {
-          Text('重发').fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+          Text(t('chat.resend')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%')
         .height(52)
@@ -1607,7 +1839,7 @@ struct ChatPage {
       }
 
       Row() {
-        Text('分享').fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        Text(t('chat.share')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
       }
       .width('100%')
       .height(52)
@@ -1634,9 +1866,9 @@ struct ChatPage {
           .justifyContent(FlexAlign.Center)
         } else if (this.loadError !== '' && this.messages.length === 0) {
           Column({ space: 10 }) {
-            Text('加载失败').fontSize(fs(15)).fontColor(this.c.error)
+            Text(t('chat.loadFailed')).fontSize(fs(15)).fontColor(this.c.error)
             Text(this.loadError).fontSize(fs(12)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
-            Button('重试')
+            Button(t('common.retry'))
               .fontSize(fs(13))
               .backgroundColor(this.c.primary)
               .fontColor(this.c.bubbleUserText)
@@ -1663,6 +1895,8 @@ struct ChatPage {
             if (this.isLoadingOlder) {
               this.LoadingOlderBar()
             }
+            // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
+            Stack({ alignContent: Alignment.BottomCenter }) {
             List({ scroller: this.scroller, space: 8 }) {
               ForEach(this.filteredBlocks, (b: ChatBlock) => {
                 ListItem() {
@@ -1672,6 +1906,10 @@ struct ChatPage {
                     if (b.dividerBefore && !this.isFiltering()) {
                       DateDivider({ timestamp: b.createdAt })
                     }
+                    // 未读分隔（首条 createdAt>entryLastSeenAt 的块前；上游无对照，客户端自创）
+                    if (b.unreadDividerBefore && !this.isFiltering()) {
+                      this.UnreadDivider()
+                    }
                     if (b.kind === 'user-text') {
                       this.UserBubble(b)
                     } else if (b.kind === 'agent-text') {
@@ -1680,6 +1918,11 @@ struct ChatPage {
                       ReasoningBubble({
                         text: b.text,
                         isStreaming: this.isReasoningStreaming(b)
+                      })
+                    } else if (b.kind === 'generated-image') {
+                      GeneratedImageCard({
+                        block: b,
+                        sessionId: this.sessionId
                       })
                     } else {
                       ToolCard({
@@ -1700,7 +1943,7 @@ struct ChatPage {
               }
             }
             .width('100%')
-            .layoutWeight(1)
+            .height('100%')
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring)
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
@@ -1713,7 +1956,18 @@ struct ChatPage {
             })
             .onScrollStop(() => {
               this.isPinnedToBottom = this.scroller.isAtEnd();
+              // 用户手动滚到底 → 清新消息浮标计数
+              if (this.isPinnedToBottom) {
+                this.newMessagesCount = 0;
+              }
             })
+
+            if (this.newMessagesCount > 0) {
+              this.NewMessagesButton()
+            }
+            }
+            .width('100%')
+            .layoutWeight(1)
           }
           .width('100%')
           .layoutWeight(1)
@@ -1771,8 +2025,14 @@ struct ChatPage {
         showClose: true,
         onDisappear: (): void => { this.configSheetOpen = false; }
       })
+      .bindSheet(this.outlineOpen, this.OutlineSheet(), {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        dragBar: true,
+        showClose: true,
+        onDisappear: (): void => { this.outlineOpen = false; }
+      })
     }
-    .title(this.sessionTitle !== '' ? this.sessionTitle : '对话')
+    .title(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
     .menus(this.HeaderMenu)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

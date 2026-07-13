@@ -1,5 +1,6 @@
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // ReasoningBubble —— agent 思考过程块
 // 对照上游 web/src/components/assistant-ui/reasoning.tsx（ReasoningGroup 折叠容器 + Reasoning markdown 体）
@@ -30,7 +31,7 @@ export struct ReasoningBubble {
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .margin({ right: 6 })
-        Text('思考过程')
+        Text(t('reasoning.label'))
           .fontSize(fs(12))
           .fontColor(this.c.textSecondary)
           .layoutWeight(1)

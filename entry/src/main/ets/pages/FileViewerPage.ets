@@ -2,6 +2,7 @@ import { buffer } from '@kit.ArkTS';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { getHubClient } from '../api/HubClient';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // 文件查看页（NavDestination）—— 对照 hapi web /sessions/$sessionId/file
 //   readSessionFile → content(base64)：图片扩展名→Image(data:mime;base64,...)；
@@ -96,7 +97,7 @@ struct FileViewerPage {
     try {
       const resp = await getHubClient().readSessionFile(this.sessionId, this.filePath);
       if (!resp.success) {
-        this.contentError = resp.error !== '' ? resp.error : '读取文件失败';
+        this.contentError = resp.error !== '' ? resp.error : t('fileViewer.readFailed');
         return;
       }
       this.rawBase64 = resp.content;
@@ -113,7 +114,7 @@ struct FileViewerPage {
         }
       }
     } catch (e) {
-      this.contentError = e instanceof Error ? e.message : '读取文件失败';
+      this.contentError = e instanceof Error ? e.message : t('fileViewer.readFailed');
     } finally {
       this.loading = false;
     }
@@ -126,12 +127,12 @@ struct FileViewerPage {
     try {
       const resp = await getHubClient().getGitDiffFile(this.sessionId, this.filePath, this.staged);
       if (!resp.success) {
-        this.diffError = resp.error !== '' ? resp.error : (resp.stderr !== '' ? resp.stderr : '加载 diff 失败');
+        this.diffError = resp.error !== '' ? resp.error : (resp.stderr !== '' ? resp.stderr : t('fileViewer.diffLoadFailed'));
       } else {
         this.diffStdout = resp.stdout;
       }
     } catch (e) {
-      this.diffError = e instanceof Error ? e.message : '加载 diff 失败';
+      this.diffError = e instanceof Error ? e.message : t('fileViewer.diffLoadFailed');
     } finally {
       this.diffLoading = false;
     }
@@ -153,11 +154,11 @@ struct FileViewerPage {
   @Builder
   private DiffLines() {
     if (this.diffLoading) {
-      Text('加载 diff…').fontSize(fs(13)).fontColor(this.c.textTertiary).padding(16)
+      Text(t('fileViewer.diffLoading')).fontSize(fs(13)).fontColor(this.c.textTertiary).padding(16)
     } else if (this.diffError !== '') {
       Text(this.diffError).fontSize(fs(13)).fontColor(this.c.error).padding(16)
     } else if (this.diffStdout === '') {
-      Text('无差异').fontSize(fs(13)).fontColor(this.c.textTertiary).padding(16)
+      Text(t('fileViewer.noDiff')).fontSize(fs(13)).fontColor(this.c.textTertiary).padding(16)
     } else {
       Column({ space: 0 }) {
         ForEach(this.diffLineList(), (ln: string, i: number) => {
@@ -207,7 +208,7 @@ struct FileViewerPage {
     if (this.loading) {
       Column({ space: 8 }) {
         LoadingProgress().width(28).height(28).color(this.c.primary)
-        Text('加载文件…').fontSize(fs(13)).fontColor(this.c.textTertiary)
+        Text(t('fileViewer.loading')).fontSize(fs(13)).fontColor(this.c.textTertiary)
       }
       .width('100%')
       .padding({ top: 48 })
@@ -227,7 +228,7 @@ struct FileViewerPage {
     } else if (this.isBinary) {
       Column({ space: 6 }) {
         Text('🗄️').fontSize(fs(36))
-        Text('二进制文件').fontSize(fs(14)).fontColor(this.c.textTertiary)
+        Text(t('fileViewer.binary')).fontSize(fs(14)).fontColor(this.c.textTertiary)
       }
       .width('100%')
       .padding({ top: 48 })
@@ -266,7 +267,7 @@ struct FileViewerPage {
           // diff 段（从 git 改动进入时）
           if (this.showDiff) {
             Column({ space: 6 }) {
-              Text(this.staged ? '暂存区差异' : '工作区差异')
+              Text(this.staged ? t('fileViewer.diffStaged') : t('fileViewer.diffUnstaged'))
                 .fontSize(fs(13)).fontColor(this.c.textTertiary)
                 .width('100%')
                 .padding({ left: 4 })
@@ -283,7 +284,7 @@ struct FileViewerPage {
       .scrollBar(BarState.Auto)
       .backgroundColor(this.c.bg)
     }
-    .title(this.fileName !== '' ? this.fileName : '文件')
+    .title(this.fileName !== '' ? this.fileName : t('fileViewer.fallbackTitle'))
     .menus(this.CopyMenu)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

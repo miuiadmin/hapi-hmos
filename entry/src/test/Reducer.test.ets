@@ -78,6 +78,15 @@ function toolResult(id: string, isError: boolean, content: Object): NormalizedAg
   return b;
 }
 
+function generatedImageBlock(imageId: string, fileName: string, mimeType: string): NormalizedAgentContent {
+  const b: NormalizedAgentContent = new NormalizedAgentContent();
+  b.type = 'generated-image';
+  b.imageId = imageId;
+  b.fileName = fileName;
+  b.mimeType = mimeType;
+  return b;
+}
+
 // —— AgentState 构造器 ——
 
 function stateWithPending(id: string, tool: string, createdAt: number): AgentState {
@@ -343,6 +352,41 @@ export default function reducerTest(): void {
 
     it('returns an empty array for no messages and an empty agentState', 0, () => {
       expect(reduceChatBlocks([], new AgentState()).length).assertEqual(0);
+    });
+  });
+
+  describe('reduceChatBlocks — generated-image', () => {
+    // 对照上游 reducerTimeline.ts:741-753：c.type==='generated-image' → kind='generated-image'，
+    //   id 同 agent-text 方案 `${msg.id}:${idx}`；imageId/fileName/mimeType 透传。
+    it('maps a generated-image block to a generated-image ChatBlock', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 200, [generatedImageBlock('img1', 'cat.png', 'image/png')])
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('generated-image');
+      expect(blocks[0].id).assertEqual('a1:0');
+      expect(blocks[0].createdAt).assertEqual(200);
+      expect(blocks[0].imageId).assertEqual('img1');
+      expect(blocks[0].fileName).assertEqual('cat.png');
+      expect(blocks[0].mimeType).assertEqual('image/png');
+    });
+
+    it('skips a generated-image block with empty imageId', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 200, [generatedImageBlock('', 'x.png', 'image/png')])
+      ], null);
+      expect(blocks.length).assertEqual(0);
+    });
+
+    it('renders generated-image after a text block in the same message, in order', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 200, [textBlock('intro'), generatedImageBlock('img1', 'a.png', 'image/png')])
+      ], null);
+      expect(blocks.length).assertEqual(2);
+      expect(blocks[0].kind).assertEqual('agent-text');
+      expect(blocks[0].text).assertEqual('intro');
+      expect(blocks[1].kind).assertEqual('generated-image');
+      expect(blocks[1].id).assertEqual('a1:1');   // 第二块 idx=1
     });
   });
 }

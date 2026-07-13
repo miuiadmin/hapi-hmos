@@ -1,6 +1,7 @@
 import { getHubClient } from '../api/HubClient';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
+import { t } from '../i18n/I18nService';
 
 // 会话动作菜单（重命名 / 归档 / 删除）——列表长按（Index）与对话页标题栏 ⋯（ChatPage）复用，去重。
 // 组件自持两 sheet（动作面板 + 重命名面板）+ 全部生命周期逻辑（确认弹窗 / API 调用 / 防重入）。
@@ -45,7 +46,7 @@ export struct SessionActionMenu {
 
   // 第二项文案：active→归档；非活跃→删除（永不并存，对照上游 SessionActionMenu）
   private destructiveLabel(): string {
-    return this.active ? '归档' : '删除';
+    return this.active ? t('sessionMenu.archive') : t('sessionMenu.delete');
   }
 
   private onDestructiveTap(): void {
@@ -53,6 +54,22 @@ export struct SessionActionMenu {
       this.confirmArchive();
     } else {
       this.confirmDelete();
+    }
+  }
+
+  // 切换到远程（仅 active 会话显）：多端/多窗口时让 CLI 把输入定向到本会话（对照上游
+  // SessionChat.handleSwitchToRemote → switchSession）。移动端单窗口价值低，记为边缘入口。
+  // 关面板 → POST /switch → toast（无本地态变更，不阻塞）。
+  private async startSwitchRemote(): Promise<void> {
+    this.onClose();
+    if (this.sessionId === '') {
+      return;
+    }
+    try {
+      const ok = await getHubClient().switchSession(this.sessionId);
+      showToast(ok ? t('sessionMenu.switchedRemote') : t('sessionMenu.switchRemoteFailed'));
+    } catch (e) {
+      showToast(t('sessionMenu.switchRemoteFailed'));
     }
   }
 
@@ -83,13 +100,13 @@ export struct SessionActionMenu {
       const ok = await getHubClient().renameSession(this.sessionId, name);
       if (ok) {
         this.onRenamed(name);
-        showToast('已重命名');
+        showToast(t('sessionMenu.renamed'));
         this.closeRename();
       } else {
-        showToast('重命名失败，请重试');
+        showToast(t('sessionMenu.renameFailed'));
       }
     } catch (e) {
-      showToast('重命名失败，请重试');
+      showToast(t('sessionMenu.renameFailed'));
     } finally {
       this.isActing = false;
     }
@@ -99,11 +116,11 @@ export struct SessionActionMenu {
   private confirmArchive(): void {
     this.onClose();
     this.getUIContext().showAlertDialog({
-      title: '归档会话',
-      message: `确定要归档「${this.title}」吗？这将断开活跃会话。`,
+      title: t('sessionMenu.archiveTitle'),
+      message: t('sessionMenu.archiveConfirm', { name: this.title }),
       autoCancel: true,
       confirm: {
-        value: '归档',
+        value: t('sessionMenu.archive'),
         fontColor: this.c.error,
         action: () => { this.doArchive(); }
       }
@@ -114,11 +131,11 @@ export struct SessionActionMenu {
   private confirmDelete(): void {
     this.onClose();
     this.getUIContext().showAlertDialog({
-      title: '删除会话',
-      message: `确定要删除「${this.title}」吗？此操作不可恢复。`,
+      title: t('sessionMenu.deleteTitle'),
+      message: t('sessionMenu.deleteConfirm', { name: this.title }),
       autoCancel: true,
       confirm: {
-        value: '删除',
+        value: t('sessionMenu.delete'),
         fontColor: this.c.error,
         action: () => { this.doDelete(); }
       }
@@ -135,12 +152,12 @@ export struct SessionActionMenu {
       const ok = await getHubClient().archiveSession(this.sessionId);
       if (ok) {
         this.onArchived();
-        showToast('已归档');
+        showToast(t('sessionMenu.archived'));
       } else {
-        showToast('归档失败，请重试');
+        showToast(t('sessionMenu.archiveFailed'));
       }
     } catch (e) {
-      showToast('归档失败，请重试');
+      showToast(t('sessionMenu.archiveFailed'));
     } finally {
       this.isActing = false;
     }
@@ -156,12 +173,12 @@ export struct SessionActionMenu {
       const ok = await getHubClient().deleteSession(this.sessionId);
       if (ok) {
         this.onDeleted();
-        showToast('已删除');
+        showToast(t('sessionMenu.deleted'));
       } else {
-        showToast('删除失败，请重试');
+        showToast(t('sessionMenu.deleteFailed'));
       }
     } catch (e) {
-      showToast('删除失败，请重试');
+      showToast(t('sessionMenu.deleteFailed'));
     } finally {
       this.isActing = false;
     }
@@ -180,13 +197,26 @@ export struct SessionActionMenu {
         .padding({ left: 20, right: 20, top: 16, bottom: 8 })
 
       Row() {
-        Text('重命名').fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        Text(t('sessionMenu.rename')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
       }
       .width('100%')
       .height(52)
       .padding({ left: 20, right: 20 })
       .alignItems(VerticalAlign.Center)
       .onClick(() => { this.startRename(); })
+
+      if (this.active) {
+        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+
+        Row() {
+          Text(t('sessionMenu.switchRemote')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.startSwitchRemote(); })
+      }
 
       Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
 
@@ -208,7 +238,7 @@ export struct SessionActionMenu {
   @Builder
   private RenameSheet() {
     Column() {
-      TextInput({ text: this.renameText, placeholder: '会话名称', controller: this.renameInputController })
+      TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
         .fontSize(fs(16))
         .fontColor(this.c.textPrimary)
         .placeholderColor(this.c.textTertiary)
@@ -221,14 +251,14 @@ export struct SessionActionMenu {
         .onSubmit(() => { this.confirmRename(); })
 
       Row({ space: 10 }) {
-        Button('取消')
+        Button(t('common.cancel'))
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.c.surface)
           .fontColor(this.c.textPrimary)
           .borderRadius(12)
           .onClick(() => { this.closeRename(); })
-        Button(this.isActing ? '保存中…' : '保存')
+        Button(this.isActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.c.primary)
@@ -254,7 +284,7 @@ export struct SessionActionMenu {
           detents: [SheetSize.FIT_CONTENT],
           dragBar: true,
           showClose: true,
-          title: { title: '重命名会话' },
+          title: { title: t('sessionMenu.renameSheetTitle') },
           onDisappear: (): void => { this.closeRename(); }
         })
     }

@@ -1,10 +1,12 @@
 // NormalizedAgentContent —— 对齐 web/src/chat/types.ts NormalizedAgentContent
 // ArkTS 无判别联合 → 单类 + type 字段串判别（ForEach/instanceof 在声明式树里不稳，字符串比较最稳）。
-// MVP 范围：text / reasoning / tool-call / tool-result。
+// MVP 范围：text / reasoning / tool-call / tool-result / generated-image。
 //   tool-call 的 id = tool_use.id；tool-result 的 id = tool_use_id（reducer 据此合并两者）。
+//   generated-image：agent 调 display_image 工具登记的图，元数据随 SSE 推送（imageId/fileName/mimeType），
+//     二进制按需 GET /api/sessions/:id/generated-images/:imageId 拉（对照 web GeneratedImageContent）。
 // 纯数据类，无 ArkUI 依赖。
 
-export type NormalizedBlockType = 'text' | 'reasoning' | 'tool-call' | 'tool-result';
+export type NormalizedBlockType = 'text' | 'reasoning' | 'tool-call' | 'tool-result' | 'generated-image';
 
 export class NormalizedAgentContent {
   type: NormalizedBlockType = 'text';
@@ -21,4 +23,10 @@ export class NormalizedAgentContent {
   // tool-result 块（id = tool_use_id，与对应 tool-call 的 id 相等，作合并键）
   content: Object | null = null;                        // 结果内容（string / 对象 / {type:text}[] 等多种形态）
   isError: boolean = false;                             // tool_result.is_error
+
+  // generated-image 块（对照 web/src/chat/types.ts:59-66 GeneratedImageContent）
+  //   SSE new-message 推送的 data.type==='generated-image' 消息解析而来；二进制不在报文里，渲染时按 imageId 拉。
+  imageId: string = '';                                 // 后端内存图的 id（GET .../generated-images/:imageId 用）
+  fileName: string = '';                                 // 原始文件名（caption + 预览标题）
+  mimeType: string = '';                                 // '' = 未知（渲染时按扩展名/响应头回退）
 }

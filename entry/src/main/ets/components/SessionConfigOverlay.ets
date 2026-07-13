@@ -6,6 +6,7 @@ import {
   reasoningEffortsForFlavor, reasoningEffortDisplayName
 } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // 会话内即时配置 overlay（对照 web FloatingOverlay + SessionChat 配置区）：
 //   分区按 flavor 门控：模型(全)/权限模式(全)/协作模式(仅codex)/努力度(仅claude)/推理努力(codex·opencode)。
@@ -30,9 +31,9 @@ export struct SessionConfigOverlay {
 
   // 模型当前值归一：'auto'/'default'/'' → ''（默认）；trim。对照 normalizeClaudeComposerModel。
   private modelKey(m: string): string {
-    const t: string = m.trim();
-    if (t === '' || t === 'auto' || t === 'default') { return ''; }
-    return t;
+    const trimmed: string = m.trim();
+    if (trimmed === '' || trimmed === 'auto' || trimmed === 'default') { return ''; }
+    return trimmed;
   }
 
   private showEffort(): boolean { return this.flavor === 'claude'; }
@@ -79,7 +80,7 @@ export struct SessionConfigOverlay {
   build() {
     Scroll() {
       Column() {
-        Text('会话配置')
+        Text(t('sessionConfig.title'))
           .fontSize(fs(17))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
@@ -87,21 +88,21 @@ export struct SessionConfigOverlay {
           .padding({ left: 4, top: 4, bottom: 4 })
 
         // —— 模型（全 flavor：默认 + modelOptionsForAgent 预设）——
-        this.sectionTitle('模型')
+        this.sectionTitle(t('sessionConfig.model'))
         this.optionRow(modelDisplayName(this.flavor, ''), '', this.modelKey(this.model), 'model')
         ForEach(modelOptionsForAgent(this.flavor), (m: string) => {
           this.optionRow(modelDisplayName(this.flavor, m), m, this.modelKey(this.model), 'model')
         }, (m: string) => m)
 
         // —— 权限模式（全 flavor 子集）——
-        this.sectionTitle('权限模式')
+        this.sectionTitle(t('sessionConfig.permissionMode'))
         ForEach(permissionModesForFlavor(this.flavor), (mode: string) => {
           this.optionRow(permissionModeDisplayName(mode), mode, this.permissionMode, 'permission')
         }, (mode: string) => mode)
 
         // —— 协作模式（仅 codex）——
         if (this.showCollaboration()) {
-          this.sectionTitle('协作模式')
+          this.sectionTitle(t('sessionConfig.collaborationMode'))
           ForEach(CODEX_COLLABORATION_MODES, (mode: string) => {
             this.optionRow(collaborationModeDisplayName(mode), mode, this.collaborationMode, 'collaboration')
           }, (mode: string) => mode)
@@ -109,7 +110,7 @@ export struct SessionConfigOverlay {
 
         // —— 努力度（仅 claude）——
         if (this.showEffort()) {
-          this.sectionTitle('努力度')
+          this.sectionTitle(t('sessionConfig.effort'))
           ForEach(EFFORT_OPTIONS, (e: string) => {
             this.optionRow(effortDisplayName(e), e, this.effort, 'effort')
           }, (e: string) => e)
@@ -117,7 +118,7 @@ export struct SessionConfigOverlay {
 
         // —— 推理努力（codex / opencode）——
         if (this.showReasoningEffort()) {
-          this.sectionTitle('推理努力')
+          this.sectionTitle(t('sessionConfig.reasoningEffort'))
           ForEach(reasoningEffortsForFlavor(this.flavor), (e: string) => {
             this.optionRow(reasoningEffortDisplayName(e), e, this.modelReasoningEffort, 'reasoning')
           }, (e: string) => e)

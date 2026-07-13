@@ -1,5 +1,6 @@
 import { TeamState, TeamMember, TeamTask, TeamMessage } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // 会话内多 agent 团队面板（对照上游 web/src/components/TeamPanel.tsx）。
 //   teamState 是 Session 的运行时字段（agent 自治上报，非 spawn 配置）——纯只读展示，无客户端改写。
@@ -62,12 +63,12 @@ export struct TeamPanel {
   // 头部计数文案："{N} 成员" + (活跃>0 ? "（{M} 活跃）" : "") + (任务>0 ? " · {done}/{total} 任务" : "")
   private headerCounts(): string {
     const total: number = this.teamState.members.length;
-    let s: string = `${total} 成员`;
+    let s: string = t('team.memberCount', { count: total });
     const active: number = this.activeMemberCount();
-    if (active > 0) { s = `${s}（${active} 活跃）`; }
+    if (active > 0) { s = `${s}${t('team.activeCount', { count: active })}`; }
     const tasks: number = this.teamState.tasks.length;
     if (tasks > 0) {
-      s = `${s} · ${this.completedTaskCount()}/${tasks} 任务`;
+      s = `${s}${t('team.taskCount', { done: this.completedTaskCount(), total: tasks })}`;
     }
     return s;
   }
@@ -204,7 +205,7 @@ export struct TeamPanel {
           }
 
           if (this.teamState.members.length > 0) {
-            this.SectionLabel('成员')
+            this.SectionLabel(t('team.members'))
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.teamState.members, (member: TeamMember) => {
                 this.MemberChip(member)
@@ -214,14 +215,14 @@ export struct TeamPanel {
           }
 
           if (this.teamState.tasks.length > 0) {
-            this.SectionLabel('任务')
+            this.SectionLabel(t('team.tasks'))
             ForEach(this.teamState.tasks, (task: TeamTask) => {
               this.TaskRow(task)
             }, (task: TeamTask) => task.id !== '' ? task.id : task.title)
           }
 
           if (this.teamState.messages.length > 0) {
-            this.SectionLabel('最近消息')
+            this.SectionLabel(t('team.recentMessages'))
             ForEach(this.recentMessages(), (msg: TeamMessage, idx: number) => {
               this.MessageRow(msg)
             }, (msg: TeamMessage, idx: number) => `${idx}:${msg.from}>${msg.to}`)

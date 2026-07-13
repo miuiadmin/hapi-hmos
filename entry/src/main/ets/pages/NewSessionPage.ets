@@ -1,4 +1,5 @@
 import { getHubClient } from '../api/HubClient';
+import { t } from '../i18n/I18nService';
 import { Machine, DirEntry, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
@@ -64,7 +65,7 @@ struct NewSessionPage {
       const list: Machine[] = await getHubClient().getMachines();
       this.machines = list;
       if (list.length === 0) {
-        this.loadError = '没有可用的机器，请先在终端启动 hapi';
+        this.loadError = t('newSession.noMachinesHint');
         return;
       }
       const lastId: string = await getPreferencesService().getString(KEY_LAST_MACHINE, '');
@@ -85,7 +86,7 @@ struct NewSessionPage {
 
       await this.loadRecentFor(chosenId);
     } catch (e) {
-      this.loadError = e instanceof Error ? e.message : '加载机器失败';
+      this.loadError = e instanceof Error ? e.message : t('newSession.loadMachinesFailed');
     } finally {
       this.loadingMachines = false;
     }
@@ -137,7 +138,7 @@ struct NewSessionPage {
   }
   private machineValueDisplay(): string {
     const idx: number = this.machineIndex();
-    if (idx < 0) { return this.loadingMachines ? '加载中…' : '请选择机器'; }
+    if (idx < 0) { return this.loadingMachines ? t('common.loading') : t('newSession.selectMachine'); }
     const m: Machine = this.machines[idx];
     return m.displayName !== '' ? m.displayName : m.id;
   }
@@ -170,7 +171,7 @@ struct NewSessionPage {
     return 0;   // 选中的不在预设列表 → 回退「默认」
   }
   private modelOptions(): SelectOption[] {
-    const opts: SelectOption[] = [{ value: '默认' }];
+    const opts: SelectOption[] = [{ value: t('newSession.model.default') }];
     const presets: string[] = this.modelPresets();
     for (let i = 0; i < presets.length; i++) {
       opts.push({ value: modelDisplayName(this.selectedAgent, presets[i]) });
@@ -230,7 +231,7 @@ struct NewSessionPage {
   // —— 目录树浏览（bindSheet 内）——
   private openBrowser(): void {
     if (this.selectedMachineId === '') {
-      showToast('请先选择机器');
+      showToast(t('newSession.pleaseSelectMachineFirst'));
       return;
     }
     this.browserVisible = true;
@@ -246,7 +247,7 @@ struct NewSessionPage {
       this.browserEntries = entries;
       this.browserPath = path;
     } catch (e) {
-      this.browserError = e instanceof Error ? e.message : '浏览目录失败';
+      this.browserError = e instanceof Error ? e.message : t('newSession.browseFailed');
     } finally {
       this.browserLoading = false;
     }
@@ -290,9 +291,9 @@ struct NewSessionPage {
   // —— 创建会话（spawn）——
   private async createSession(): Promise<void> {
     this.spawnError = '';
-    if (this.selectedMachineId === '') { this.spawnError = '请选择机器'; return; }
+    if (this.selectedMachineId === '') { this.spawnError = t('newSession.selectMachine'); return; }
     const dir: string = this.directory.trim();
-    if (dir === '') { this.spawnError = '请填写工作目录'; return; }
+    if (dir === '') { this.spawnError = t('newSession.directoryRequired'); return; }
     this.isSpawning = true;
     try {
       // worktree 自定义名：trim 后透传（空则服务端自动生成，上游 worktreeName 非必填）
@@ -328,7 +329,7 @@ struct NewSessionPage {
 
   private errMsg(e: Object): string {
     if (e instanceof Error) { return e.message; }
-    try { return JSON.stringify(e); } catch (x) { return '启动会话失败'; }
+    try { return JSON.stringify(e); } catch (x) { return t('newSession.spawnFailed'); }
   }
 
   private async readRecent(machineId: string): Promise<string[]> {
@@ -424,7 +425,7 @@ struct NewSessionPage {
     Column() {
       // 当前路径 + 回上级
       Row() {
-        Button('回上级')
+        Button(t('newSession.parentDir'))
           .fontSize(fs(13))
           .height(32)
           .backgroundColor(this.c.surface)
@@ -451,9 +452,9 @@ struct NewSessionPage {
         .justifyContent(FlexAlign.Center)
       } else if (this.browserError !== '') {
         Column({ space: 8 }) {
-          Text('加载失败').fontSize(fs(14)).fontColor(this.c.error)
+          Text(t('newSession.loadFailed')).fontSize(fs(14)).fontColor(this.c.error)
           Text(this.browserError).fontSize(fs(12)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
-          Button('重试')
+          Button(t('common.retry'))
             .fontSize(fs(13)).height(32)
             .backgroundColor(this.c.primary).fontColor(this.c.bubbleUserText)
             .onClick(() => { this.loadBrowserDir(this.browserPath); })
@@ -461,7 +462,7 @@ struct NewSessionPage {
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else if (this.browserEntries.length === 0) {
         Column() {
-          Text('空目录').fontSize(fs(13)).fontColor(this.c.textTertiary)
+          Text(t('newSession.emptyDirectory')).fontSize(fs(13)).fontColor(this.c.textTertiary)
         }
         .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
       } else {
@@ -478,7 +479,7 @@ struct NewSessionPage {
       }
 
       // 选择当前目录
-      Button('选择此目录')
+      Button(t('newSession.selectDirectory'))
         .width('100%')
         .height(48)
         .margin({ top: 8, bottom: 12 })
@@ -498,9 +499,9 @@ struct NewSessionPage {
         // 机器拉取失败兜底（无机器则无法继续）
         if (this.loadError !== '' && this.machines.length === 0) {
           Column({ space: 12 }) {
-            Text('加载失败').fontSize(fs(16)).fontColor(this.c.error)
+            Text(t('newSession.loadFailed')).fontSize(fs(16)).fontColor(this.c.error)
             Text(this.loadError).fontSize(fs(13)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
-            Button('重试')
+            Button(t('common.retry'))
               .backgroundColor(this.c.primary)
               .fontColor(this.c.bubbleUserText)
               .onClick(() => { this.loadMachines(); })
@@ -510,7 +511,7 @@ struct NewSessionPage {
           Scroll() {
             Column() {
               // 机器
-              this.FieldLabel('机器')
+              this.FieldLabel(t('newSession.machine'))
               Column() {
                 Select(this.machineOptions())
                   .selected(this.machineIndex())
@@ -524,16 +525,16 @@ struct NewSessionPage {
               .backgroundColor(this.c.bg)
 
               // 工作目录
-              this.FieldLabel('工作目录')
+              this.FieldLabel(t('newSession.directory'))
               Column({ space: 0 }) {
-                TextInput({ text: this.directory, placeholder: '如 /home/user/project' })
+                TextInput({ text: this.directory, placeholder: t('newSession.directoryPlaceholder') })
                   .height(48)
                   .fontSize(fs(14))
                   .backgroundColor(this.c.surface)
                   .borderRadius(10)
                   .onChange((value: string) => { this.directory = value; })
 
-                Button('选择文件夹…')
+                Button(t('newSession.chooseFolder'))
                   .width('100%')
                   .height(40)
                   .margin({ top: 8 })
@@ -544,7 +545,7 @@ struct NewSessionPage {
 
                 // 最近路径联想
                 if (this.recentPaths.length > 0) {
-                  Text('最近')
+                  Text(t('newSession.recent'))
                     .fontSize(fs(12))
                     .fontColor(this.c.textTertiary)
                     .width('100%')
@@ -578,7 +579,7 @@ struct NewSessionPage {
               .backgroundColor(this.c.bg)
 
               // 模型（claude/gemini 静态预设 + 「默认」=auto；其余 agent 仅「默认」）
-              this.FieldLabel('模型')
+              this.FieldLabel(t('newSession.model'))
               Column() {
                 Select(this.modelOptions())
                   .selected(this.modelIndex())
@@ -593,7 +594,7 @@ struct NewSessionPage {
 
               // 努力程度（仅 claude；对照 web ClaudeEffort，'auto'=省略）
               if (this.selectedAgent === 'claude') {
-                this.FieldLabel('努力程度')
+                this.FieldLabel(t('newSession.effort'))
                 Column() {
                   Select(this.effortOptions())
                     .selected(this.effortIndex())
@@ -608,7 +609,7 @@ struct NewSessionPage {
               }
 
               // 会话类型（simple 普通 / worktree 工作树）
-              this.FieldLabel('会话类型')
+              this.FieldLabel(t('newSession.type'))
               Column({ space: 8 }) {
                 Select(this.sessionTypeOptions())
                   .selected(this.sessionTypeIndex())
@@ -619,7 +620,7 @@ struct NewSessionPage {
 
                 // 工作树自定义名（worktree 时显示；留空则服务端自动生成）
                 if (this.selectedSessionType === 'worktree') {
-                  TextInput({ text: this.worktreeName, placeholder: '工作树名（可选，留空自动生成）' })
+                  TextInput({ text: this.worktreeName, placeholder: t('newSession.worktreeNamePlaceholder') })
                     .height(44)
                     .fontSize(fs(14))
                     .backgroundColor(this.c.surface)
@@ -632,12 +633,12 @@ struct NewSessionPage {
               .backgroundColor(this.c.bg)
 
               // Yolo（跳过权限确认 = --yolo；持久化 preferred_yolo）—— 行内可点切换
-              this.FieldLabel('选项')
+              this.FieldLabel(t('newSession.options'))
               Column() {
                 Row() {
                   Column({ space: 2 }) {
-                    Text('Yolo 模式').fontSize(fs(14)).fontColor(this.c.textPrimary)
-                    Text('跳过权限确认（--yolo）').fontSize(fs(11)).fontColor(this.c.textTertiary)
+                    Text(t('newSession.yolo')).fontSize(fs(14)).fontColor(this.c.textPrimary)
+                    Text(t('newSession.yoloDesc')).fontSize(fs(11)).fontColor(this.c.textTertiary)
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
@@ -665,7 +666,7 @@ struct NewSessionPage {
               }
 
               // 创建按钮
-              Button(this.isSpawning ? '创建中…' : '创建会话')
+              Button(this.isSpawning ? t('newSession.creating') : t('newSession.create'))
                 .width('100%')
                 .height(50)
                 .margin({ top: 24, left: 16, right: 16, bottom: 24 })
@@ -687,7 +688,7 @@ struct NewSessionPage {
       .height('100%')
       .backgroundColor(this.c.surface)
     }
-    .title('新建会话')
+    .title(t('newSession.title'))
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
     })
@@ -695,7 +696,7 @@ struct NewSessionPage {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       dragBar: true,
       blurStyle: BlurStyle.Thick,
-      title: { title: '选择文件夹' }
+      title: { title: t('newSession.chooseFolderTitle') }
     })
   }
 }

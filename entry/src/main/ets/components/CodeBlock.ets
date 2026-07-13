@@ -4,6 +4,7 @@
 // V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight；@Computed allLines/isCollapsed/visibleLines/label。
 
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 const COLLAPSE_LINE_THRESHOLD: number = 18;
 const COLLAPSE_CHAR_THRESHOLD: number = 1800;
@@ -51,7 +52,7 @@ struct CodeBlock {
       return this.title;
     }
     if (this.language === '' || this.language === 'unknown') {
-      return '代码';
+      return t('code.code');
     }
     return this.language;
   }
@@ -109,7 +110,7 @@ struct CodeBlock {
           this.CodeBody()
           // 底部「已截断」角标
           Row() {
-            Text('已截断')
+            Text(t('code.truncated'))
               .fontSize(fs(10))
               .fontColor(this.c.codeMuted)
               .backgroundColor(this.c.codeBg)

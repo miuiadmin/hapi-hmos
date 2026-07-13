@@ -666,6 +666,46 @@ export default function messageTest(): void {
     });
   });
 
+  describe('parseMessage — generated-image block', () => {
+    // 对照 web normalizeAgent.ts:558-578：data.type==='generated-image'，元数据在 data 顶层（不在 message.content[]）。
+    it('parses a generated-image block (camelCase fields)', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"type":"generated-image","imageId":"img1","id":"uuid1","fileName":"cat.png","mimeType":"image/png"}'));
+      expect(m.role).assertEqual('agent');
+      expect(m.text).assertEqual('');            // 无 message.content → 纯文本为空
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].type).assertEqual('generated-image');
+      expect(m.blocks[0].imageId).assertEqual('img1');
+      expect(m.blocks[0].fileName).assertEqual('cat.png');
+      expect(m.blocks[0].mimeType).assertEqual('image/png');
+    });
+    it('accepts snake_case fallback (image_id/file_name/mime_type)', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a2',
+        '{"type":"generated-image","image_id":"img2","file_name":"dog.jpg","mime_type":"image/jpeg"}'));
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].imageId).assertEqual('img2');
+      expect(m.blocks[0].fileName).assertEqual('dog.jpg');
+      expect(m.blocks[0].mimeType).assertEqual('image/jpeg');
+    });
+    it('defaults fileName to generated-image and mimeType to empty when absent', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a3', '{"type":"generated-image","imageId":"img3"}'));
+      expect(m.blocks[0].fileName).assertEqual('generated-image');
+      expect(m.blocks[0].mimeType).assertEqual('');
+    });
+    it('skips a generated-image block without an imageId', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a4',
+        '{"type":"generated-image","fileName":"x.png","mimeType":"image/png"}'));
+      expect(m.blocks.length).assertEqual(0);
+    });
+    it('still parses blocks after a generated-image within the same message stream', 0, () => {
+      // generated-image 是独立消息（data.type 顶层），不会与 text/tool 块同条；此处验证它不误吞普通 agent 消息。
+      const m: ChatMessage = parse(agentEnv('a5',
+        '{"message":{"content":[{"type":"text","text":"hello"}]}}'));
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].type).assertEqual('text');
+    });
+  });
+
   describe('parseCancelMessageResponse', () => {
     it('cancelled branch sets cancelled + localId', 0, () => {
       const r = parseCancelMessageResponse('{"status":"cancelled","localId":"local-1"}');

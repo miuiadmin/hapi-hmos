@@ -213,6 +213,12 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
         if (c.text !== '') {
           blocks.push(ChatBlock.reasoning(`${msg.id}:${bi}`, msg.createdAt, c.text));
         }
+      } else if (c.type === 'generated-image') {
+        // 生成图片块（对照上游 reducerTimeline.ts:741-753）：id 同 agent-text 方案 `${msg.id}:${idx}`；
+        //   imageId 非空才产出（缺 id 无法拉二进制）。二进制按 imageId 渲染时按需 GET。
+        if (c.imageId !== '') {
+          blocks.push(ChatBlock.generatedImage(`${msg.id}:${bi}`, msg.createdAt, c.imageId, c.fileName, c.mimeType));
+        }
       } else if (c.type === 'tool-call') {
         toolIdsInMessages.add(c.id);
         const entry: PermissionEntry | undefined = permissionsById.get(c.id);

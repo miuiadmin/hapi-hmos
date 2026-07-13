@@ -8,6 +8,7 @@ import { Want, common } from '@kit.AbilityKit'
 import { pasteboard } from '@kit.BasicServicesKit'
 import { fs, paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
 import { showToast } from '../utils/Toast';
+import { t } from '../i18n/I18nService';
 import {
   classifyScheme,
   hasScheme,
@@ -16,6 +17,7 @@ import {
   loadAllowedSchemes,
   saveAllowedScheme
 } from '../utils/ExternalLink';
+import { ImagePreviewSheet } from './ImagePreviewSheet';
 
 // 极简 Markdown 渲染组件：封装 @cangjie-tpc/markdown_hybrid（Apache-2.0）的 CJMarkdown
 // 参考 chatcube ChatMarkdownHybridRenderer（MIT），裁掉其 AppUiState 主题系统 / 排版工具 / 媒体图标依赖：
@@ -195,7 +197,7 @@ export struct MarkdownText {
   private openSafeLink(url: string): void {
     const hostContext = this.getUIContext().getHostContext();
     if (hostContext === undefined || hostContext === null) {
-      showToast('无法打开链接');
+      showToast(t('common.cannotOpenLink'));
       return;
     }
     const lower: string = url.toLowerCase();
@@ -204,20 +206,20 @@ export struct MarkdownText {
       ? { action: 'ohos.want.action.viewData', entities: ['entity.system.browsable'], uri: url }
       : { uri: url };
     (hostContext as common.UIAbilityContext).startAbility(want)
-      .catch((): void => { showToast('未找到可打开链接的应用'); });
+      .catch((): void => { showToast(t('common.noAppToOpen')); });
   }
 
   // custom scheme 首次确认弹窗（对齐上游「仅 custom scheme 才确认」）：
   //   取消（autoCancel）= 不打开；打开 = 仅本次；始终允许 = 持久化该 scheme 后再开（后续免确认）。
   private confirmCustomScheme(url: string, scheme: string): void {
     this.getUIContext().showAlertDialog({
-      title: '打开外部链接',
-      message: `「${scheme}」协议将打开外部应用：\n${url}`,
+      title: t('markdown.openExternalTitle'),
+      message: t('markdown.openExternalMessage', { scheme: scheme, url: url }),
       autoCancel: true,
       buttons: [
-        { text: '取消', color: this.c.textSecondary },
-        { text: '打开', color: this.c.primary, action: (): void => { this.openSafeLink(url); } },
-        { text: '始终允许', color: this.c.primary, action: (): void => {
+        { text: t('common.cancel'), color: this.c.textSecondary },
+        { text: t('markdown.open'), color: this.c.primary, action: (): void => { this.openSafeLink(url); } },
+        { text: t('markdown.alwaysAllow'), color: this.c.primary, action: (): void => {
           saveAllowedScheme(scheme).then((): void => { this.openSafeLink(url); });
         } }
       ]
@@ -228,14 +230,14 @@ export struct MarkdownText {
   private copyToClipboard(text: string): void {
     const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
     pasteboard.getSystemPasteboard().setData(data)
-      .then((): void => { showToast('已复制'); })
-      .catch((): void => { showToast('复制失败'); });
+      .then((): void => { showToast(t('common.copySuccess')); })
+      .catch((): void => { showToast(t('markdown.copyFailed')); });
   }
 
   // 打开代码全屏预览（对照 chatcube openCodePreviewFromHybrid）
   private openCodePreview(code: string, codeType: string): void {
     if (code.trim().length === 0) {
-      showToast('代码还在生成中');
+      showToast(t('markdown.codeGenerating'));
       return;
     }
     this.previewCode = code;
@@ -245,8 +247,8 @@ export struct MarkdownText {
 
   // 语言标题归一：空 →「代码」；否则取小写语言名（typescript/python/…）作 sheet title
   private normalizeCodeTitle(codeType: string): string {
-    const t: string = codeType.trim().toLowerCase();
-    return t.length > 0 ? t : '代码';
+    const trimmed: string = codeType.trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed : t('markdown.code');
   }
 
   private closeCodePreview(): void {
@@ -270,22 +272,6 @@ export struct MarkdownText {
   private closeImagePreview(): void {
     this.showImagePreview = false;
     this.previewImageSrc = '';
-  }
-
-  // 全屏图片预览 sheet：Contain 适配 + 黑底（图片预览惯例）+ 点按关闭（dragBar/showClose 由 bindSheet 提供）
-  @Builder
-  private ImagePreviewSheet() {
-    Stack() {
-      Image(this.previewImageSrc)
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Contain)
-        .draggable(false)
-        .onClick((): void => { this.closeImagePreview(); })
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Color.Black)
   }
 
   // 全屏代码预览 sheet：可滚动等宽代码 + 长按可选中复制（dragBar/showClose/title 由 bindSheet 配置提供）
@@ -343,7 +329,7 @@ export struct MarkdownText {
   }
 
   build() {
-    // 双节点常驻容器：内层 Column 承代码全屏 sheet，外层 Column 承图片全屏 sheet
+    // 双节点常驻容器：内层 Column 承代码全屏 sheet；图片全屏预览交给 ImagePreviewSheet（自带 bindSheet + 双指缩放）
     // （延续 SessionActionMenu 两节点模式——规避同节点 bindSheet 叠加疑问）
     Column() {
       Column() {
@@ -366,18 +352,14 @@ export struct MarkdownText {
         title: { title: this.previewTitle },
         onDisappear: (): void => { this.closeCodePreview(); }
       })
+
+      ImagePreviewSheet({
+        src: this.previewImageSrc,
+        open: this.showImagePreview,
+        onClose: (): void => { this.closeImagePreview(); }
+      })
     }
     .width('100%')
     .backgroundColor(Color.Transparent)
-    .bindSheet(this.showImagePreview!!, this.ImagePreviewSheet(), {
-      height: SheetSize.LARGE,
-      detents: [SheetSize.LARGE],
-      dragBar: true,
-      showClose: true,
-      // 纯黑背板：backgroundColor 须配 backgroundBlurStyle.NONE（默认 COMPONENT_ULTRA_THICK 模糊会使纯色发灰）
-      backgroundColor: Color.Black,
-      backgroundBlurStyle: BlurStyle.NONE,
-      onDisappear: (): void => { this.closeImagePreview(); }
-    })
   }
 }

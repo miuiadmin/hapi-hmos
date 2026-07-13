@@ -1,6 +1,7 @@
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { t } from '../i18n/I18nService';
 
 // 系统分享服务：纯文本 → 系统分享面板（@kit.ShareKit systemShare）。
 // 对照 chatcube services/ShareService.ets 的 shareText（MIT），裁掉其图片/Markdown/HTML/截图导出，
@@ -21,9 +22,9 @@ export interface ShareResult {
 
 export class ShareService {
   // 分享纯文本：拉起系统分享面板。success=true 表示面板已成功弹出并关闭（用户是否真分享不可知）。
-  async shareText(context: common.UIAbilityContext, content: string, title: string = '分享消息'): Promise<ShareResult> {
+  async shareText(context: common.UIAbilityContext, content: string, title: string = t('share.defaultTitle')): Promise<ShareResult> {
     if (content === '') {
-      return { success: false, errorMessage: '内容为空' };
+      return { success: false, errorMessage: t('share.emptyContent') };
     }
     try {
       const shareData = new systemShare.SharedData({
@@ -38,7 +39,7 @@ export class ShareService {
       });
       return { success: true, errorMessage: '' };
     } catch (error) {
-      return { success: false, errorMessage: `分享失败: ${JSON.stringify(error)}` };
+      return { success: false, errorMessage: t('share.failed', { detail: JSON.stringify(error) }) };
     }
   }
 }

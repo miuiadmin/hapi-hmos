@@ -1,15 +1,20 @@
 // 斜杠命令补全（对照 shared/src/slashCommands.ts + web useSlashCommands.getSuggestions）
-//   纯逻辑：静态内置命令表（claude/codex/gemini）+ getSuggestions 评分（精确/前缀/包含/Levenshtein）。
+//   纯逻辑：静态内置命令表（claude/codex/gemini）+ 服务端命令合并（mergeSlashCommands，server 覆盖同名 builtin）
+//   + getSuggestions 评分（精确/前缀/包含/Levenshtein）。
 //
-// Phase 1（HMOS）：仅静态内置。上游活命令来自 CLI RPC（扫 ~/.claude/commands 等用户/项目/插件命令），
-//   设备上无 CLI，故不接 GET /api/sessions/:id/slash-commands；以内置为离线回退（上游 useSlashCommands:62-63 同款）。
-//   $ 技能（$name 菜单）暂缓：来源是 CLI 文件系统（~/.claude/skills），无 CLI 则无来源，静态会成「编造内容」。
+// 服务端命令：Hub GET /api/sessions/:id/slash-commands 返回用户/项目/插件命令（source != 'builtin'），
+//   合并进内置表（同名 server 覆盖 builtin），使设备端无 CLI 也能拿到活命令。失败静默回落内置（不阻塞输入）。
+//   codex 自定义命令的 content 展开（findCodexCustomPromptExpansion）留 TODO——MVP 仍发字面 /name 由 CLI 解析。
+//   $ 技能（$name 菜单）见 Skills.ets：来源 GET /api/sessions/:id/skills。
+
+import { ServerSlashCommand } from '../models/Types';
 
 // 斜杠命令（对齐 shared/src/apiTypes.ts SlashCommand，取渲染所需字段）
 export class SlashCommand {
   name: string = '';
   description: string = '';        // 可空 → ''（内置皆有；用户/插件命令上游可空）
   source: string = 'builtin';      // 'builtin' | 'user' | 'plugin' | 'project'
+  content: string = '';            // 用户/插件自定义命令的展开内容（builtin 空；上游 findCodexCustomPromptExpansion 用）
 }
 
 // —— 静态内置命令表（faithful 移植 shared/src/slashCommands.ts BUILTIN_SLASH_COMMANDS）——
@@ -61,6 +66,38 @@ export function getBuiltinSlashCommands(agent: string): SlashCommand[] {
   if (agent === 'gemini') { return BUILTIN_GEMINI_COMMANDS.slice(); }
   if (agent === 'opencode' || agent === 'cursor') { return []; }
   return BUILTIN_CLAUDE_COMMANDS.slice();
+}
+
+// 合并命令：照上游 mergeSlashCommands——按 name.toLowerCase() 去重，**后出现者覆盖先者**（删除再 set 重排到末尾）。
+//   调用方保证 builtin 在前、server 在后（mergeSlashCommands(builtin.concat(server))），故 server 同名覆盖 builtin。
+//   ArkTS Map 保插入序，delete + set 行为与上游 Array.from(commandMap.values()) 一致。
+export function mergeSlashCommands(commands: SlashCommand[]): SlashCommand[] {
+  const map: Map<string, SlashCommand> = new Map();
+  for (let i = 0; i < commands.length; i++) {
+    const key: string = commands[i].name.toLowerCase();
+    if (map.has(key)) {
+      map.delete(key);
+    }
+    map.set(key, commands[i]);
+  }
+  const out: SlashCommand[] = [];
+  map.forEach((v: SlashCommand) => { out.push(v); });
+  return out;
+}
+
+// 服务端命令（models/ServerSlashCommand）→ 渲染命令（chat/SlashCommand）映射。
+//   models 不依赖 chat，故 parse 落 ServerSlashCommand；此处在合并前转成 SlashCommand。
+export function serverCommandsToSlash(server: ServerSlashCommand[]): SlashCommand[] {
+  const out: SlashCommand[] = [];
+  for (let i = 0; i < server.length; i++) {
+    const c: SlashCommand = new SlashCommand();
+    c.name = server[i].name;
+    c.description = server[i].description;
+    c.source = server[i].source;
+    c.content = server[i].content;
+    out.push(c);
+  }
+  return out;
 }
 
 // Levenshtein 编辑距离（对照 useSlashCommands:9；滚动两行实现，避免二维数组，ArkTS 友好）

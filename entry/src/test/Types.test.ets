@@ -8,6 +8,7 @@ import {
   pickNum,
   pickBool,
   pickObj,
+  pickStrArr,
   parseSessionSummary,
   parseSessionsResponse,
   parseSessionDetail,
@@ -16,6 +17,8 @@ import {
   parseSpawnResponse,
   parseTeamState,
   parseTodoList,
+  parseSlashCommandsResponse,
+  parseSkillsResponse,
   AGENT_FLAVORS,
   agentDisplayName,
   permissionModesForFlavor,
@@ -649,6 +652,78 @@ export default function typesTest(): void {
       const r = parseUploadFileResponse('xxx');
       expect(r.success).assertFalse();
       expect(r.path).assertEqual('');
+    });
+  });
+
+  describe('pickStrArr — 安全取字符串数组', () => {
+    it('正常字符串数组', 0, () => {
+      const r = rec('{"k":["a","b"]}');
+      const arr = pickStrArr(r, 'k');
+      expect(arr.length).assertEqual(2);
+      expect(arr[0]).assertEqual('a');
+      expect(arr[1]).assertEqual('b');
+    });
+    it('缺键 → []', 0, () => {
+      expect(pickStrArr(rec('{}'), 'k').length).assertEqual(0);
+    });
+    it('非数组 → []', 0, () => {
+      expect(pickStrArr(rec('{"k":"x"}'), 'k').length).assertEqual(0);
+      expect(pickStrArr(rec('{"k":123}'), 'k').length).assertEqual(0);
+    });
+    it('混合元素：仅取 string，丢非 string', 0, () => {
+      const arr = pickStrArr(rec('{"k":["a",1,true,"b"]}'), 'k');
+      // 非字符串元素被过滤（手写校验逐元素 typeof）
+      expect(arr.length).assertEqual(2);
+      expect(arr[0]).assertEqual('a');
+      expect(arr[1]).assertEqual('b');
+    });
+  });
+
+  describe('parseSlashCommandsResponse — 服务端斜杠命令', () => {
+    it('success + commands 数组 → 逐项映射（缺 source 归 user）', 0, () => {
+      const json = '{"success":true,"commands":[{"name":"foo","description":"d","content":"x"},{"name":"bar"}]}';
+      const r = parseSlashCommandsResponse(json);
+      expect(r.length).assertEqual(2);
+      expect(r[0].name).assertEqual('foo');
+      expect(r[0].description).assertEqual('d');
+      expect(r[0].content).assertEqual('x');
+      expect(r[1].name).assertEqual('bar');
+      expect(r[1].source).assertEqual('user');   // 缺省归 user
+    });
+    it('success=false → []', 0, () => {
+      expect(parseSlashCommandsResponse('{"success":false}').length).assertEqual(0);
+    });
+    it('无 commands 字段 → []', 0, () => {
+      expect(parseSlashCommandsResponse('{"success":true}').length).assertEqual(0);
+    });
+    it('非法 JSON → []', 0, () => {
+      expect(parseSlashCommandsResponse('xxx').length).assertEqual(0);
+    });
+    it('元素非对象被跳过', 0, () => {
+      const json = '{"success":true,"commands":["str",123,{"name":"ok"}]}';
+      const r = parseSlashCommandsResponse(json);
+      expect(r.length).assertEqual(1);
+      expect(r[0].name).assertEqual('ok');
+    });
+  });
+
+  describe('parseSkillsResponse — 技能列表', () => {
+    it('success + skills 数组 → SkillItem[]', 0, () => {
+      const json = '{"success":true,"skills":[{"name":"git","description":"g"},{"name":"deploy"}]}';
+      const r = parseSkillsResponse(json);
+      expect(r.length).assertEqual(2);
+      expect(r[0].name).assertEqual('git');
+      expect(r[0].description).assertEqual('g');
+      expect(r[1].name).assertEqual('deploy');
+    });
+    it('success=false → []', 0, () => {
+      expect(parseSkillsResponse('{"success":false,"skills":[]}').length).assertEqual(0);
+    });
+    it('无 skills 字段 → []', 0, () => {
+      expect(parseSkillsResponse('{"success":true}').length).assertEqual(0);
+    });
+    it('非法 JSON → []', 0, () => {
+      expect(parseSkillsResponse('not json').length).assertEqual(0);
     });
   });
 }

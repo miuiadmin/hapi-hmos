@@ -1,6 +1,8 @@
 // Hapi 核心数据类型（对齐 hapi shared/src）
 // ArkTS 无 Zod，手写等价类型 + 安全解析（JSON → 强类型）
 
+import { t } from '../i18n/Translate';
+
 // —— 会话摘要（列表用，对齐 shared/src/sessionSummary.ts SessionSummary）——
 export class SessionSummaryMetadata {
   name: string = '';           // 会话标题
@@ -20,6 +22,7 @@ export class SessionSummary {
   metadata: SessionSummaryMetadata | null = null;
   pendingRequestsCount: number = 0;
   backgroundTaskCount: number = 0;
+  pendingRequestKinds: string[] = [];   // 待处理请求类型（'permission'|'input'；attention 指示器分级用）
   model: string = '';          // null → ''
   effort: string = '';
   todoCompleted: number = 0;
@@ -154,6 +157,23 @@ export class ListDirectoryRequest {
   path: string = '';
 }
 
+// —— 服务端斜杠命令（对齐 shared/src/apiTypes.ts SlashCommand，取所需字段）——
+//   GET /api/sessions/:id/slash-commands 返回用户/项目/插件命令（source != 'builtin'）。
+//   渲染层用 chat/SlashCommand；本类是解析中间态（models 不依赖 chat），由 serverCommandsToSlash 映射。
+export class ServerSlashCommand {
+  name: string = '';
+  description: string = '';
+  source: string = 'user';        // 'user' | 'plugin' | 'project'（builtin 不来自服务端）
+  content: string = '';           // 自定义命令展开内容（可空）
+}
+
+// —— 技能摘要（对齐 web/types/api.ts SkillSummary）——
+//   GET /api/sessions/:id/skills 返回 $ 技能列表（name + 可选描述）。
+export class SkillItem {
+  name: string = '';
+  description: string = '';
+}
+
 // —— Agent 类型（对齐 shared/src/modes.ts AGENT_FLAVORS）——
 export const AGENT_FLAVORS: string[] = ['claude', 'codex', 'cursor', 'gemini', 'kimi', 'opencode'];
 
@@ -187,7 +207,7 @@ export function modelOptionsForAgent(agent: string): string[] {
 
 // model 显示名（对照 CLAUDE_MODEL_LABELS / GEMINI_MODEL_LABELS）
 export function modelDisplayName(agent: string, model: string): string {
-  if (model === MODEL_AUTO || model === '') { return '默认'; }
+  if (model === MODEL_AUTO || model === '') { return t('types.default'); }
   if (agent === 'claude') {
     if (model === 'sonnet') { return 'Sonnet'; }
     if (model === 'sonnet[1m]') { return 'Sonnet 1M'; }
@@ -200,7 +220,7 @@ export function modelDisplayName(agent: string, model: string): string {
 // effort（仅 claude；对照 web ClaudeEffort 'auto'|'medium'|'high'|'max'，'auto'=省略）
 export const EFFORT_OPTIONS: string[] = ['auto', 'medium', 'high', 'max'];
 export function effortDisplayName(effort: string): string {
-  if (effort === 'auto') { return '自动'; }
+  if (effort === 'auto') { return t('types.auto'); }
   if (effort === 'medium') { return 'Medium'; }
   if (effort === 'high') { return 'High'; }
   if (effort === 'max') { return 'Max'; }
@@ -210,8 +230,8 @@ export function effortDisplayName(effort: string): string {
 // sessionType（对照 shared/src/apiTypes.ts z.enum(['simple','worktree'])）
 export const SESSION_TYPES: string[] = ['simple', 'worktree'];
 export function sessionTypeDisplayName(st: string): string {
-  if (st === 'simple') { return '普通'; }
-  if (st === 'worktree') { return '工作树'; }
+  if (st === 'simple') { return t('types.sessionSimple'); }
+  if (st === 'worktree') { return t('types.sessionWorktree'); }
   return st;
 }
 
@@ -234,19 +254,19 @@ export function permissionModesForFlavor(flavor: string): string[] {
   return CLAUDE_PERMISSION_MODES;   // claude + 未知回退
 }
 export function permissionModeDisplayName(mode: string): string {
-  if (mode === 'default') { return '默认'; }
-  if (mode === 'acceptEdits') { return '接受编辑'; }
-  if (mode === 'bypassPermissions') { return '跳过权限 (Yolo)'; }
-  if (mode === 'plan') { return '计划模式'; }
-  if (mode === 'ask') { return '询问模式'; }
-  if (mode === 'read-only') { return '只读'; }
-  if (mode === 'safe-yolo') { return '安全 Yolo'; }
-  if (mode === 'yolo') { return 'Yolo'; }
+  if (mode === 'default') { return t('types.default'); }
+  if (mode === 'acceptEdits') { return t('types.permission.acceptEdits'); }
+  if (mode === 'bypassPermissions') { return t('types.permission.bypass'); }
+  if (mode === 'plan') { return t('types.permission.planMode'); }
+  if (mode === 'ask') { return t('types.permission.ask'); }
+  if (mode === 'read-only') { return t('types.permission.readonly'); }
+  if (mode === 'safe-yolo') { return t('types.permission.safeYolo'); }
+  if (mode === 'yolo') { return t('types.permission.yolo'); }
   return mode;
 }
 export function collaborationModeDisplayName(mode: string): string {
-  if (mode === 'default') { return '默认'; }
-  if (mode === 'plan') { return '计划'; }
+  if (mode === 'default') { return t('types.default'); }
+  if (mode === 'plan') { return t('types.collaboration.plan'); }
   return mode;
 }
 export function reasoningEffortsForFlavor(flavor: string): string[] {
@@ -319,6 +339,22 @@ export function pickObj(r: Record<string, Object>, k: string): Record<string, Ob
   }
   return null;
 }
+// 安全取字符串数组（缺/非数组/元素非字符串 → []；pendingRequestKinds 等用）
+export function pickStrArr(r: Record<string, Object>, k: string): string[] {
+  const v = r[k];
+  if (v === null || v === undefined || !Array.isArray(v)) {
+    return [];
+  }
+  const arr = v as Object[];
+  const out: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const el = arr[i];
+    if (typeof el === 'string') {
+      out.push(el);
+    }
+  }
+  return out;
+}
 
 // 解析单个 SessionSummary
 export function parseSessionSummary(raw: Record<string, Object>): SessionSummary {
@@ -330,6 +366,7 @@ export function parseSessionSummary(raw: Record<string, Object>): SessionSummary
   s.updatedAt = pickNum(raw, 'updatedAt');
   s.pendingRequestsCount = pickNum(raw, 'pendingRequestsCount');
   s.backgroundTaskCount = pickNum(raw, 'backgroundTaskCount');
+  s.pendingRequestKinds = pickStrArr(raw, 'pendingRequestKinds');
   s.model = pickStr(raw, 'model');
   s.effort = pickStr(raw, 'effort');
 
@@ -452,18 +489,101 @@ export function parseSpawnResponse(json: string): string {
   try {
     raw = JSON.parse(json) as Record<string, Object>;
   } catch (e) {
-    throw new Error('启动会话响应解析失败');
+    throw new Error(t('types.spawn.parseFailed'));
   }
   const type = pickStr(raw, 'type');
   if (type === 'error') {
     const msg = pickStr(raw, 'message');
-    throw new Error(msg !== '' ? msg : '启动会话失败');
+    throw new Error(msg !== '' ? msg : t('types.spawn.failed'));
   }
   const sid = pickStr(raw, 'sessionId');
   if (sid === '') {
-    throw new Error('启动会话失败：未返回 sessionId');
+    throw new Error(t('types.spawn.noSessionId'));
   }
   return sid;
+}
+
+// —— 解析 POST /api/sessions/:id/resume → { sessionId }（对照 web resumeSession client.ts:312）
+//   非活跃会话发送前隐式复活，可能返回新的 sessionId（旧 session 已不可写时 Hub 新建）。
+//   成功返回 sessionId；无 sessionId 抛 Error，由调用方 catch。 ——
+export function parseResumeSessionResponse(json: string): string {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    throw new Error(t('types.resume.parseFailed'));
+  }
+  const sid = pickStr(raw, 'sessionId');
+  if (sid === '') {
+    throw new Error(t('types.resume.noSessionId'));
+  }
+  return sid;
+}
+
+// —— 解析 GET /api/sessions/:id/slash-commands → { success, commands?: SlashCommand[], error? }
+//   （对齐 SlashCommandsResponse）。success=false 或无 commands → []（离线回落内置，不抛）。
+//   字段：name/description/source/content（pluginName 渲染不用，丢弃）。
+export function parseSlashCommandsResponse(json: string): ServerSlashCommand[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  if (!pickBool(raw, 'success')) {
+    return [];
+  }
+  const arr = raw['commands'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) {
+    return [];
+  }
+  const result: ServerSlashCommand[] = [];
+  const list = arr as Object[];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      const r = item as Record<string, Object>;
+      const c = new ServerSlashCommand();
+      c.name = pickStr(r, 'name');
+      c.description = pickStr(r, 'description');
+      c.source = pickStr(r, 'source');
+      c.content = pickStr(r, 'content');
+      if (c.source === '') { c.source = 'user'; }   // 缺省归 user（上游 source 必填，防御）
+      result.push(c);
+    }
+  }
+  return result;
+}
+
+// —— 解析 GET /api/sessions/:id/skills → { success, skills?: SkillSummary[], error? }
+//   （对齐 SkillsResponse）。success=false 或无 skills → []（不阻塞 $ 联想）。
+export function parseSkillsResponse(json: string): SkillItem[] {
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    return [];
+  }
+  if (!pickBool(raw, 'success')) {
+    return [];
+  }
+  const arr = raw['skills'];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) {
+    return [];
+  }
+  const result: SkillItem[] = [];
+  const list = arr as Object[];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      const r = item as Record<string, Object>;
+      const s = new SkillItem();
+      s.name = pickStr(r, 'name');
+      s.description = pickStr(r, 'description');
+      result.push(s);
+    }
+  }
+  return result;
 }
 
 // —— 解析 Session.teamState（对齐 TeamStateSchema）——

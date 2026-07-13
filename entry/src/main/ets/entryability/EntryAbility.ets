@@ -4,8 +4,11 @@ import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getConnectionService } from '../services/ConnectionService';
+import { getSSEClient } from '../api/SSEClient';
+import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
 import { ThemeService } from '../theme/ThemeService';
+import { I18nService } from '../i18n/I18nService';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -38,6 +41,8 @@ export default class EntryAbility extends UIAbility {
     await getConnectionService().initialize();
     // 主题须在 loadContent 前应用，避免首屏默认色→切换闪烁（chatcube 教训）
     await ThemeService.init(this.context);
+    // 语言须在 loadContent 前解析，首屏即用持久化/系统语言（避首帧中文→切英文闪烁，同主题）
+    await I18nService.init(this.context);
     // 按登录态选首屏
     const pagePath: string = getConnectionService().isLoggedIn() ? 'pages/Index' : 'pages/LoginPage';
     windowStage.loadContent(pagePath, (err: BusinessError) => {
@@ -61,9 +66,21 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
+    this.reportVisibility('visible');
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onBackground');
+    this.reportVisibility('hidden');
+  }
+
+  // 上报应用可见性（对照 web useVisibilityReporter：visibility='visible'/'hidden'）。
+  //   仅 SSE 已连（subscriptionId 非空）才发；未连/重连中静默跳过，避免无谓请求与坏订阅上报。
+  private reportVisibility(visibility: string): void {
+    const sid: string = getSSEClient().getSubscriptionId();
+    if (sid === '') {
+      return;
+    }
+    getHubClient().setVisibility(sid, visibility).catch((): void => {});
   }
 }

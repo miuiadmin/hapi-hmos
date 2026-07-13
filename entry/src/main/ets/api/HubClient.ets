@@ -1,9 +1,11 @@
 import { http } from '@kit.NetworkKit';
+import { util } from '@kit.ArkTS';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
+import { t } from '../i18n/I18nService';
 
 // ApproveOptions 从 HubClientUtils（纯逻辑模块）再导出，保持外部 `import { ApproveOptions } from '../api/HubClient'` 不破。
 export { ApproveOptions } from './HubClientUtils';
@@ -24,6 +26,20 @@ export interface HubHttpResponse {
   statusCode: number;
   data: string;
   errorMessage?: string;
+}
+
+// 生成图片拉取结果（对照 web getGeneratedImageBlob：二进制 → base64 data URI）
+export interface GeneratedImageResult {
+  success: boolean;
+  dataUri: string;   // 成功：data:${mime};base64,...；失败：''
+  error: string;     // 失败：错误文案；成功：''
+}
+
+// 二进制响应（doRequestBinary 内部用；成功 errorMessage=''，失败 buffer 为空）
+interface BinaryResult {
+  statusCode: number;
+  buffer: ArrayBuffer;
+  errorMessage: string;
 }
 
 // 登录结果
@@ -117,11 +133,74 @@ export class HubClient {
         success: false,
         statusCode: 0,
         data: '',
-        errorMessage: `请求失败: ${JSON.stringify(error)}`
+        errorMessage: t('api.requestFailed', { detail: JSON.stringify(error) })
       };
     } finally {
       httpRequest.destroy();
     }
+  }
+
+  // 二进制请求（同 doRequest，但响应按 ARRAY_BUFFER 读，对照 chatcube IconDownloadCache.ets:113 expectDataType）。
+  //   仅生成图片拉取用：GET 二进制 → ArrayBuffer → 调用方 base64 编码。不含刷新逻辑（由 fetchGeneratedImage 包）。
+  private async doRequestBinary(method: http.RequestMethod, path: string, tokenType: TokenType, hubUrl?: string): Promise<BinaryResult> {
+    const url = `${this.resolveBaseUrl(hubUrl)}${path}`;
+    const httpRequest = http.createHttp();
+    try {
+      const header: Record<string, string> = {};
+      if (tokenType === 'jwt') {
+        const jwt = getConnectionService().jwt;
+        if (jwt !== '') {
+          header['Authorization'] = `Bearer ${jwt}`;
+        }
+      }
+      const options: http.HttpRequestOptions = {
+        method: method,
+        header: header,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 15000,
+        readTimeout: 30000   // 图片最大 25MB，读超时放宽到 30s
+      };
+      const response = await httpRequest.request(url, options);
+      const ok: boolean = response.responseCode >= 200 && response.responseCode < 300;
+      return {
+        statusCode: response.responseCode,
+        buffer: response.result as ArrayBuffer,
+        errorMessage: ok ? '' : `HTTP ${response.responseCode}`
+      };
+    } catch (error) {
+      return { statusCode: 0, buffer: new ArrayBuffer(0), errorMessage: t('api.requestFailed', { detail: JSON.stringify(error) }) };
+    } finally {
+      httpRequest.destroy();
+    }
+  }
+
+  // 拉生成图片二进制 → base64 data URI（对照 web client.ts:255-278 getGeneratedImageBlob）。
+  //   GET /api/sessions/:id/generated-images/:imageId，Bearer jwt + 401 刷 token 重试一次。
+  //   mimeType 取报文元数据（block.mimeType），缺省回退 image/png（ArkUI Image 按数据头自识别）。
+  async fetchGeneratedImage(sessionId: string, imageId: string, mimeType: string): Promise<GeneratedImageResult> {
+    const path = `/api/sessions/${encodeURIComponent(sessionId)}/generated-images/${encodeURIComponent(imageId)}`;
+    const first = await this.doRequestBinary(http.RequestMethod.GET, path, 'jwt');
+    if (first.statusCode === 401 && getConnectionService().apiToken !== '') {
+      const refreshed = await this.refreshJwt();
+      if (refreshed) {
+        return this.buildImageResult(await this.doRequestBinary(http.RequestMethod.GET, path, 'jwt'), mimeType);
+      }
+    }
+    return this.buildImageResult(first, mimeType);
+  }
+
+  // 二进制响应 → data URI（成功）/ 错误结果（失败/空体）。base64 编码同 FilePicker（util.Base64Helper）。
+  private buildImageResult(r: BinaryResult, mimeType: string): GeneratedImageResult {
+    if (r.errorMessage !== '') {
+      return { success: false, dataUri: '', error: r.errorMessage };
+    }
+    if (r.buffer.byteLength === 0) {
+      return { success: false, dataUri: '', error: t('api.emptyImage') };
+    }
+    const base64Helper: util.Base64Helper = new util.Base64Helper();
+    const b64: string = base64Helper.encodeToStringSync(new Uint8Array(r.buffer));
+    const mime: string = mimeType !== '' ? mimeType : 'image/png';
+    return { success: true, dataUri: `data:${mime};base64,${b64}`, error: '' };
   }
 
   // 刷新 JWT：用持久化的 CLI_API_TOKEN 重新 POST /api/auth 换新 jwt 并持久化。
@@ -194,7 +273,7 @@ export class HubClient {
   async getMachines(): Promise<Machine[]> {
     const resp = await this.request(http.RequestMethod.GET, '/api/machines', undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `加载机器失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMachinesFailed', { code: resp.statusCode }));
     }
     return parseMachinesResponse(resp.data);
   }
@@ -207,7 +286,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/list-directory`, body, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `浏览目录失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', { code: resp.statusCode }));
     }
     return parseListDirectoryResponse(resp.data);
   }
@@ -230,7 +309,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/spawn`, body, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `启动会话失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.spawnFailed', { code: resp.statusCode }));
     }
     return parseSpawnResponse(resp.data);   // 业务 error（type:'error'）在此抛
   }
@@ -238,7 +317,7 @@ export class HubClient {
   async fetchSessions(): Promise<SessionSummary[]> {
     const resp = await this.request(http.RequestMethod.GET, '/api/sessions', undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `加载会话失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', { code: resp.statusCode }));
     }
     return parseSessionsResponse(resp.data);
   }
@@ -253,7 +332,7 @@ export class HubClient {
     }
     const resp = await this.request(http.RequestMethod.GET, path, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `加载消息失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMessagesFailed', { code: resp.statusCode }));
     }
     return parseMessagesPageResponse(resp.data);
   }
@@ -303,6 +382,65 @@ export class HubClient {
     return resp.success;
   }
 
+  // 恢复会话（POST /api/sessions/:id/resume[ body { permissionMode }] → { sessionId }，对照 web resumeSession client.ts:312）
+  //   语义：非活跃会话重新拉起 CLI runner。发送前隐式调用（对齐上游 useSendMessage.resolveSessionId：
+  //   session 非 active 时先 resume 拿【可能新的】sessionId 再发，否则 POST messages 撞 requireActive）。
+  //   permissionMode 非空才随 body 发（保持当前权限模式）；成功返回 sessionId，HTTP/业务失败抛 Error。
+  async resumeSession(sessionId: string, permissionMode: string = ''): Promise<string> {
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/resume`,
+      permissionMode !== '' ? { permissionMode } as Record<string, Object> : EMPTY_BODY, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.resumeFailed', { code: resp.statusCode }));
+    }
+    return parseResumeSessionResponse(resp.data);
+  }
+
+  // 切换到远程会话（POST /api/sessions/:id/switch body {} → { ok:true }，对照 web switchSession client.ts:359）
+  //   语义：多端/多窗口时让 CLI 把输入定向到本会话（「切换到远程」）。单窗口移动端价值低，保留入口供边缘场景。
+  async switchSession(sessionId: string): Promise<boolean> {
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/switch`, EMPTY_BODY, 'jwt');
+    return resp.success;
+  }
+
+  // 拉服务端斜杠命令（GET /api/sessions/:id/slash-commands → { success, commands? }，对照 web getSlashCommands:516）
+  //   用户/项目/插件命令（source != 'builtin'）。失败返 [] 静默回落内置（离线/jwt 失效不阻塞输入，不抛）。
+  async getSlashCommands(sessionId: string): Promise<ServerSlashCommand[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/slash-commands`, undefined, 'jwt');
+    if (!resp.success) {
+      return [];
+    }
+    return parseSlashCommandsResponse(resp.data);
+  }
+
+  // 拉技能（GET /api/sessions/:id/skills → { success, skills? }，对照 web getSkills:522）
+  //   $ 技能联想数据源。失败返 [] 静默（不阻塞输入，不抛）。
+  async getSkills(sessionId: string): Promise<SkillItem[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/skills`, undefined, 'jwt');
+    if (!resp.success) {
+      return [];
+    }
+    return parseSkillsResponse(resp.data);
+  }
+
+  // 上报可见性（POST /api/visibility body { subscriptionId, visibility }，对照 web setVisibility:189）
+  //   subscriptionId 来自 SSE connection-changed；visibility = 'visible'(前台)/'hidden'(后台)。
+  //   Hub 据此决定是否推送 TOAST。subscriptionId 空（未连/重连中）早退 false，不发无谓请求。
+  async setVisibility(subscriptionId: string, visibility: string): Promise<boolean> {
+    if (subscriptionId === '') {
+      return false;
+    }
+    const body: Record<string, Object> = {
+      subscriptionId: subscriptionId,
+      visibility: visibility
+    };
+    const resp = await this.request(http.RequestMethod.POST, '/api/visibility', body, 'jwt');
+    return resp.success;
+  }
+
   // 重命名会话（PATCH /api/sessions/:id body { name } → { ok:true }，对照 web renameSession）
   //   name 上游校验 1–255；成功后 SSE session-updated（全 Session）回推，列表兜底刷新。
   //   注：HarmonyOS http.RequestMethod 枚举不含 PATCH（对照 berry3 WebDAVClient 处理 MKCOL/PROPFIND 的先例），
@@ -339,7 +477,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `加载会话失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', { code: resp.statusCode }));
     }
     return parseSessionDetail(resp.data);
   }
@@ -444,7 +582,7 @@ export class HubClient {
     if (params.length > 0) { p = `${p}?${params.join('&')}`; }
     const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `搜索文件失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.searchFilesFailed', { code: resp.statusCode }));
     }
     return parseFileSearchResponse(resp.data);
   }
@@ -462,7 +600,7 @@ export class HubClient {
     if (path !== undefined && path !== '') { p = `${p}?path=${encodeURIComponent(path)}`; }
     const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : `浏览目录失败 (${resp.statusCode})`);
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', { code: resp.statusCode }));
     }
     return parseSessionDirectoryResponse(resp.data);
   }

@@ -54,20 +54,8 @@ export function fileNameFromUri(uri: string): string {
   }
 }
 
-// 打开 DocumentViewPicker 选单个文件并读完返回；用户取消/读失败 → null（调用方静默或 toast）。
-export async function pickAndReadDocument(context: common.UIAbilityContext): Promise<PickedFile | null> {
-  let uris: string[];
-  try {
-    const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 1;
-    const documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
-    const result: string[] = await documentPicker.select(options);
-    if (result.length === 0) { return null; }
-    uris = result;
-  } catch (e) {
-    return null;   // 用户取消或 picker 不可用
-  }
-  const uri: string = uris[0];
+// 从单个 URI 读字节 + base64 → PickedFile（单/多选取共用；读失败 → null）。
+function readPickedFile(uri: string): PickedFile | null {
   const filename: string = fileNameFromUri(uri);
   try {
     const file: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
@@ -87,4 +75,42 @@ export async function pickAndReadDocument(context: common.UIAbilityContext): Pro
   } catch (e) {
     return null;
   }
+}
+
+// 打开 DocumentViewPicker 选单个文件并读完返回；用户取消/读失败 → null（调用方静默或 toast）。
+export async function pickAndReadDocument(context: common.UIAbilityContext): Promise<PickedFile | null> {
+  let uris: string[];
+  try {
+    const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 1;
+    const documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
+    const result: string[] = await documentPicker.select(options);
+    if (result.length === 0) { return null; }
+    uris = result;
+  } catch (e) {
+    return null;   // 用户取消或 picker 不可用
+  }
+  return readPickedFile(uris[0]);
+}
+
+// 多文件选取（对照上游多附件：一次选多个，每文件独立 upload）。maxSelectNumber 上限（默认 10）；
+//   逐个读 base64，单文件读失败跳过不影响其余。用户取消/全失败 → 空数组（调用方静默）。
+export async function pickAndReadDocuments(context: common.UIAbilityContext, maxNumber: number = 10): Promise<PickedFile[]> {
+  let uris: string[];
+  try {
+    const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = maxNumber;
+    const documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
+    const result: string[] = await documentPicker.select(options);
+    if (result.length === 0) { return []; }
+    uris = result;
+  } catch (e) {
+    return [];
+  }
+  const out: PickedFile[] = [];
+  for (let i = 0; i < uris.length; i++) {
+    const pf: PickedFile | null = readPickedFile(uris[i]);
+    if (pf !== null) { out.push(pf); }
+  }
+  return out;
 }

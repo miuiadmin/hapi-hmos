@@ -9,6 +9,7 @@ import { AskUserQuestionFooter } from './AskUserQuestionFooter';
 import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 // ToolCard —— 对齐 web/src/components/ToolCard/ToolCard.tsx + PermissionFooter.tsx
 // 工具调用卡：header（emoji+标题+副标题+elapsed+状态符+详情入口）+ 卡片体（特化/已答回显）+ footer（三选一）+ 详情半模态。
@@ -198,13 +199,13 @@ struct ToolCard {
     try {
       const ok = await getHubClient().approvePermission(this.sessionId, p.id);
       if (!ok) {
-        this.actionError = '批准失败';
+        this.actionError = t('tool.approveFailed');
       } else {
         this.decided = true;
         this.onDecided();
       }
     } catch (e) {
-      this.actionError = errMsg(e, '批准失败');
+      this.actionError = errMsg(e, t('tool.approveFailed'));
     } finally {
       this.actionLoading = '';
     }
@@ -228,13 +229,13 @@ struct ToolCard {
       opts.allowTools = [ident];
       const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
       if (!ok) {
-        this.actionError = '批准失败';
+        this.actionError = t('tool.approveFailed');
       } else {
         this.decided = true;
         this.onDecided();
       }
     } catch (e) {
-      this.actionError = errMsg(e, '批准失败');
+      this.actionError = errMsg(e, t('tool.approveFailed'));
     } finally {
       this.actionLoading = '';
     }
@@ -252,13 +253,13 @@ struct ToolCard {
       opts.mode = 'acceptEdits';
       const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
       if (!ok) {
-        this.actionError = '批准失败';
+        this.actionError = t('tool.approveFailed');
       } else {
         this.decided = true;
         this.onDecided();
       }
     } catch (e) {
-      this.actionError = errMsg(e, '批准失败');
+      this.actionError = errMsg(e, t('tool.approveFailed'));
     } finally {
       this.actionLoading = '';
     }
@@ -274,13 +275,13 @@ struct ToolCard {
     try {
       const ok = await getHubClient().denyPermission(this.sessionId, p.id);
       if (!ok) {
-        this.actionError = '拒绝失败';
+        this.actionError = t('tool.denyFailed');
       } else {
         this.decided = true;
         this.onDecided();
       }
     } catch (e) {
-      this.actionError = errMsg(e, '拒绝失败');
+      this.actionError = errMsg(e, t('tool.denyFailed'));
     } finally {
       this.actionLoading = '';
     }
@@ -395,7 +396,7 @@ struct ToolCard {
   private PermissionFooter() {
     if (this.isPending) {
       Column() {
-        Text(this.decided ? '已处理，等待响应…' : '等待批准')
+        Text(this.decided ? t('tool.decided') : t('tool.waitingForApproval'))
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
@@ -411,16 +412,16 @@ struct ToolCard {
             .margin({ top: 6 })
         }
 
-        this.ActionRow('允许', this.c.success, this.actionLoading === 'allow', 'allow', this.decided)
+        this.ActionRow(t('tool.allow'), this.c.success, this.actionLoading === 'allow', 'allow', this.decided)
 
         if (this.canAllowForSession) {
-          this.ActionRow('本会话允许', this.c.textSecondary, this.actionLoading === 'session', 'session', this.decided)
+          this.ActionRow(t('tool.allowForSession'), this.c.textSecondary, this.actionLoading === 'session', 'session', this.decided)
         }
         if (this.canAllowAllEdits) {
-          this.ActionRow('允许所有编辑', this.c.textSecondary, this.actionLoading === 'alledits', 'alledits', this.decided)
+          this.ActionRow(t('tool.allowAll'), this.c.textSecondary, this.actionLoading === 'alledits', 'alledits', this.decided)
         }
 
-        this.ActionRow('拒绝', this.c.error, this.actionLoading === 'deny', 'deny', this.decided)
+        this.ActionRow(t('tool.deny'), this.c.error, this.actionLoading === 'deny', 'deny', this.decided)
       }
       .width('100%')
       .margin({ top: 8 })
@@ -433,7 +434,7 @@ struct ToolCard {
           Text(this.permission !== null && this.permission.status === 'denied' ? '✕' : '⊘')
             .fontSize(fs(13))
             .fontColor(this.c.error)
-          Text(this.permission !== null && this.permission.status === 'denied' ? '已拒绝' : '已取消')
+          Text(this.permission !== null && this.permission.status === 'denied' ? t('tool.rejected') : t('tool.canceled'))
             .fontSize(fs(12))
             .fontColor(this.c.error)
             .fontWeight(FontWeight.Medium)
@@ -463,14 +464,14 @@ struct ToolCard {
   private DetailSheet() {
     Scroll() {
       Column() {
-        Text('输入')
+        Text(t('tool.input'))
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
           .margin({ bottom: 6 })
         ToolInputView({ tool: this.toolNotNull, surface: 'dialog' })
 
-        Text('结果')
+        Text(t('tool.result'))
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')

@@ -16,6 +16,10 @@ import slashCommandsTest from './SlashCommands.test';
 import activeWordTest from './ActiveWord.test';
 import gitParsersTest from './GitParsers.test';
 import externalLinkTest from './ExternalLink.test';
+import skillsTest from './Skills.test';
+import sessionAttentionTest from './SessionAttention.test';
+import outlineTest from './Outline.test';
+import translateTest from './Translate.test';
 
 export default function testsuite() {
   diffTest();
@@ -33,4 +37,8 @@ export default function testsuite() {
   activeWordTest();
   gitParsersTest();
   externalLinkTest();
+  skillsTest();
+  sessionAttentionTest();
+  outlineTest();
+  translateTest();
 }

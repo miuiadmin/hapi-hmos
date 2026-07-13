@@ -3,6 +3,7 @@
 
 import { ChecklistItem } from '../chat/Checklist';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 @ComponentV2
 struct ChecklistList {
@@ -47,7 +48,7 @@ struct ChecklistList {
               .fontSize(fs(13))
               .fontColor(this.tone(item.status))
               .margin({ right: 6 })
-            Text(item.text.trim().length > 0 ? item.text.trim() : '(空)')
+            Text(item.text.trim().length > 0 ? item.text.trim() : t('checklist.emptyItem'))
               .fontSize(fs(13))
               .fontColor(item.status === 'completed' ? this.tone('completed') : this.c.textPrimary)
               .layoutWeight(1)

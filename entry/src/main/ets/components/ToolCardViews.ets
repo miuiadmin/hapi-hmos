@@ -14,6 +14,7 @@ import { DiffView } from './DiffView';
 import { ChecklistList } from './ChecklistList';
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 const MAX_COMPACT_EDITS: number = 3;
 
@@ -122,9 +123,9 @@ struct ToolInputView {
 
   private jsonInput(): string {
     try {
-      return this.input !== null ? JSON.stringify(this.input, null, 2) : '(无)';
+      return this.input !== null ? JSON.stringify(this.input, null, 2) : t('tool.inputEmpty');
     } catch (e) {
-      return '(无法序列化)';
+      return t('tool.cannotSerialize');
     }
   }
 
@@ -139,15 +140,15 @@ struct ToolInputView {
       } else if (this.tool.name === 'Write') {
         this.WriteInput()
       } else if (this.tool.name === 'TodoWrite') {
-        ChecklistList({ items: extractTodoChecklist(this.input, this.tool.result), emptyLabel: '(无待办)' })
+        ChecklistList({ items: extractTodoChecklist(this.input, this.tool.result), emptyLabel: t('tool.todoEmpty') })
       } else if (this.tool.name === 'update_plan') {
-        ChecklistList({ items: extractUpdatePlanChecklist(this.input, this.tool.result), emptyLabel: '(无步骤)' })
+        ChecklistList({ items: extractUpdatePlanChecklist(this.input, this.tool.result), emptyLabel: t('tool.planEmpty') })
       } else if (this.tool.name === 'ExitPlanMode' || this.tool.name === 'exit_plan_mode') {
         this.PlanInput()
       } else if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command') {
         this.BashInput()
       } else {
-        CodeBlock({ code: this.jsonInput(), language: 'json', title: '输入', collapseLongContent: this.isInline })
+        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
     }
     .width('100%')
@@ -161,7 +162,7 @@ struct ToolInputView {
         DiffView({ oldString: ep.oldStr, newString: ep.newStr })
       }, (ep: EditPair, idx: number) => `edit-${idx}`)
       if (this.isInline && this.multiEdits().length > MAX_COMPACT_EDITS) {
-        Text(`（还有 ${this.multiEdits().length - MAX_COMPACT_EDITS} 处编辑）`)
+        Text(t('tool.moreEdits', { n: this.multiEdits().length - MAX_COMPACT_EDITS }))
           .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
       }
@@ -185,7 +186,7 @@ struct ToolInputView {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
-        CodeBlock({ code: this.writeContent(), language: 'text', title: '草稿', collapseLongContent: false })
+        CodeBlock({ code: this.writeContent(), language: 'text', title: t('tool.draft'), collapseLongContent: false })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -202,7 +203,7 @@ struct ToolInputView {
   @Builder
   BashInput() {
     if (this.bashCommand() !== '') {
-      CodeBlock({ code: this.bashCommand(), language: 'bash', title: '命令', collapseLongContent: this.isInline })
+      CodeBlock({ code: this.bashCommand(), language: 'bash', title: t('tool.command'), collapseLongContent: this.isInline })
     }
   }
 }
@@ -236,12 +237,12 @@ struct ToolResultView {
 
   private placeholderForState(): string {
     if (this.tool.state === 'pending') {
-      return '(等待批准)';
+      return t('tool.statePending');
     }
     if (this.tool.state === 'running') {
-      return '(运行中)';
+      return t('tool.stateRunning');
     }
-    return '(无输出)';
+    return t('tool.noOutput');
   }
 
   private readPath(): string {
@@ -309,9 +310,9 @@ struct ToolResultView {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     } else if (this.resultText() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: '输出', collapseLongContent: this.isInline })
+      CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
     } else {
-      this.Pill('(无输出)')
+      this.Pill(t('tool.noOutput'))
     }
   }
 
@@ -320,20 +321,20 @@ struct ToolResultView {
     if (this.tool.result === null) {
       this.Pill(this.placeholderForState())
     } else if (this.resultText() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: this.readPath() !== '' ? this.readPath() : '文件内容', collapseLongContent: this.isInline })
+      CodeBlock({ code: this.resultText(), language: 'text', title: this.readPath() !== '' ? this.readPath() : t('tool.fileContent'), collapseLongContent: this.isInline })
     } else {
-      this.Pill('(无输出)')
+      this.Pill(t('tool.noOutput'))
     }
   }
 
   @Builder
   MutationResult() {
     if (this.tool.result === null) {
-      this.Pill(this.tool.state === 'completed' ? '完成' : this.placeholderForState())
+      this.Pill(this.tool.state === 'completed' ? t('tool.completed') : this.placeholderForState())
     } else if (this.resultText().trim() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: '结果', collapseLongContent: this.isInline })
+      CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.result'), collapseLongContent: this.isInline })
     } else {
-      this.Pill(this.tool.state === 'completed' ? '完成' : '(无输出)')
+      this.Pill(this.tool.state === 'completed' ? t('tool.completed') : t('tool.noOutput'))
     }
   }
 
@@ -344,7 +345,7 @@ struct ToolResultView {
     } else if (this.resultText() !== '') {
       MarkdownText({ content: this.resultText() })
     } else {
-      this.Pill('(无输出)')
+      this.Pill(t('tool.noOutput'))
     }
   }
 
@@ -364,7 +365,7 @@ struct ToolResultView {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     } else {
-      this.Pill('(无输出)')
+      this.Pill(t('tool.noOutput'))
     }
   }
 
@@ -394,7 +395,7 @@ struct ToolResultView {
     } else if (this.jsonResult() !== '') {
       CodeBlock({ code: this.jsonResult(), language: 'json', title: 'JSON', collapseLongContent: this.isInline })
     } else {
-      this.Pill('(无输出)')
+      this.Pill(t('tool.noOutput'))
     }
   }
 }

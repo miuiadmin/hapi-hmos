@@ -3,7 +3,7 @@
 // 0 表示 null 时间戳（startedAt/completedAt/createdAt of permission）。
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -51,6 +51,18 @@ export class ChatBlock {
   //   不放进 reduceChatBlocks 以保持 reducer 纯净/不影响其单测。DateDivider 文本（今天/昨天/日期）在渲染时取。
   dividerBefore: boolean = false;
 
+  // 渲染标记：本块是否为「进入会话时的首条未读」（createdAt > entryLastSeenAt 的首块）。
+  //   上游无对照（web 进会话总滚底、无未读分隔）——客户端自创，复用 #113 lastSeenAt 基础设施。
+  //   entryLastSeenAt 在 aboutToAppear 捕获（markSeen 前），本页期间不变；下次进会话重算。
+  //   渲染时在本块前插「以下为未读」分隔；过滤视图不显示（同 dividerBefore）。
+  unreadDividerBefore: boolean = false;
+
+  // 仅 generated-image：agent 调 display_image 登记的图（对照 web GeneratedImageBlock）。
+  //   二进制按 imageId 按 GET 拉 → data URI → Image()；fileName 用作 caption，mimeType 用作 data URI 媒体类型。
+  imageId: string = '';
+  fileName: string = '';
+  mimeType: string = '';
+
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string): ChatBlock {
     const b: ChatBlock = new ChatBlock();
@@ -77,6 +89,18 @@ export class ChatBlock {
     b.id = id;
     b.createdAt = createdAt;
     b.text = text;
+    return b;
+  }
+
+  // 生成图片块（agent 调 display_image 登记的图，对照上游 GeneratedImageBlock）
+  static generatedImage(id: string, createdAt: number, imageId: string, fileName: string, mimeType: string): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'generated-image';
+    b.id = id;
+    b.createdAt = createdAt;
+    b.imageId = imageId;
+    b.fileName = fileName;
+    b.mimeType = mimeType;
     return b;
   }
 }

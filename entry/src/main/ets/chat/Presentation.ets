@@ -6,6 +6,7 @@
 import { ChatToolCall } from './ChatBlock';
 import { getInputStrAny, truncateStr } from './ToolInputUtils';
 import { extractUpdatePlanChecklist } from './Checklist';
+import { t } from '../i18n/Translate';
 
 export class ToolPresentation {
   icon: string = '🔧';
@@ -113,18 +114,18 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
   switch (name) {
     case 'Bash':
       p.icon = '⌨️';
-      p.title = desc !== '' ? desc : '终端';
+      p.title = desc !== '' ? desc : t('pres.bash');
       p.subtitle = getInputStrAny(input, ['command', 'cmd']);
       p.minimal = true;
       return p;
     case 'Read':
       p.icon = '👁️';
-      p.title = pathTitle(input, '读取文件');
+      p.title = pathTitle(input, t('pres.read'));
       p.minimal = true;
       return p;
     case 'Edit':
       p.icon = '📝';
-      p.title = pathTitle(input, '编辑文件');
+      p.title = pathTitle(input, t('pres.edit'));
       p.minimal = true;
       return p;
     case 'MultiEdit': {
@@ -132,9 +133,9 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       const file: string = getInputStrAny(input, ['file_path', 'path']);
       const count: number = inputArrayLength(input, 'edits');
       if (file === '') {
-        p.title = '编辑文件';
+        p.title = t('pres.edit');
       } else if (count > 1) {
-        p.title = `${file}（${count} 处）`;
+        p.title = t('pres.multiEdit', { file: file, count: count });
       } else {
         p.title = file;
       }
@@ -143,11 +144,11 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     }
     case 'Write': {
       p.icon = '📝';
-      p.title = pathTitle(input, '写入文件');
+      p.title = pathTitle(input, t('pres.write'));
       const content: string = getInputStrAny(input, ['content', 'text']);
       if (content !== '') {
         const lines: number = content.split('\n').length;
-        p.subtitle = lines > 1 ? `${lines} 行` : `${content.length} 字符`;
+        p.subtitle = lines > 1 ? t('pres.lines', { n: lines }) : t('pres.chars', { n: content.length });
       }
       p.minimal = true;
       return p;
@@ -156,41 +157,41 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.icon = '🔎';
       p.title = getInputStrAny(input, ['pattern']);
       if (p.title === '') {
-        p.title = '搜索文件';
+        p.title = t('pres.searchFiles');
       }
       p.minimal = true;
       return p;
     case 'Grep': {
       p.icon = '👁️';
       const pattern: string = getInputStrAny(input, ['pattern']);
-      p.title = pattern !== '' ? `grep(pattern: ${pattern})` : '搜索内容';
+      p.title = pattern !== '' ? `grep(pattern: ${pattern})` : t('pres.searchContent');
       p.minimal = true;
       return p;
     }
     case 'LS':
       p.icon = '🔎';
-      p.title = pathTitle(input, '列出文件');
+      p.title = pathTitle(input, t('pres.listFiles'));
       p.minimal = true;
       return p;
     case 'TodoWrite': {
       p.icon = '💡';
-      p.title = '待办清单';
+      p.title = t('pres.todoList');
       const count: number = inputArrayLength(input, 'todos');
-      p.subtitle = count > 0 ? `${count} 项` : '';
+      p.subtitle = count > 0 ? t('pres.items', { n: count }) : '';
       p.minimal = count === 0;
       return p;
     }
     case 'update_plan': {
       p.icon = '📋';
       const steps = extractUpdatePlanChecklist(input, tool.result);
-      p.title = steps.length > 0 ? `计划（${steps.length} 步）` : '计划';
+      p.title = steps.length > 0 ? t('pres.planSteps', { n: steps.length }) : t('pres.plan');
       p.minimal = steps.length === 0;   // 有步骤 → 内联清单（showInline）
       return p;
     }
     case 'WebFetch': {
       p.icon = '🌐';
       const url: string = getInputStrAny(input, ['url']);
-      p.title = url !== '' ? hostnameOf(url) : '抓取网页';
+      p.title = url !== '' ? hostnameOf(url) : t('pres.fetchPage');
       p.subtitle = url;
       p.minimal = true;
       return p;
@@ -198,7 +199,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     case 'WebSearch': {
       p.icon = '🌐';
       const query: string = getInputStrAny(input, ['query']);
-      p.title = query !== '' ? query : '网页搜索';
+      p.title = query !== '' ? query : t('pres.webSearch');
       p.subtitle = query !== '' ? truncateStr(query, 80) : '';
       p.minimal = true;
       return p;
@@ -207,7 +208,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     case 'Agent': {
       p.icon = '🚀';
       const d: string = getInputStrAny(input, ['description']);
-      p.title = d !== '' ? d : (name === 'Task' ? '任务' : '启动 Agent');
+      p.title = d !== '' ? d : (name === 'Task' ? t('pres.task') : t('pres.startAgent'));
       const prompt: string = getInputStrAny(input, ['prompt']);
       p.subtitle = prompt !== '' ? truncateStr(prompt, 120) : getInputStrAny(input, ['subagent_type', 'name']);
       // 子代理嵌套（children）后置；当前无 children → minimal
@@ -217,14 +218,14 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     case 'Skill': {
       p.icon = '🧩';
       const skill: string = getInputStrAny(input, ['skill']);
-      p.title = skill !== '' ? `技能: ${skill}` : '技能';
+      p.title = skill !== '' ? t('pres.skill', { name: skill }) : t('pres.skillLabel');
       p.minimal = true;
       return p;
     }
     case 'ExitPlanMode':
     case 'exit_plan_mode':
       p.icon = '📋';
-      p.title = '计划方案';
+      p.title = t('pres.exitPlan');
       // 计划正文视图 P6 接（MarkdownText 渲染 input.plan）
       p.minimal = false;
       return p;
@@ -237,13 +238,13 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       const firstKey: string = name === 'request_user_input' ? 'id' : 'header';
       const firstField: string = firstQuestionField(questions, firstKey);
       if (count > 1) {
-        p.title = `${count} 个问题`;
+        p.title = t('pres.questionCount', { n: count });
       } else {
-        p.title = firstField !== '' ? firstField : '问题';
+        p.title = firstField !== '' ? firstField : t('pres.question');
       }
       const question: string = firstQuestionField(questions, 'question');
       if (count > 1 && question !== '') {
-        p.subtitle = truncateStr(question, 100) + `（还有 ${count - 1} 个）`;
+        p.subtitle = truncateStr(question, 100) + t('pres.moreCount', { n: count - 1 });
       } else if (question !== '') {
         p.subtitle = truncateStr(question, 120);
       }
@@ -264,15 +265,15 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       let title: string = name;
       if (subtitle !== '' && subtitle === title) {
         if (filePath !== '') {
-          title = '读取文件';
+          title = t('pres.read');
         } else if (command !== '') {
-          title = '运行命令';
+          title = t('pres.runCommand');
         } else if (pattern !== '') {
-          title = '搜索';
+          title = t('pres.search');
         } else if (url !== '') {
-          title = '打开链接';
+          title = t('pres.openLink');
         } else if (query !== '') {
-          title = '查询';
+          title = t('pres.query');
         }
       }
       p.title = title;

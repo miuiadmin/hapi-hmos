@@ -3,6 +3,7 @@ import { FileSearchItem, SessionDirEntry } from '../models/Types';
 import { GitStatusFiles, GitFileStatus, GitFileStatusType, buildGitStatusFiles } from '../chat/GitParsers';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { FileViewerRouteParams } from './FileViewerPage';
+import { t } from '../i18n/I18nService';
 
 // 会话文件浏览页（NavDestination）—— 对照 hapi web /sessions/$sessionId/files（全量：git 变更 + 目录树 + 搜索）
 //   3 Tab：① 改动（getGitStatus porcelain v2 + git-diff-numstat ×2 → buildGitStatusFiles）
@@ -56,7 +57,7 @@ struct FilesPage {
       const status = await getHubClient().getGitStatus(this.sessionId);
       if (!status.success) {
         this.gitStatus = null;
-        this.gitError = status.error !== '' ? status.error : (status.stderr !== '' ? status.stderr : '暂无 git 信息');
+        this.gitError = status.error !== '' ? status.error : (status.stderr !== '' ? status.stderr : t('files.changes.noGit'));
         return;
       }
       const [unstaged, staged] = await Promise.all([
@@ -70,7 +71,7 @@ struct FilesPage {
       );
     } catch (e) {
       this.gitStatus = null;
-      this.gitError = e instanceof Error ? e.message : '加载改动失败';
+      this.gitError = e instanceof Error ? e.message : t('files.changes.loadFailed');
     } finally {
       this.gitLoading = false;
     }
@@ -96,7 +97,7 @@ struct FilesPage {
       this.dirEntries = list;
     } catch (e) {
       this.dirEntries = [];
-      this.dirError = e instanceof Error ? e.message : '浏览目录失败';
+      this.dirError = e instanceof Error ? e.message : t('files.dir.loadFailed');
     } finally {
       this.dirLoading = false;
     }
@@ -112,7 +113,7 @@ struct FilesPage {
       this.searchResults = await getHubClient().searchSessionFiles(this.sessionId, this.searchQuery.trim());
     } catch (e) {
       this.searchResults = [];
-      this.searchError = e instanceof Error ? e.message : '搜索失败';
+      this.searchError = e instanceof Error ? e.message : t('files.search.failed');
     } finally {
       this.searchLoading = false;
     }
@@ -187,9 +188,9 @@ struct FilesPage {
   @Builder
   private Segmented() {
     Row({ space: 0 }) {
-      this.TabButton('改动', 'changes', this.gitStatus !== null ? this.gitStatus.totalStaged + this.gitStatus.totalUnstaged : 0)
-      this.TabButton('文件', 'files', 0)
-      this.TabButton('搜索', 'search', 0)
+      this.TabButton(t('files.tab.changes'), 'changes', this.gitStatus !== null ? this.gitStatus.totalStaged + this.gitStatus.totalUnstaged : 0)
+      this.TabButton(t('files.tab.files'), 'files', 0)
+      this.TabButton(t('files.tab.search'), 'search', 0)
     }
     .width('100%')
     .backgroundColor(this.c.surface)
@@ -214,21 +215,21 @@ struct FilesPage {
   @Builder
   private ChangesView() {
     if (this.gitLoading) {
-      this.LoadingRow('加载改动…')
+      this.LoadingRow(t('files.changes.loading'))
     } else if (this.gitError !== '') {
       this.EmptyOrError(this.gitError)
     } else if (this.gitStatus === null || (this.gitStatus.totalStaged === 0 && this.gitStatus.totalUnstaged === 0)) {
-      this.EmptyOrError('工作区干净，没有改动')
+      this.EmptyOrError(t('files.changes.clean'))
     } else {
       Column({ space: 0 }) {
         if (this.gitStatus.stagedFiles.length > 0) {
-          this.SectionHeader('已暂存', this.gitStatus.stagedFiles.length)
+          this.SectionHeader(t('files.changes.staged'), this.gitStatus.stagedFiles.length)
           ForEach(this.gitStatus.stagedFiles, (f: GitFileStatus) => {
             this.GitFileRow(f)
           }, (f: GitFileStatus) => `${f.isStaged}-${f.fullPath}-${f.status}`)
         }
         if (this.gitStatus.unstagedFiles.length > 0) {
-          this.SectionHeader('未暂存', this.gitStatus.unstagedFiles.length)
+          this.SectionHeader(t('files.changes.unstaged'), this.gitStatus.unstagedFiles.length)
           ForEach(this.gitStatus.unstagedFiles, (f: GitFileStatus) => {
             this.GitFileRow(f)
           }, (f: GitFileStatus) => `${f.isStaged}-${f.fullPath}-${f.status}`)
@@ -290,7 +291,7 @@ struct FilesPage {
     Column({ space: 0 }) {
       // 面包屑
       Row() {
-        Text('工作区')
+        Text(t('files.workspaceRoot'))
           .fontSize(fs(13))
           .fontColor(this.dirPath === '' ? this.c.textPrimary : this.c.primary)
           .onClick(() => { this.goToSegment(-1); })
@@ -308,11 +309,11 @@ struct FilesPage {
       .scrollBar(BarState.Off)
 
       if (this.dirLoading) {
-        this.LoadingRow('加载目录…')
+        this.LoadingRow(t('files.dir.loading'))
       } else if (this.dirError !== '') {
         this.EmptyOrError(this.dirError)
       } else if (this.dirEntries.length === 0) {
-        this.EmptyOrError('空目录')
+        this.EmptyOrError(t('files.dir.empty'))
       } else {
         ForEach(this.dirEntries, (e: SessionDirEntry) => {
           this.DirRow(e)
@@ -354,14 +355,14 @@ struct FilesPage {
   private SearchView() {
     Column({ space: 0 }) {
       Row({ space: 8 }) {
-        TextInput({ text: this.searchQuery, placeholder: '搜索文件名…' })
+        TextInput({ text: this.searchQuery, placeholder: t('files.search.placeholder') })
           .fontSize(fs(15))
           .layoutWeight(1)
           .backgroundColor(this.c.surface)
           .borderRadius(8)
           .onChange((v: string) => { this.searchQuery = v; })
           .onSubmit(() => { this.doSearch(); })
-        Button('搜索')
+        Button(t('files.tab.search'))
           .fontSize(fs(14))
           .backgroundColor(this.c.primary)
           .fontColor(this.c.bubbleUserText)
@@ -372,13 +373,13 @@ struct FilesPage {
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
 
       if (this.searchLoading) {
-        this.LoadingRow('搜索中…')
+        this.LoadingRow(t('files.search.loading'))
       } else if (this.searchError !== '') {
         this.EmptyOrError(this.searchError)
       } else if (!this.hasSearched) {
-        this.EmptyOrError('输入文件名搜索会话工作区')
+        this.EmptyOrError(t('files.search.hint'))
       } else if (this.searchResults.length === 0) {
-        this.EmptyOrError('没有匹配的文件')
+        this.EmptyOrError(t('files.search.noResults'))
       } else {
         ForEach(this.searchResults, (f: FileSearchItem) => {
           this.SearchRow(f)
@@ -423,7 +424,7 @@ struct FilesPage {
   // —— 公共 @Builder ——
   @Builder
   private SectionHeader(title: string, count: number) {
-    Text(`${title}（${count}）`)
+    Text(t('files.section.count', { title: title, count: count }))
       .fontSize(fs(12))
       .fontColor(this.c.textTertiary)
       .width('100%')
@@ -502,7 +503,7 @@ struct FilesPage {
       .height('100%')
       .backgroundColor(this.c.bg)
     }
-    .title('文件')
+    .title(t('files.page.title'))
     .menus(this.RefreshMenu)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

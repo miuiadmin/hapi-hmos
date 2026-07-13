@@ -12,6 +12,7 @@ import {
 } from '../chat/AskUserQuestion';
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 
 @ComponentV2
 struct AskUserQuestionView {
@@ -121,7 +122,7 @@ struct AskUserQuestionView {
               ForEach(this.otherAnswers(q, qIdx), (answer: string, oi: number) => {
                 Column({ space: 2 }) {
                   this.AnswerRow(answer, true)
-                  Text('（自定义回答）')
+                  Text(t('askUser.customAnswerLabel'))
                     .fontSize(fs(10))
                     .fontColor(this.c.textSecondary)
                 }

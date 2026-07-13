@@ -2,6 +2,8 @@
 // 含：resolveBaseUrl（去尾斜杠）、ApproveOptions（审批请求体参数；从 HubClient 移入此处，避免 ohos 传染）、
 //     buildApproveBody（仅序列化非空字段，对照 web approvePermission）、buildDenyBody、categorizeAuthFailure（登录失败归类）。
 
+import { t } from '../i18n/Translate';
+
 // 去掉 hubUrl 末尾的 '/'（对照原 HubClient.resolveBaseUrl / SSEClient.baseUrl）
 export function resolveBaseUrl(raw: string): string {
   return raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
@@ -81,7 +83,7 @@ export function buildSpawnBody(
 // errorMessage 约定：调用方传 '' 表示「无网络层错误信息」（原代码用 undefined 判定，'' 等价）。
 export function categorizeAuthFailure(statusCode: number, data: string, errorMessage: string): string {
   if (statusCode === 401) {
-    return 'Access Token 无效';
+    return t('conn.invalidToken');
   }
   if (data !== '') {
     try {
@@ -92,13 +94,13 @@ export function categorizeAuthFailure(statusCode: number, data: string, errorMes
     } catch (e) {
       // 解析失败 → 落到默认文案
     }
-    return `登录失败 (${statusCode})`;
+    return t('conn.loginFailed', { code: statusCode });
   }
   if (errorMessage !== '') {
     if (statusCode === 0) {
-      return '无法连接到 Hub，请检查地址';
+      return t('conn.unreachable');
     }
     return errorMessage;
   }
-  return `登录失败 (${statusCode})`;
+  return t('conn.loginFailed', { code: statusCode });
 }

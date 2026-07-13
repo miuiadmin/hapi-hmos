@@ -5,8 +5,10 @@ import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { ChatPageRouteParams } from './ChatPage';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
+import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
+import { t } from '../i18n/I18nService';
 
 // 会话列表页（已登录首屏）
 // UI 写法/样式对照 chatcube Index（Navigation + 列表 + 列表项 + 空态/加载态/错误态）
@@ -56,7 +58,7 @@ struct Index {
       }
     } catch (e) {
       if (seq === this.loadSeq) {
-        this.errorMessage = e instanceof Error ? e.message : '加载会话失败';
+        this.errorMessage = e instanceof Error ? e.message : t('sessions.loadFailed');
       }
     } finally {
       if (seq === this.loadSeq) {
@@ -92,14 +94,14 @@ struct Index {
   //   toast：服务端推 Toast（后台通知；仅 Index 处理，root 恒在栈避免与对话页双监听者重复弹）。
   //   machine-updated：无 machine UI 可消费（机器在 NewSessionPage 实时拉取），留 no-op hook。
   private onSSEEvent(event: SyncEvent): void {
-    const t: string = event.type;
-    if (t === SyncEventType.SESSION_ADDED
-      || t === SyncEventType.SESSION_UPDATED
-      || t === SyncEventType.SESSION_REMOVED
-      || t === SyncEventType.SESSION_ENDED
-      || t === SyncEventType.SCHEDULED_MATURED) {
+    const evtType: string = event.type;
+    if (evtType === SyncEventType.SESSION_ADDED
+      || evtType === SyncEventType.SESSION_UPDATED
+      || evtType === SyncEventType.SESSION_REMOVED
+      || evtType === SyncEventType.SESSION_ENDED
+      || evtType === SyncEventType.SCHEDULED_MATURED) {
       this.loadSessions();
-    } else if (t === SyncEventType.TOAST) {
+    } else if (evtType === SyncEventType.TOAST) {
       this.showServerToast(event);
     }
   }
@@ -186,10 +188,10 @@ struct Index {
 
   // 筛选 Tab 文案与图标（按 tab+搜索词；filteredSessions===0 时用）
   private emptyMessage(): string {
-    if (this.searchQuery.trim() !== '') { return '没有匹配的会话。'; }
-    if (this.sessionFilter === 'active') { return '没有活跃会话。'; }
-    if (this.sessionFilter === 'archived') { return '没有已归档会话。'; }
-    return '没有匹配的会话。';
+    if (this.searchQuery.trim() !== '') { return t('sessions.search.noResults'); }
+    if (this.sessionFilter === 'active') { return t('sessions.empty.active'); }
+    if (this.sessionFilter === 'archived') { return t('sessions.empty.archived'); }
+    return t('sessions.search.noResults');
   }
   private emptyIcon(): string {
     if (this.searchQuery.trim() !== '') { return '🔍'; }
@@ -220,9 +222,9 @@ struct Index {
   @Builder
   private FilterTabs() {
     Row() {
-      this.FilterTab('全部', 'all', this.sessions.length)
-      this.FilterTab('活跃', 'active', this.countByActive(true))
-      this.FilterTab('已归档', 'archived', this.countByActive(false))
+      this.FilterTab(t('sessions.filter.all'), 'all', this.sessions.length)
+      this.FilterTab(t('sessions.filter.active'), 'active', this.countByActive(true))
+      this.FilterTab(t('sessions.filter.archived'), 'archived', this.countByActive(false))
     }
     .width('100%')
     .margin({ top: 8 })
@@ -236,18 +238,18 @@ struct Index {
     const diff: number = Math.max(0, Date.now() - ts);
     const min: number = Math.floor(diff / 60000);
     if (min < 1) {
-      return '刚刚';
+      return t('sessions.time.justNow');
     }
     if (min < 60) {
-      return `${min}分钟前`;
+      return t('sessions.time.minutesAgo', { n: min });
     }
     const hr: number = Math.floor(min / 60);
     if (hr < 24) {
-      return `${hr}小时前`;
+      return t('sessions.time.hoursAgo', { n: hr });
     }
     const day: number = Math.floor(hr / 24);
     if (day < 7) {
-      return `${day}天前`;
+      return t('sessions.time.daysAgo', { n: day });
     }
     const d: Date = new Date(ts);
     return `${d.getMonth() + 1}-${d.getDate()}`;
@@ -255,12 +257,26 @@ struct Index {
 
   private sseBadge(): string {
     if (this.sseState === 'open') {
-      return '● 实时';
+      return t('sessions.sse.live');
     }
     if (this.sseState === 'connecting' || this.sseState === 'reconnecting') {
-      return '○ 连接中';
+      return t('sessions.sse.connecting');
     }
     return '';
+  }
+
+  // 会话注意力分级（对照 web lib/sessionAttention）：thinking 不打扰；返回左侧色点类型。
+  private attentionFor(session: SessionSummary): AttentionKind | null {
+    // 移动端栈式导航：列表可见时用户不在任何会话内 → selected 恒 false（thinking 由 classify 内部抑制）。
+    const seen: SessionSeenService = getSessionSeenService();
+    // 读 @Trace revision 建立 V2 刷新依赖：ChatPage markSeen 自增 → 列表重渲染 → 重读 lastSeen 拿最新时间戳。
+    const _observeRevision: number = seen.revision;
+    return classifySessionAttention(session, false, seen.lastSeen(session.id));
+  }
+
+  // 注意力色点颜色：permission→琥珀（需授权）；input/background/unread→主色（蓝）。
+  private attentionDotColor(kind: AttentionKind): string {
+    return kind === 'permission' ? this.c.warning : this.c.primary;
   }
 
   // 列表项（对照 chatcube SessionCard：头像 | 标题+时间 / 摘要+角标）
@@ -283,6 +299,16 @@ struct Index {
       // 中段：标题 + 时间 / 摘要 + 角标
       Column({ space: 6 }) {
         Row() {
+          // 注意力色点（对照 web SessionAttentionIndicator：permission→琥珀/其余→主色；thinking 不显）
+          if (this.attentionFor(session) !== null) {
+            // 用 Column+尺寸+borderRadius 画圆点（项目无 Circle 先例，沿用既有 badge 样式范式）
+            Column()
+              .width(7)
+              .height(7)
+              .borderRadius(4)
+              .backgroundColor(this.attentionDotColor(this.attentionFor(session) as AttentionKind))
+              .margin({ right: 6 })
+          }
           Text(session.title)
             .fontSize(fs(15))
             .fontWeight(FontWeight.Medium)
@@ -297,7 +323,7 @@ struct Index {
         .width('100%')
 
         Row() {
-          Text(session.summaryText !== '' ? session.summaryText : (session.thinking ? '思考中…' : ' '))
+          Text(session.summaryText !== '' ? session.summaryText : (session.thinking ? t('sessions.thinking') : ' '))
             .fontSize(fs(13))
             .fontColor(this.c.textSecondary)
             .layoutWeight(1)
@@ -351,9 +377,9 @@ struct Index {
   private EmptyState() {
     Column({ space: 10 }) {
       Text('📭').fontSize(fs(48))
-      Text('暂无会话').fontSize(fs(16)).fontColor(this.c.textSecondary)
-      Text('在终端启动 hapi 后，会话会出现在这里').fontSize(fs(13)).fontColor(this.c.textTertiary)
-      Button('新建会话')
+      Text(t('sessions.empty.title')).fontSize(fs(16)).fontColor(this.c.textSecondary)
+      Text(t('sessions.empty.hint')).fontSize(fs(13)).fontColor(this.c.textTertiary)
+      Button(t('sessions.new'))
         .margin({ top: 12 })
         .backgroundColor(this.c.primary)
         .fontColor(this.c.bubbleUserText)
@@ -380,9 +406,9 @@ struct Index {
   @Builder
   private ErrorState() {
     Column({ space: 12 }) {
-      Text('加载失败').fontSize(fs(16)).fontColor(this.c.error)
+      Text(t('sessions.errorTitle')).fontSize(fs(16)).fontColor(this.c.error)
       Text(this.errorMessage).fontSize(fs(13)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
-      Button('重试')
+      Button(t('common.retry'))
         .backgroundColor(this.c.primary)
         .fontColor(this.c.bubbleUserText)
         .onClick(() => this.loadSessions())
@@ -398,7 +424,7 @@ struct Index {
         // 自绘标题栏（含 SSE 实时状态 + 设置入口）
         Row() {
           Row() {
-            Text('会话').fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
+            Text(t('sessions.title')).fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
             if (this.sseBadge() !== '') {
               Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary).margin({ left: 8 })
             }
@@ -429,7 +455,7 @@ struct Index {
         // 搜索框（仅 sessions 非空时显示；纯客户端过滤，对照 web SessionListSearch / chatcube Search 组件）
         if (this.sessions.length > 0) {
           Column() {
-            Search({ value: this.searchQuery, placeholder: '搜索会话…' })
+            Search({ value: this.searchQuery, placeholder: t('sessions.search.placeholder') })
               .height(40)
               .backgroundColor(this.c.surface)
               .placeholderColor(this.c.textTertiary)

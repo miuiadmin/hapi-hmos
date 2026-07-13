@@ -8,8 +8,11 @@ import {
   getBuiltinSlashCommands,
   slashCommandSuggestions,
   levenshteinDistance,
+  mergeSlashCommands,
+  serverCommandsToSlash,
   SlashCommand
 } from '../main/ets/chat/SlashCommands';
+import { ServerSlashCommand } from '../main/ets/models/Types';
 
 function findByName(list: SlashCommand[], name: string): SlashCommand | null {
   for (let i = 0; i < list.length; i++) {
@@ -94,6 +97,50 @@ export default function slashCommandsTest(): void {
     it('精确(0) 优先于 前缀(1)：/stats', 0, () => {
       const r = slashCommandSuggestions(claude, '/stats');
       expect(r[0].name).assertEqual('stats');   // 精确 0
+    });
+  });
+
+  describe('mergeSlashCommands — 去重（last-wins，键小写）', () => {
+    it('同名（小写归一）后者覆盖前者：保留 server 版', 0, () => {
+      const builtin = new SlashCommand();
+      builtin.name = 'clear'; builtin.description = 'builtin-desc'; builtin.source = 'builtin';
+      const server = new SlashCommand();
+      server.name = 'Clear'; server.description = 'server-desc'; server.source = 'user';
+      const merged = mergeSlashCommands([builtin, server]);
+      expect(merged.length).assertEqual(1);
+      expect(merged[0].description).assertEqual('server-desc');   // 后者覆盖
+      expect(merged[0].source).assertEqual('user');
+    });
+    it('不同名全保留', 0, () => {
+      const a = new SlashCommand(); a.name = 'clear';
+      const b = new SlashCommand(); b.name = 'compact';
+      expect(mergeSlashCommands([a, b]).length).assertEqual(2);
+    });
+    it('空数组 → 空', 0, () => {
+      expect(mergeSlashCommands([]).length).assertEqual(0);
+    });
+  });
+
+  describe('serverCommandsToSlash — 映射', () => {
+    it('逐字段映射 ServerSlashCommand → SlashCommand', 0, () => {
+      const s = new ServerSlashCommand();
+      s.name = 'my-cmd'; s.description = 'd'; s.source = 'plugin'; s.content = 'echo hi';
+      const out = serverCommandsToSlash([s]);
+      expect(out.length).assertEqual(1);
+      expect(out[0].name).assertEqual('my-cmd');
+      expect(out[0].description).assertEqual('d');
+      expect(out[0].source).assertEqual('plugin');
+      expect(out[0].content).assertEqual('echo hi');
+    });
+    it('source/content 缺省仍映射（默认值）', 0, () => {
+      const s = new ServerSlashCommand();   // 全默认：source='user' content=''
+      s.name = 'x';
+      const out = serverCommandsToSlash([s]);
+      expect(out[0].source).assertEqual('user');
+      expect(out[0].content).assertEqual('');
+    });
+    it('空数组 → 空', 0, () => {
+      expect(serverCommandsToSlash([]).length).assertEqual(0);
     });
   });
 }

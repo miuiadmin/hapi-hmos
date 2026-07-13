@@ -1,6 +1,7 @@
 import { getConnectionService } from '../services/ConnectionService';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
+import { t } from '../i18n/I18nService';
 import { window } from '@kit.ArkUI';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
@@ -37,7 +38,7 @@ struct LoginPage {
   private async testConnection(): Promise<void> {
     if (this.isTesting) { return; }
     if (this.hubUrl.trim() === '') {
-      this.lastError = '请填写 Hub 地址';
+      this.lastError = t('login.error.hubUrlRequired');
       return;
     }
     this.isTesting = true;
@@ -45,12 +46,12 @@ struct LoginPage {
     try {
       const ok = await getHubClient().health(this.hubUrl.trim());
       if (ok) {
-        showToast('Hub 地址可达', 2000);
+        showToast(t('login.hubReachable'), 2000);
       } else {
-        this.lastError = '无法连接到 Hub，请检查地址';
+        this.lastError = t('login.error.cannotConnect');
       }
     } catch (e) {
-      this.lastError = '连接测试失败';
+      this.lastError = t('login.error.testFailed');
     } finally {
       this.isTesting = false;
     }
@@ -60,7 +61,7 @@ struct LoginPage {
   private async doLogin(): Promise<void> {
     if (this.isSubmitting) { return; }
     if (!this.isInputComplete()) {
-      this.lastError = '请填写 Hub 地址和 Access Token';
+      this.lastError = t('login.error.fillAll');
       return;
     }
     this.isSubmitting = true;
@@ -68,7 +69,7 @@ struct LoginPage {
     try {
       const result = await getHubClient().authenticate(this.apiToken.trim(), this.hubUrl.trim());
       if (!result.success) {
-        this.lastError = result.errorMessage !== '' ? result.errorMessage : '登录失败，请检查地址和 Token';
+        this.lastError = result.errorMessage !== '' ? result.errorMessage : t('login.error.authFailedGeneric');
         return;
       }
       // 持久化配置 + JWT，然后切到会话列表页
@@ -76,7 +77,7 @@ struct LoginPage {
       await getConnectionService().saveJwt(result.jwt);
       this.switchToMainContent();
     } catch (e) {
-      this.lastError = '登录失败：' + (e instanceof Error ? e.message : '未知错误');
+      this.lastError = t('login.error.failedWithReason', { reason: e instanceof Error ? e.message : t('login.error.unknown') });
     } finally {
       this.isSubmitting = false;
     }
@@ -116,21 +117,21 @@ struct LoginPage {
   build() {
     Column() {
       // 标题区
-      Text('Hapi')
+      Text(t('app.name'))
         .fontSize(fs(40))
         .fontWeight(FontWeight.Bold)
         .fontColor(this.c.textPrimary)
         .margin({ top: 80 })
-      Text('连接到你的 Hub')
+      Text(t('login.subtitle'))
         .fontSize(fs(16))
         .fontColor(this.c.textSecondary)
         .margin({ top: 8 })
 
       // 表单区
       Column() {
-        this.InputRow('Hub 地址', this.hubUrl, 'http://192.168.1.5:3006', false,
+        this.InputRow(t('login.hubUrl'), this.hubUrl, 'http://192.168.1.5:3006', false,
           (text: string) => { this.hubUrl = text; this.lastError = '' })
-        this.InputRow('Access Token', this.apiToken, 'CLI_API_TOKEN', true,
+        this.InputRow(t('login.accessToken'), this.apiToken, 'CLI_API_TOKEN', true,
           (text: string) => { this.apiToken = text; this.lastError = '' })
 
         // 内联错误行（条件渲染，对照 OnboardingStepProvider）
@@ -143,7 +144,7 @@ struct LoginPage {
         }
 
         // 帮助文本
-        Text('启动 Hub：npx @twsxtd/hapi hub --relay。地址填 Hub 监听地址，Token 为 CLI_API_TOKEN。')
+        Text(t('login.helpText'))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
           .margin({ top: 12 })
@@ -153,7 +154,7 @@ struct LoginPage {
 
       // 按钮区（线框测试 + 实心登录，对照 chatcube WebDAVSyncPage 双按钮）
       Row({ space: 12 }) {
-        Button(this.isTesting ? '测试中…' : '测试连接')
+        Button(this.isTesting ? t('login.testing') : t('login.testConnection'))
           .layoutWeight(1)
           .height(44)
           .fontSize(fs(15))
@@ -163,7 +164,7 @@ struct LoginPage {
           .enabled(!this.isTesting && !this.isSubmitting)
           .onClick(() => this.testConnection())
 
-        Button(this.isSubmitting ? '登录中…' : '登录')
+        Button(this.isSubmitting ? t('login.submitting') : t('login.submit'))
           .layoutWeight(1)
           .height(44)
           .fontSize(fs(15))
