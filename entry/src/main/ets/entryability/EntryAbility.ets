@@ -4,6 +4,7 @@ import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getConnectionService } from '../services/ConnectionService';
+import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { getSSEClient } from '../api/SSEClient';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
@@ -43,6 +44,8 @@ export default class EntryAbility extends UIAbility {
     await ThemeService.init(this.context);
     // 语言须在 loadContent 前解析，首屏即用持久化/系统语言（避首帧中文→切英文闪烁，同主题）
     await I18nService.init(this.context);
+    // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
+    await getGeneratedImageCache().initialize(this.context);
     // 按登录态选首屏
     const pagePath: string = getConnectionService().isLoggedIn() ? 'pages/Index' : 'pages/LoginPage';
     windowStage.loadContent(pagePath, (err: BusinessError) => {

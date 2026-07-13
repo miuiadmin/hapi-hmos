@@ -1,4 +1,5 @@
 import { getHubClient } from '../api/HubClient';
+import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
 import { t } from '../i18n/I18nService';
@@ -177,6 +178,8 @@ export struct SessionActionMenu {
     try {
       const ok = await getHubClient().deleteSession(this.sessionId);
       if (ok) {
+        // 删该会话本进程登记的生成图片盘文件 + 索引（hash 不可逆→跨重启孤儿留观察；一处覆盖列表删/对话页删）
+        getGeneratedImageCache().clearSession(this.sessionId);
         this.onDeleted();
         showToast(t('sessionMenu.deleted'));
       } else {

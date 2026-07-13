@@ -1,21 +1,22 @@
 import { ChatBlock } from '../chat/ChatBlock';
 import { getHubClient } from '../api/HubClient';
 import { getGeneratedImageCache } from '../services/GeneratedImageCache';
+import { buildImageCacheKey } from '../services/GeneratedImageCacheUtils';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
 import { t } from '../i18n/I18nService';
 
 // GeneratedImageCard —— 对照 web ToolMessage.tsx:52-104 GeneratedImageCard
-// agent 调 display_image 工具登记的图：aboutToAppear 按 imageId GET 二进制 → base64 data URI → Image()。
-//   三态：dataUri（图，点击全屏预览）/ loading（骨架占位）/ error（无法加载文案）。
+// agent 调 display_image 工具登记的图：aboutToAppear 按 imageId GET 二进制 → 磁盘缓存 → Image(裸沙箱路径)。
+//   三态：filePath（图，点击全屏预览）/ loading（骨架占位）/ error（无法加载文案）。
 //   caption「生成图片 · fileName」。全屏预览复用 ImagePreviewSheet（含双指缩放，与 markdown 图片同源）。
-// V2 状态：@Param block（imageId/fileName/mimeType 取自 block）+ sessionId；@Local dataUri/loading/error/previewOpen。
+// V2 状态：@Param block（imageId/fileName/mimeType 取自 block）+ sessionId；@Local filePath/loading/error/previewOpen。
 
 @ComponentV2
 export struct GeneratedImageCard {
   @Param block: ChatBlock = new ChatBlock();
   @Param sessionId: string = '';
-  @Local dataUri: string = '';
+  @Local filePath: string = '';
   @Local loading: boolean = true;
   @Local error: string = '';
   @Local previewOpen: boolean = false;
@@ -30,19 +31,19 @@ export struct GeneratedImageCard {
   private async loadImage(): Promise<void> {
     this.loading = true;
     this.error = '';
-    // 经内存缓存（key=session:image）：命中直显，未命中拉取 + 成功入缓存；同图并发去重。
-    //   失败 loader 重抛 → 不入缓存、可重试；error 文案保留 Hub 原文（空则回落 loadFailed）。
-    const key: string = this.sessionId + ':' + this.block.imageId;
+    // 经磁盘缓存（key=session:image）：命中直显裸路径，未命中拉字节写盘；同图并发去重。
+    //   失败 loader 重抛 → 不缓存、可重试；error 文案保留 Hub 原文（空则回落 loadFailed）。
+    const key: string = buildImageCacheKey(this.sessionId, this.block.imageId);
     try {
-      this.dataUri = await getGeneratedImageCache().fetch(key, async (): Promise<string> => {
-        const r = await getHubClient().fetchGeneratedImage(this.sessionId, this.block.imageId, this.block.mimeType);
+      this.filePath = await getGeneratedImageCache().fetch(key, this.block.mimeType, async (): Promise<ArrayBuffer> => {
+        const r = await getHubClient().fetchGeneratedImageBytes(this.sessionId, this.block.imageId);
         if (r.success) {
-          return r.dataUri;
+          return r.buffer;
         }
         throw new Error(r.error);
       });
     } catch (e) {
-      this.dataUri = '';
+      this.filePath = '';
       this.error = e instanceof Error && e.message !== '' ? e.message : t('genImage.loadFailed');
     }
     this.loading = false;
@@ -56,8 +57,8 @@ export struct GeneratedImageCard {
         .maxLines(1)
         .textOverflow(TextOverflow.Ellipsis)
         .margin({ bottom: 6 })
-      if (this.dataUri !== '') {
-        Image(this.dataUri)
+      if (this.filePath !== '') {
+        Image(this.filePath)
           .width('100%')
           .objectFit(ImageFit.Contain)
           .borderRadius(10)
@@ -90,7 +91,7 @@ export struct GeneratedImageCard {
 
       // 全屏预览（自带 bindSheet + 双指缩放，统一 markdown/生成图片两处）
       ImagePreviewSheet({
-        src: this.dataUri,
+        src: this.filePath,
         open: this.previewOpen,
         onClose: (): void => { this.previewOpen = false; }
       })

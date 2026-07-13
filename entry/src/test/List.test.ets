@@ -21,7 +21,7 @@ import sessionAttentionTest from './SessionAttention.test';
 import outlineTest from './Outline.test';
 import translateTest from './Translate.test';
 import terminalInputTest from './TerminalInput.test';
-import generatedImageCacheTest from './GeneratedImageCache.test';
+import generatedImageCacheUtilsTest from './GeneratedImageCacheUtils.test';
 
 export default function testsuite() {
   diffTest();
@@ -44,5 +44,5 @@ export default function testsuite() {
   outlineTest();
   translateTest();
   terminalInputTest();
-  generatedImageCacheTest();
+  generatedImageCacheUtilsTest();
 }

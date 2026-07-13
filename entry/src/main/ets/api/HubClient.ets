@@ -1,5 +1,4 @@
 import { http } from '@kit.NetworkKit';
-import { util } from '@kit.ArkTS';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
 import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse } from '../models/Types';
@@ -28,11 +27,11 @@ export interface HubHttpResponse {
   errorMessage?: string;
 }
 
-// 生成图片拉取结果（对照 web getGeneratedImageBlob：二进制 → base64 data URI）
-export interface GeneratedImageResult {
+// 生成图片二进制结果（磁盘缓存直写用；免 base64 编码）
+export interface GeneratedImageBytesResult {
   success: boolean;
-  dataUri: string;   // 成功：data:${mime};base64,...；失败：''
-  error: string;     // 失败：错误文案；成功：''
+  buffer: ArrayBuffer;   // 成功：图片原始字节；失败：空 ArrayBuffer
+  error: string;         // 失败：错误文案；成功：''
 }
 
 // 二进制响应（doRequestBinary 内部用；成功 errorMessage=''，失败 buffer 为空）
@@ -141,7 +140,7 @@ export class HubClient {
   }
 
   // 二进制请求（同 doRequest，但响应按 ARRAY_BUFFER 读，对照 chatcube IconDownloadCache.ets:113 expectDataType）。
-  //   仅生成图片拉取用：GET 二进制 → ArrayBuffer → 调用方 base64 编码。不含刷新逻辑（由 fetchGeneratedImage 包）。
+  //   仅生成图片拉取用：GET 二进制 → ArrayBuffer → 调用方直接写盘。不含刷新逻辑（由 fetchGeneratedImageBytes 包）。
   private async doRequestBinary(method: http.RequestMethod, path: string, tokenType: TokenType, hubUrl?: string): Promise<BinaryResult> {
     const url = `${this.resolveBaseUrl(hubUrl)}${path}`;
     const httpRequest = http.createHttp();
@@ -174,33 +173,29 @@ export class HubClient {
     }
   }
 
-  // 拉生成图片二进制 → base64 data URI（对照 web client.ts:255-278 getGeneratedImageBlob）。
+  // 拉生成图片原始字节（磁盘缓存直写，免 base64）。对照 web client.ts:255-278 getGeneratedImageBlob。
   //   GET /api/sessions/:id/generated-images/:imageId，Bearer jwt + 401 刷 token 重试一次。
-  //   mimeType 取报文元数据（block.mimeType），缺省回退 image/png（ArkUI Image 按数据头自识别）。
-  async fetchGeneratedImage(sessionId: string, imageId: string, mimeType: string): Promise<GeneratedImageResult> {
+  async fetchGeneratedImageBytes(sessionId: string, imageId: string): Promise<GeneratedImageBytesResult> {
     const path = `/api/sessions/${encodeURIComponent(sessionId)}/generated-images/${encodeURIComponent(imageId)}`;
     const first = await this.doRequestBinary(http.RequestMethod.GET, path, 'jwt');
     if (first.statusCode === 401 && getConnectionService().apiToken !== '') {
       const refreshed = await this.refreshJwt();
       if (refreshed) {
-        return this.buildImageResult(await this.doRequestBinary(http.RequestMethod.GET, path, 'jwt'), mimeType);
+        return this.buildBytesResult(await this.doRequestBinary(http.RequestMethod.GET, path, 'jwt'));
       }
     }
-    return this.buildImageResult(first, mimeType);
+    return this.buildBytesResult(first);
   }
 
-  // 二进制响应 → data URI（成功）/ 错误结果（失败/空体）。base64 编码同 FilePicker（util.Base64Helper）。
-  private buildImageResult(r: BinaryResult, mimeType: string): GeneratedImageResult {
+  // 二进制响应 → 字节结果（成功）/ 错误结果（失败/空体）。不做 base64 编码，原始 buffer 直交磁盘缓存写盘。
+  private buildBytesResult(r: BinaryResult): GeneratedImageBytesResult {
     if (r.errorMessage !== '') {
-      return { success: false, dataUri: '', error: r.errorMessage };
+      return { success: false, buffer: new ArrayBuffer(0), error: r.errorMessage };
     }
     if (r.buffer.byteLength === 0) {
-      return { success: false, dataUri: '', error: t('api.emptyImage') };
+      return { success: false, buffer: new ArrayBuffer(0), error: t('api.emptyImage') };
     }
-    const base64Helper: util.Base64Helper = new util.Base64Helper();
-    const b64: string = base64Helper.encodeToStringSync(new Uint8Array(r.buffer));
-    const mime: string = mimeType !== '' ? mimeType : 'image/png';
-    return { success: true, dataUri: `data:${mime};base64,${b64}`, error: '' };
+    return { success: true, buffer: r.buffer, error: '' };
   }
 
   // 刷新 JWT：用持久化的 CLI_API_TOKEN 重新 POST /api/auth 换新 jwt 并持久化。
