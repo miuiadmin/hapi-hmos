@@ -456,6 +456,7 @@ export const en: Record<string, string> = {
   'pres.read': 'Read file',
   'pres.edit': 'Edit file',
   'pres.write': 'Write file',
+  'diff.title': 'Diff',
   'pres.multiEdit': '{file} ({count} edits)',
   'pres.lines': '{n} lines',
   'pres.chars': '{n} characters',

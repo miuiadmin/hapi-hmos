@@ -43,6 +43,7 @@ import messageMetadataTest from './MessageMetadata.test';
 import statusBarStatusTest from './StatusBarStatus.test';
 import codexReviewTest from './CodexReview.test';
 import attachmentFormatTest from './AttachmentFormat.test';
+import codexDiffTest from './CodexDiff.test';
 
 export default function testsuite() {
   diffTest();
@@ -87,4 +88,5 @@ export default function testsuite() {
   statusBarStatusTest();
   codexReviewTest();
   attachmentFormatTest();
+  codexDiffTest();
 }

@@ -457,6 +457,7 @@ export const zhCN: Record<string, string> = {
   'pres.read': '读取文件',
   'pres.edit': '编辑文件',
   'pres.write': '写入文件',
+  'diff.title': '差异',
   'pres.multiEdit': '{file}（{count} 处）',
   'pres.lines': '{n} 行',
   'pres.chars': '{n} 字符',

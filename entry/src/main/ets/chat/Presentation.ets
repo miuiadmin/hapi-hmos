@@ -6,6 +6,7 @@
 import { ChatToolCall } from './ChatBlock';
 import { getInputStrAny, truncateStr } from './ToolInputUtils';
 import { extractUpdatePlanChecklist } from './Checklist';
+import { parseUnifiedDiff, CodexDiffParsed } from './CodexDiff';
 import { t } from '../i18n/Translate';
 
 export class ToolPresentation {
@@ -151,6 +152,24 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
         p.subtitle = lines > 1 ? t('pres.lines', { n: lines }) : t('pres.chars', { n: content.length });
       }
       p.minimal = true;
+      return p;
+    }
+    case 'CodexDiff': {
+      // 对照上游 knownTools.tsx:413-432：icon 📝(FileDiff)、title 'Diff'、subtitle=+++ 行取 basename、
+      //   minimal = unified_diff.length>=2000 || 行数>=50（大 diff 折叠进 sheet，小 diff 内联展示）。
+      p.icon = '📝';
+      p.title = t('diff.title');
+      const unified: string = getInputStrAny(input, ['unified_diff']);
+      if (unified !== '') {
+        const parsed: CodexDiffParsed = parseUnifiedDiff(unified);
+        if (parsed.fileName !== '') {
+          p.subtitle = basenameOf(parsed.fileName);
+        }
+        const lineCount: number = unified.split('\n').length;
+        p.minimal = unified.length >= 2000 || lineCount >= 50;
+      } else {
+        p.minimal = true;
+      }
       return p;
     }
     case 'Glob':

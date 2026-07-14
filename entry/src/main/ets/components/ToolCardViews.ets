@@ -9,6 +9,7 @@
 import { ChatToolCall } from '../chat/ChatBlock';
 import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml } from '../chat/ToolInputUtils';
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
+import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
 import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
 import { ChecklistList } from './ChecklistList';
@@ -121,6 +122,14 @@ struct ToolInputView {
     return getInputStrAny(this.input, ['plan']);
   }
 
+  private codexDiffUnified(): string {
+    return getInputStrAny(this.input, ['unified_diff']);
+  }
+
+  private codexDiffParsed(): CodexDiffParsed {
+    return parseUnifiedDiff(this.codexDiffUnified());
+  }
+
   private jsonInput(): string {
     try {
       return this.input !== null ? JSON.stringify(this.input, null, 2) : t('tool.inputEmpty');
@@ -147,6 +156,8 @@ struct ToolInputView {
         this.PlanInput()
       } else if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command') {
         this.BashInput()
+      } else if (this.tool.name === 'CodexDiff') {
+        this.CodexDiffInput()
       } else {
         CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
@@ -204,6 +215,22 @@ struct ToolInputView {
   BashInput() {
     if (this.bashCommand() !== '') {
       CodeBlock({ code: this.bashCommand(), language: 'bash', title: t('tool.command'), collapseLongContent: this.isInline })
+    }
+  }
+
+  // CodexDiff：input.unified_diff 统一 diff 串 → 复用 DiffView 染色（对照 web CodexDiffView.tsx:57-72）。
+  //   inline 不传 filePath（无文件头）；dialog 传 fileName + comfortable。空 diff → 回退 JSON。
+  @Builder
+  CodexDiffInput() {
+    if (this.codexDiffUnified() !== '') {
+      DiffView({
+        oldString: this.codexDiffParsed().oldText,
+        newString: this.codexDiffParsed().newText,
+        filePath: this.isInline ? '' : this.codexDiffParsed().fileName,
+        size: this.isInline ? 'compact' : 'comfortable'
+      })
+    } else {
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
     }
   }
 }
