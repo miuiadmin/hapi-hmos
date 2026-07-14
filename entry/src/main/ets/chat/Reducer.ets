@@ -227,6 +227,12 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
         if (c.imageId !== '') {
           blocks.push(ChatBlock.generatedImage(`${msg.id}:${bi}`, msg.createdAt, c.imageId, c.fileName, c.mimeType));
         }
+      } else if (c.type === 'codex-review') {
+        // Codex review 块（对照上游 reducerTimeline.ts:788-793）：parse 时已嗅探命中并解析；
+        //   review 非空才产出（全空 marker 的已被 parseCodexReviewJson 过滤为 null，不产 block）。
+        if (c.review !== null) {
+          blocks.push(ChatBlock.codexReview(`${msg.id}:${bi}`, msg.createdAt, c.review));
+        }
       } else if (c.type === 'tool-call') {
         toolIdsInMessages.add(c.id);
         const entry: PermissionEntry | undefined = permissionsById.get(c.id);

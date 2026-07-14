@@ -7,6 +7,7 @@ import { ToolCard } from '../components/ToolCard';
 import { ReasoningBubble } from '../components/ReasoningBubble';
 import { GeneratedImageCard } from '../components/GeneratedImageCard';
 import { CliOutputCard } from '../components/CliOutputCard';
+import { CodexReviewCard } from '../components/CodexReviewCard';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { TeamPanel } from '../components/TeamPanel';
 import { TodoPanel } from '../components/TodoPanel';
@@ -2045,6 +2046,10 @@ struct ChatPage {
                     } else if (b.kind === 'cli-output') {
                       CliOutputCard({
                         block: b
+                      })
+                    } else if (b.kind === 'codex-review' && b.review !== null) {
+                      CodexReviewCard({
+                        review: b.review
                       })
                     } else {
                       ToolCard({

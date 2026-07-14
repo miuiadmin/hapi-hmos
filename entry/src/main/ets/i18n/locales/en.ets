@@ -403,6 +403,12 @@ export const en: Record<string, string> = {
   'genImage.loadFailed': 'Failed to load',
   'genImage.unavailable': 'Generated image is unavailable. {error}',
 
+  // —— Codex review card (mirrors upstream codexReview.*) ——
+  'codexReview.title': 'Codex review',
+  'codexReview.findings': '{count} findings',
+  'codexReview.confidence': 'Confidence {value}',
+  'codexReview.location.missing': 'No location',
+
   // —— Code block ——
   'code.code': 'Code',
   'code.truncated': 'Truncated',

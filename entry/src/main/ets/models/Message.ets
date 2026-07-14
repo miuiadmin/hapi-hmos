@@ -1,5 +1,6 @@
 import { pickStr, pickNum, pickObj } from './Types';
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
+import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
 import { t } from '../i18n/Translate';
 
 // Hapi 对话消息（对齐 shared/src/schemas.ts DecryptedMessage + web/src/chat 归一化）
@@ -369,6 +370,26 @@ function extractAgentBlocks(inner: Record<string, Object> | null): NormalizedAge
 
   const message: Record<string, Object> | null = pickObj(data, 'message');
   if (message === null) {
+    // 字符串 message（Codex 偶把 review JSON 当文本发：data.type==='message' && data.message 为字符串）。
+    //   对照上游 normalizeAgent.ts:580-602：嗅探 parseCodexReviewMessage 命中 → codex-review 块；否则 → text 块。
+    //   pickObj 对字符串返回 null，故在此拦截——否则字符串 message 会被整条丢弃（review 不可见）。
+    const dataMessageStr: Object = data['message'];
+    if (pickStr(data, 'type') === 'message' && typeof dataMessageStr === 'string') {
+      const messageStr: string = dataMessageStr as string;
+      const review: CodexReview | null = parseCodexReviewMessage(messageStr);
+      if (review !== null) {
+        const b: NormalizedAgentContent = new NormalizedAgentContent();
+        b.type = 'codex-review';
+        b.review = review;
+        blocks.push(b);
+      } else if (messageStr !== '') {
+        // 非 review 的字符串 message → 普通 agent-text（faithful：上游同分支返 text content 块）
+        const b: NormalizedAgentContent = new NormalizedAgentContent();
+        b.type = 'text';
+        b.text = messageStr;
+        blocks.push(b);
+      }
+    }
     return blocks;
   }
   const contentArr: Object = message['content'];

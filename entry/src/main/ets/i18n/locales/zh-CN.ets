@@ -404,6 +404,12 @@ export const zhCN: Record<string, string> = {
   'genImage.loadFailed': '加载失败',
   'genImage.unavailable': '无法加载生成图片。{error}',
 
+  // —— Codex review 卡（对照上游 codexReview.*）——
+  'codexReview.title': 'Codex review',
+  'codexReview.findings': '{count} 条发现',
+  'codexReview.confidence': '置信度 {value}',
+  'codexReview.location.missing': '无位置',
+
   // —— 代码块 ——
   'code.code': '代码',
   'code.truncated': '已截断',

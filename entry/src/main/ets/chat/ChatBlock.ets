@@ -4,8 +4,9 @@
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
 import { UsageData } from '../models/Message';
+import { CodexReview } from './CodexReview';
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -77,6 +78,10 @@ export class ChatBlock {
   model: string = '';
   invokedAt: number = 0;
 
+  // 仅 codex-review：Codex agent 偶把 review JSON 当文本发出；parse 嗅探命中后携带解析结果
+  //   （对照 web CodexReviewBlock）。reducer 从 NormalizedAgentContent.review 映射；null = 非 review 块。
+  review: CodexReview | null = null;
+
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
     model: string = '', usage: UsageData | null = null): ChatBlock {
@@ -130,6 +135,16 @@ export class ChatBlock {
     b.createdAt = createdAt;
     b.text = text;
     b.source = source;
+    return b;
+  }
+
+  // Codex review 块（对照上游 CodexReviewBlock；review=parseCodexReviewMessage 解析结果）
+  static codexReview(id: string, createdAt: number, review: CodexReview): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'codex-review';
+    b.id = id;
+    b.createdAt = createdAt;
+    b.review = review;
     return b;
   }
 }

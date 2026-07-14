@@ -41,6 +41,7 @@ import linkSchemesTest from './LinkSchemes.test';
 import networkBannerResolveTest from './NetworkBannerResolve.test';
 import messageMetadataTest from './MessageMetadata.test';
 import statusBarStatusTest from './StatusBarStatus.test';
+import codexReviewTest from './CodexReview.test';
 
 export default function testsuite() {
   diffTest();
@@ -83,4 +84,5 @@ export default function testsuite() {
   networkBannerResolveTest();
   messageMetadataTest();
   statusBarStatusTest();
+  codexReviewTest();
 }
