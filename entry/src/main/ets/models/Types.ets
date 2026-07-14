@@ -118,6 +118,30 @@ export class ThreadGoal {
   updatedAt: number = 0;          // epoch-ms
 }
 
+// Agent 事件（对齐 web/src/chat/types.ts AgentEvent 判别联合）。
+//   ArkTS 无判别联合 → 单类 + type 判别串 + 扁平负载字段。type 取上游判别子串：
+//   'api-error' | 'microcompact' | 'compact' | 'limit-warning' | 'limit-reached' | 'message'。
+//   各 type 仅消费其相关字段，余保持默认（0 / ''）。由 Message.parseMessage 从 system 信封
+//   （api_error / microcompact_boundary / compact_boundary）或直连 context_compacted 解析；
+//   limit-warning / limit-reached 由 parseClaudeUsageLimit 从 agent 文本嗅探（#4 限额提示）。
+//   EventPresentation 据此渲染居中灰条系统消息（#1）。
+export class AgentEvent {
+  type: string = '';
+  // api-error（system/api_error；retryAttempt/maxRetries 来自 data 顶层）
+  retryAttempt: number = 0;
+  maxRetries: number = 0;
+  // microcompact / compact（边界 metadata 或 context_compacted 顶层；trigger/preTokens 当前不渲染，留存）
+  trigger: string = '';
+  preTokens: number = 0;
+  tokensSaved: number = 0;        // 仅 microcompact（「saved Nk tokens」文案用）
+  // limit-warning / limit-reached（agent 文本嗅探）
+  utilization: number = 0;        // 0–1 比例（limit-warning；warning 管线值 / 100）
+  endsAt: number = 0;             // epoch-ms；0 = 无（上游按有无 endsAt 分支文案）
+  limitType: string = '';
+  // message
+  message: string = '';
+}
+
 // —— 会话详情（对齐 shared/src/schemas.ts Session）——
 // 本类即上游 Session（完整会话记录）。当前只取渲染/工具卡所需字段，其余按需再补。
 export class Session {

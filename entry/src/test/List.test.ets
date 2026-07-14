@@ -46,6 +46,7 @@ import attachmentFormatTest from './AttachmentFormat.test';
 import codexDiffTest from './CodexDiff.test';
 import statusBarChipsTest from './StatusBarChips.test';
 import threadGoalTest from './ThreadGoal.test';
+import eventPresentationTest from './EventPresentation.test';
 import userDirectivesTest from './UserDirectives.test';
 
 export default function testsuite() {
@@ -94,5 +95,6 @@ export default function testsuite() {
   codexDiffTest();
   statusBarChipsTest();
   threadGoalTest();
+  eventPresentationTest();
   userDirectivesTest();
 }

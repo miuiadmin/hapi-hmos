@@ -8,7 +8,8 @@
 //   - tool-result 块：合并后强制 state=is_error?'error':'completed' + result。
 //   - 孤儿权限卡（有权限无对应消息）：approved→completed(result='Approved')；denied/canceled→error(result={error:reason})；pending→pending。
 
-import { ChatMessage } from '../models/Message';
+import { ChatMessage, parseClaudeUsageLimit } from '../models/Message';
+import { AgentEvent } from '../models/Types';
 import { AgentState } from './AgentState';
 import {
   ChatBlock,
@@ -202,10 +203,14 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
       }
       continue;
     }
-    // event 消息：不产 block；turn-duration event 回填目标块耗时（对照 reducerTimeline.ts:443-468）。
+    // event 消息：turn-duration event 回填目标块耗时（对照 reducerTimeline.ts:443-468）；
+    //   携带 agent 事件（api-error/microcompact/compact）→ 居中灰条系统消息块（#1）。
     if (msg.role === 'event') {
       if (msg.turnDurationMs >= 0) {
         applyTurnDuration(blocks, msg.turnDurationTargetId, msg.turnDurationMs);
+      }
+      if (msg.event !== null) {
+        blocks.push(ChatBlock.agentEvent(msg.id, msg.createdAt, msg.event));
       }
       continue;
     }
@@ -218,8 +223,13 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
 
       if (c.type === 'text') {
         if (c.text !== '') {
-          // CLI 命令输出（sentFrom==='cli' 且含 CLI 标签）→ cli-output 块（source='assistant'）；否则 agent-text
-          if (isCliOutputText(c.text, msg.sentFrom)) {
+          // 用量限额文本嗅探（对照 reducerEvents.ts parseMessageAsEvent）：命中「Claude AI usage limit ...」
+          //   → limit agent-event 块（#4 限额提示），不再产 agent-text。命中文本极特定，误伤可忽略。
+          const limitEv: AgentEvent | null = parseClaudeUsageLimit(c.text);
+          if (limitEv !== null) {
+            blocks.push(ChatBlock.agentEvent(`${msg.id}:${bi}`, msg.createdAt, limitEv));
+          } else if (isCliOutputText(c.text, msg.sentFrom)) {
+            // CLI 命令输出（sentFrom==='cli' 且含 CLI 标签）→ cli-output 块（source='assistant'）；否则 agent-text
             blocks.push(ChatBlock.cliOutput(`${msg.id}:${bi}`, msg.createdAt, c.text, 'assistant'));
           } else {
             blocks.push(ChatBlock.agentText(`${msg.id}:${bi}`, msg.createdAt, c.text, msg.invokedAt, msg.model, msg.usage));
@@ -309,8 +319,10 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
     // pending 孤儿卡：state 保持 ensureToolBlock 设的 pending，permission.status=pending（footer 据此挂载）
   });
 
-  // 合并相邻 cli-output 块（command-name 块 + 紧随 stdout 块）——对照 web mergeCliOutputBlocks
-  return mergeCliOutputBlocks(blocks);
+  // 后处理（对照 reducer.ts:183 dedupeAgentEvents(foldApiErrorEvents(...))）：
+  //   合并相邻 cli-output → 折叠连续 api-error 事件（留最新）→ 去重相邻同键 agent-event。
+  //   mergeCliOutput 鸿蒙独有，与 agent-event 块不相交，先后无碍。
+  return dedupeAgentEvents(foldApiErrorEvents(mergeCliOutputBlocks(blocks)));
 }
 
 // ===== turn-duration 回填（对照 web reducerTimeline.ts:443-468）=====
@@ -357,4 +369,61 @@ export function applyTurnDuration(blocks: ChatBlock[], targetId: string, duratio
       return;
     }
   }
+}
+
+// ===== agent-event 后处理（对照 reducerEvents.ts foldApiErrorEvents / dedupeAgentEvents）=====
+//   上游管线序：dedupeAgentEvents(foldApiErrorEvents(blocks))。title-changed/message 专用去重分支随其
+//   解析一并 deferred（当前不产这两类 agent-event），其余 type 走通用 JSON.stringify 键去重。
+
+// 折叠连续 api-error 事件，仅留最新（重试序列 retry1/3 → retry2/3 → retry3/3 收敛为末态）。
+export function foldApiErrorEvents(blocks: ChatBlock[]): ChatBlock[] {
+  const result: ChatBlock[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const block: ChatBlock = blocks[i];
+    if (block.kind !== 'agent-event' || block.event === null) {
+      result.push(block);
+      continue;
+    }
+    if (block.event.type !== 'api-error') {
+      result.push(block);
+      continue;
+    }
+    const len: number = result.length;
+    if (len > 0) {
+      const prev: ChatBlock = result[len - 1];
+      if (prev.kind === 'agent-event' && prev.event !== null && prev.event.type === 'api-error') {
+        result[len - 1] = block;   // 连续 api-error → 替换为最新
+        continue;
+      }
+    }
+    result.push(block);
+  }
+  return result;
+}
+
+// 去重相邻同键 agent-event（通用键 event:${JSON.stringify(event)}；对照 dedupeAgentEvents 通用分支）。
+//   非事件块重置键（仅相邻事件才比较）。JSON.stringify 不可逆时退 type 串（AgentEvent 无嵌套，恒可逆）。
+export function dedupeAgentEvents(blocks: ChatBlock[]): ChatBlock[] {
+  const result: ChatBlock[] = [];
+  let prevKey: string = '';
+  for (let i = 0; i < blocks.length; i++) {
+    const block: ChatBlock = blocks[i];
+    if (block.kind !== 'agent-event' || block.event === null) {
+      result.push(block);
+      prevKey = '';   // 非事件块打断相邻性
+      continue;
+    }
+    let key: string;
+    try {
+      key = 'event:' + JSON.stringify(block.event);
+    } catch (e) {
+      key = 'event:' + block.event.type;
+    }
+    if (key === prevKey) {
+      continue;   // 与前一相邻事件同键 → 跳过
+    }
+    result.push(block);
+    prevKey = key;
+  }
+  return result;
 }

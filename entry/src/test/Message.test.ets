@@ -20,9 +20,11 @@ import {
   formatTokenCount,
   sortQueuedMessages,
   formatScheduledIn,
-  parseCancelMessageResponse
+  parseCancelMessageResponse,
+  parseClaudeUsageLimit
 } from '../main/ets/models/Message';
 import { NormalizedAgentContent } from '../main/ets/chat/NormalizedContent';
+import { AgentEvent } from '../main/ets/models/Types';
 
 // —— JSON → ChatMessage 便捷封装 ——
 function parse(json: string): ChatMessage {
@@ -758,6 +760,106 @@ export default function messageTest(): void {
       const r2 = parseCancelMessageResponse('not json');
       expect(r2.cancelled).assertFalse();
       expect(r2.invokedMessage === null).assertTrue();
+    });
+  });
+
+  describe('parseClaudeUsageLimit — 用量限额文本嗅探（#4，对照 reducerEvents.ts）', () => {
+    it('reached 带 type → limit-reached + endsAt + limitType', 0, () => {
+      const e: AgentEvent | null = parseClaudeUsageLimit('Claude AI usage limit reached|1700000000000|five_hour');
+      expect(e !== null).assertTrue();
+      if (e !== null) {
+        expect(e.type).assertEqual('limit-reached');
+        expect(e.endsAt).assertEqual(1700000000000);
+        expect(e.limitType).assertEqual('five_hour');
+        expect(e.utilization).assertEqual(0);
+      }
+    });
+    it('reached 不带 type → limitType 空串', 0, () => {
+      const e: AgentEvent | null = parseClaudeUsageLimit('Claude AI usage limit reached|1700000000000');
+      expect(e !== null).assertTrue();
+      if (e !== null) {
+        expect(e.type).assertEqual('limit-reached');
+        expect(e.limitType).assertEqual('');
+      }
+    });
+    it('warning → limit-warning + utilization=utilInt/100 + endsAt + limitType', 0, () => {
+      const e: AgentEvent | null = parseClaudeUsageLimit('Claude AI usage limit warning|1700000000000|90|seven_day');
+      expect(e !== null).assertTrue();
+      if (e !== null) {
+        expect(e.type).assertEqual('limit-warning');
+        expect(e.utilization).assertEqual(0.9);
+        expect(e.endsAt).assertEqual(1700000000000);
+        expect(e.limitType).assertEqual('seven_day');
+      }
+    });
+    it('warning 尾空段 → limitType 空串、utilization 仍取', 0, () => {
+      const e: AgentEvent | null = parseClaudeUsageLimit('Claude AI usage limit warning|1700000000000|50|');
+      expect(e !== null).assertTrue();
+      if (e !== null) {
+        expect(e.limitType).assertEqual('');
+        expect(e.utilization).assertEqual(0.5);
+      }
+    });
+    it('普通文本 → null', 0, () => {
+      expect(parseClaudeUsageLimit('hello world') === null).assertTrue();
+    });
+    it('reached 缺管道（仅前缀）→ null', 0, () => {
+      expect(parseClaudeUsageLimit('Claude AI usage limit reached') === null).assertTrue();
+    });
+    it('reached 非数字 ts → null', 0, () => {
+      expect(parseClaudeUsageLimit('Claude AI usage limit reached|abc') === null).assertTrue();
+    });
+    it('warning 段数不足（缺 type 段）→ null', 0, () => {
+      expect(parseClaudeUsageLimit('Claude AI usage limit warning|123|90') === null).assertTrue();
+    });
+  });
+
+  describe('parseMessage — system 信封 / 直连 agent 事件（#1）', () => {
+    it('system/api_error → event.type api-error + retry/max', 0, () => {
+      const m: ChatMessage = parse('{"id":"e1","createdAt":100,"content":{"role":"event","content":{"data":{"type":"system","subtype":"api_error","retryAttempt":2,"maxRetries":3}}}}');
+      expect(m.role).assertEqual('event');
+      expect(m.event !== null).assertTrue();
+      if (m.event !== null) {
+        expect(m.event.type).assertEqual('api-error');
+        expect(m.event.retryAttempt).assertEqual(2);
+        expect(m.event.maxRetries).assertEqual(3);
+      }
+    });
+    it('system/microcompact_boundary → microcompact + tokensSaved + trigger', 0, () => {
+      const m: ChatMessage = parse('{"id":"e2","createdAt":100,"content":{"role":"event","content":{"data":{"type":"system","subtype":"microcompact_boundary","microcompactMetadata":{"trigger":"size","preTokens":1000,"tokensSaved":5000}}}}}');
+      expect(m.event !== null).assertTrue();
+      if (m.event !== null) {
+        expect(m.event.type).assertEqual('microcompact');
+        expect(m.event.tokensSaved).assertEqual(5000);
+        expect(m.event.trigger).assertEqual('size');
+      }
+    });
+    it('system/compact_boundary → compact + trigger auto', 0, () => {
+      const m: ChatMessage = parse('{"id":"e3","createdAt":100,"content":{"role":"event","content":{"data":{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"auto","preTokens":2000}}}}}');
+      expect(m.event !== null).assertTrue();
+      if (m.event !== null) {
+        expect(m.event.type).assertEqual('compact');
+        expect(m.event.trigger).assertEqual('auto');
+      }
+    });
+    it('直连 context_compacted → compact + trigger manual + preTokens', 0, () => {
+      const m: ChatMessage = parse('{"id":"e4","createdAt":100,"content":{"role":"event","content":{"data":{"type":"context_compacted","trigger":"manual","preTokens":3000}}}}');
+      expect(m.event !== null).assertTrue();
+      if (m.event !== null) {
+        expect(m.event.type).assertEqual('compact');
+        expect(m.event.trigger).assertEqual('manual');
+        expect(m.event.preTokens).assertEqual(3000);
+      }
+    });
+    it('system/turn_duration 仍回填耗时、不产 event（回归）', 0, () => {
+      const m: ChatMessage = parse('{"id":"e5","createdAt":100,"content":{"role":"event","content":{"data":{"type":"system","subtype":"turn_duration","durationMs":1500,"messageId":"a1"}}}}');
+      expect(m.event === null).assertTrue();
+      expect(m.turnDurationMs).assertEqual(1500);
+      expect(m.turnDurationTargetId).assertEqual('a1');
+    });
+    it('token_count event 不产 event 块（回归，usage 另解析）', 0, () => {
+      const m: ChatMessage = parse('{"id":"e6","createdAt":100,"content":{"role":"event","content":{"data":{"type":"token_count","info":{"inputTokens":5,"outputTokens":3}}}}}');
+      expect(m.event === null).assertTrue();
     });
   });
 }

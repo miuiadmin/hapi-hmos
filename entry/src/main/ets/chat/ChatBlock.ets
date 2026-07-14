@@ -4,10 +4,10 @@
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
 import { UsageData } from '../models/Message';
-import { AttachmentMetadata } from '../models/Types';
+import { AttachmentMetadata, AgentEvent } from '../models/Types';
 import { CodexReview } from './CodexReview';
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review' | 'agent-event';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -92,6 +92,11 @@ export class ChatBlock {
   //   （对照 web CodexReviewBlock）。reducer 从 NormalizedAgentContent.review 映射；null = 非 review 块。
   review: CodexReview | null = null;
 
+  // 仅 agent-event：agent 事件系统消息条（对照 web AgentEventBlock）。reducer 从 event 消息（api-error/
+  //   microcompact/compact）或 agent-text 限额文本嗅探（limit-warning/reached）映射；null = 非事件块。
+  //   EventPresentation 据 event 产 icon+text，渲染为居中灰条（#1 系统消息条 / #4 限额提示）。
+  event: AgentEvent | null = null;
+
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
     model: string = '', usage: UsageData | null = null): ChatBlock {
@@ -156,6 +161,16 @@ export class ChatBlock {
     b.id = id;
     b.createdAt = createdAt;
     b.review = review;
+    return b;
+  }
+
+  // 系统消息条块（对照上游 AgentEventBlock；event=AgentEvent 解析/嗅探结果）。EventPresentation 据此产居中灰条。
+  static agentEvent(id: string, createdAt: number, event: AgentEvent): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'agent-event';
+    b.id = id;
+    b.createdAt = createdAt;
+    b.event = event;
     return b;
   }
 }

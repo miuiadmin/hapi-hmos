@@ -10,11 +10,12 @@
 //   - 分页（早于最旧消息的权限不显示）、顺序保序、空输入
 
 import { describe, it, expect } from '@ohos/hypium';
-import { reduceChatBlocks, applyTurnDuration } from '../main/ets/chat/Reducer';
+import { reduceChatBlocks, applyTurnDuration, foldApiErrorEvents, dedupeAgentEvents } from '../main/ets/chat/Reducer';
 import { ChatBlock, ChatToolCall } from '../main/ets/chat/ChatBlock';
 import { ChatMessage } from '../main/ets/models/Message';
 import { NormalizedAgentContent } from '../main/ets/chat/NormalizedContent';
 import { AgentState, AgentStateRequest, AgentStateCompletedRequest } from '../main/ets/chat/AgentState';
+import { AgentEvent } from '../main/ets/models/Types';
 
 // —— 消息 / 内容块构造器（对齐 models，避免每个用例重复样板）——
 
@@ -481,6 +482,113 @@ export default function reducerTest(): void {
       ], null);
       expect(blocks.length).assertEqual(1);
       expect(blocks[0].durationMs).assertEqual(-1);     // 默认哨兵，未被改
+    });
+  });
+
+  // —— agent 事件构造器（#1 / #4）——
+  function apiErrorEvent(retryAttempt: number, maxRetries: number): AgentEvent {
+    const e: AgentEvent = new AgentEvent();
+    e.type = 'api-error';
+    e.retryAttempt = retryAttempt;
+    e.maxRetries = maxRetries;
+    return e;
+  }
+
+  function agentEventMsg(id: string, createdAt: number, event: AgentEvent): ChatMessage {
+    const m: ChatMessage = new ChatMessage();
+    m.id = id;
+    m.role = 'event';
+    m.createdAt = createdAt;
+    m.status = 'sent';
+    m.event = event;
+    return m;
+  }
+
+  describe('reduceChatBlocks — agent 事件块 + 限额嗅探（#1 / #4）', () => {
+    it('event 消息携带 api-error → agent-event 块', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([agentEventMsg('e1', 100, apiErrorEvent(1, 3))], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('agent-event');
+      if (blocks[0].event !== null) {
+        expect(blocks[0].event.type).assertEqual('api-error');
+      }
+    });
+    it('agent 限额文本 → agent-event 块（不产 agent-text）', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks(
+        [agentMsg('a1', 100, [textBlock('Claude AI usage limit reached|1700000000000|five_hour')])], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('agent-event');
+      if (blocks[0].event !== null) {
+        expect(blocks[0].event.type).assertEqual('limit-reached');
+      }
+    });
+    it('普通 agent 文本不误伤 → agent-text', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([agentMsg('a1', 100, [textBlock('hello')])], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('agent-text');
+    });
+    it('连续 api-error event 消息 → fold 收敛为最新（集成）', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentEventMsg('e1', 100, apiErrorEvent(1, 3)),
+        agentEventMsg('e2', 110, apiErrorEvent(2, 3))
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      if (blocks[0].event !== null) {
+        expect(blocks[0].event.retryAttempt).assertEqual(2);
+      }
+    });
+  });
+
+  describe('foldApiErrorEvents — 连续 api-error 留最新', () => {
+    it('两连续 api-error → 1（最新）', 0, () => {
+      const blocks: ChatBlock[] = [
+        ChatBlock.agentEvent('a', 1, apiErrorEvent(1, 3)),
+        ChatBlock.agentEvent('b', 2, apiErrorEvent(2, 3))
+      ];
+      const out: ChatBlock[] = foldApiErrorEvents(blocks);
+      expect(out.length).assertEqual(1);
+      if (out[0].event !== null) {
+        expect(out[0].event.retryAttempt).assertEqual(2);
+      }
+    });
+    it('api-error / 非 event / api-error → 3（非 event 打断）', 0, () => {
+      const blocks: ChatBlock[] = [
+        ChatBlock.agentEvent('a', 1, apiErrorEvent(1, 3)),
+        ChatBlock.agentText('t', 2, 'hi', 0),
+        ChatBlock.agentEvent('c', 3, apiErrorEvent(2, 3))
+      ];
+      expect(foldApiErrorEvents(blocks).length).assertEqual(3);
+    });
+    it('非 api-error 事件不折叠（microcompact）', 0, () => {
+      const mc1: AgentEvent = new AgentEvent(); mc1.type = 'microcompact'; mc1.tokensSaved = 100;
+      const mc2: AgentEvent = new AgentEvent(); mc2.type = 'microcompact'; mc2.tokensSaved = 200;
+      const blocks: ChatBlock[] = [ChatBlock.agentEvent('a', 1, mc1), ChatBlock.agentEvent('b', 2, mc2)];
+      expect(foldApiErrorEvents(blocks).length).assertEqual(2);
+    });
+  });
+
+  describe('dedupeAgentEvents — 相邻同键去重', () => {
+    it('两相邻同 microcompact → 1', 0, () => {
+      const mc1: AgentEvent = new AgentEvent(); mc1.type = 'microcompact'; mc1.tokensSaved = 100;
+      const mc2: AgentEvent = new AgentEvent(); mc2.type = 'microcompact'; mc2.tokensSaved = 100;
+      const blocks: ChatBlock[] = [ChatBlock.agentEvent('a', 1, mc1), ChatBlock.agentEvent('b', 2, mc2)];
+      expect(dedupeAgentEvents(blocks).length).assertEqual(1);
+    });
+    it('相邻不同 microcompact（tokensSaved 异）→ 2', 0, () => {
+      const mc1: AgentEvent = new AgentEvent(); mc1.type = 'microcompact'; mc1.tokensSaved = 100;
+      const mc2: AgentEvent = new AgentEvent(); mc2.type = 'microcompact'; mc2.tokensSaved = 200;
+      const blocks: ChatBlock[] = [ChatBlock.agentEvent('a', 1, mc1), ChatBlock.agentEvent('b', 2, mc2)];
+      expect(dedupeAgentEvents(blocks).length).assertEqual(2);
+    });
+    it('同事件被非 event 块隔开 → 均保留', 0, () => {
+      const mc1: AgentEvent = new AgentEvent(); mc1.type = 'microcompact'; mc1.tokensSaved = 100;
+      const mc2: AgentEvent = new AgentEvent(); mc2.type = 'microcompact'; mc2.tokensSaved = 100;
+      const blocks: ChatBlock[] = [
+        ChatBlock.agentEvent('a', 1, mc1),
+        ChatBlock.agentText('t', 2, 'hi', 0),
+        ChatBlock.agentEvent('c', 3, mc2)
+      ];
+      expect(dedupeAgentEvents(blocks).length).assertEqual(3);
     });
   });
 }

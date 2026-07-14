@@ -27,6 +27,7 @@ import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands, mergeSl
 import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skills';
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
 import { getLatestThreadGoal } from '../chat/ThreadGoal';
+import { getEventPresentation, EventPresentation } from '../chat/EventPresentation';
 import { extractLeadingDirectives, formatDirectiveLabel, DirectiveExtract } from '../chat/UserDirectives';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
@@ -1321,8 +1322,8 @@ struct ChatPage {
     lines.push('');
     for (let i = 0; i < this.blocks.length; i++) {
       const b: ChatBlock = this.blocks[i];
-      if (b.kind === 'tool-call' || b.kind === 'reasoning' || b.kind === 'generated-image') {
-        continue;   // 工具调用 / 思考过程 / 生成图片不导出（只导出 user/agent 文本对话）
+      if (b.kind === 'tool-call' || b.kind === 'reasoning' || b.kind === 'generated-image' || b.kind === 'agent-event') {
+        continue;   // 工具调用 / 思考过程 / 生成图片 / 系统事件不导出（只导出 user/agent 文本对话）
       }
       if (b.dividerBefore) {
         lines.push(`——— ${formatDateDivider(b.createdAt)} ———`);
@@ -1654,6 +1655,31 @@ struct ChatPage {
   private metaForBlock(b: ChatBlock): string[] {
     const effectiveModel: string = b.model !== '' ? b.model : this.model;
     return buildMessageMetadataLabels(b.invokedAt, b.durationMs, b.usage, effectiveModel);
+  }
+
+  // agent-event 系统消息条文本：icon + text（icon 空→仅 text；对照 web getEventPresentation）。
+  private eventLabel(b: ChatBlock): string {
+    if (b.event === null) { return ''; }
+    const p: EventPresentation = getEventPresentation(b.event);
+    return p.icon !== '' ? `${p.icon} ${p.text}` : p.text;
+  }
+
+  // 居中灰条系统消息（api-error / 用量限额 / 上下文压缩 等 agent 事件）。复用 DateDivider 居中 pill 样式。
+  @Builder
+  private EventMessageBar(b: ChatBlock) {
+    Row() {
+      Text(this.eventLabel(b))
+        .fontSize(fs(11))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textTertiary)
+        .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+        .backgroundColor(Color.Transparent)
+        .borderRadius(8)
+        .border({ width: 0.5, color: this.c.border })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 10, bottom: 6 })
   }
 
   // 空态：无消息且非生成中
@@ -2188,6 +2214,8 @@ struct ChatPage {
                       CodexReviewCard({
                         review: b.review
                       })
+                    } else if (b.kind === 'agent-event' && b.event !== null) {
+                      this.EventMessageBar(b)
                     } else {
                       ToolCard({
                         block: b,

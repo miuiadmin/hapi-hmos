@@ -1,4 +1,4 @@
-import { pickStr, pickNum, pickObj, AttachmentMetadata, ThreadGoal, parseThreadGoal } from './Types';
+import { pickStr, pickNum, pickObj, AttachmentMetadata, ThreadGoal, parseThreadGoal, AgentEvent } from './Types';
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
 import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
 import { parseAttachmentsFromContent } from '../chat/AttachmentFormat';
@@ -50,6 +50,13 @@ export class ChatMessage {
   goal: ThreadGoal | null = null;
   goalCleared: boolean = false;
 
+  // event 消息携带的 agent 事件（对齐 web role:'event' 的 system/api_error|microcompact_boundary|
+  //   compact_boundary 信封事件，及直连 context_compacted；对照 normalizeAgent.ts:457/488/505/617）。
+  //   api-error / 微压缩 / 压缩事件解析为 AgentEvent，由 Reducer 产 agent-event 块 → EventPresentation
+  //   渲染居中灰条（#1 系统消息条）。limit-warning / limit-reached 不走此字段——由 Reducer 从 agent
+  //   文本 parseClaudeUsageLimit 嗅探产块（#4）。仅 event 侧；user/agent 为 null。
+  event: AgentEvent | null = null;
+
   // event 消息携带的 turn-duration（对齐 web role:'event' 的 system/turn_duration 事件）。
   //   parseMessage 从 inner.type==='system' && subtype==='turn_duration' 解析；turnDurationMs<0 = 非该事件。
   //   turnDurationTargetId = data.messageId（Reducer 回填目标 block 的键，对照 reducerTimeline.ts:443-468）。
@@ -93,6 +100,7 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.attachments = m.attachments;    // 浅拷贝引用：AttachmentMetadata 解析后不可变，无需深拷
   c.goal = m.goal;                  // 浅拷贝引用：ThreadGoal 解析后不可变，无需深拷
   c.goalCleared = m.goalCleared;
+  c.event = m.event;                // 浅拷贝引用：AgentEvent 解析后不可变，无需深拷
   c.turnDurationMs = m.turnDurationMs;
   c.turnDurationTargetId = m.turnDurationTargetId;
   return c;
@@ -594,16 +602,141 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
       m.goalCleared = true;
     } else if (innerType === 'system') {
       // system 信封事件（对照 normalizeAgent.ts:457/473/488/505 data.type==='system' + subtype）：
-      //   turn_duration（turn 耗时；data.messageId → 目标 block 回填，对照 reducerTimeline.ts:443-468）。
-      //   api_error / compact_boundary 等暂不渲染（留 follow-up）。蛇形/连字符 subtype 兼容。
+      //   turn_duration（turn 耗时；data.messageId → 目标 block 回填，对照 reducerTimeline.ts:443-468）；
+      //   api_error / microcompact_boundary / compact_boundary → AgentEvent，EventPresentation 渲染居中灰条（#1）。
+      //   蛇形/连字符 subtype 兼容。
       const subtype: string = inner !== null ? pickStr(inner, 'subtype') : '';
       if (subtype === 'turn_duration' || subtype === 'turn-duration') {
         m.turnDurationMs = pickNum(inner, 'durationMs');
         m.turnDurationTargetId = pickStr(inner, 'messageId');
+      } else if (subtype === 'api_error' || subtype === 'api-error') {
+        m.event = inner !== null ? parseApiErrorEvent(inner) : null;
+      } else if (subtype === 'microcompact_boundary' || subtype === 'microcompact-boundary') {
+        m.event = inner !== null ? parseMicrocompactEvent(inner) : null;
+      } else if (subtype === 'compact_boundary' || subtype === 'compact-boundary') {
+        m.event = inner !== null ? parseCompactBoundaryEvent(inner) : null;
       }
+    } else if (innerType === 'context_compacted' || innerType === 'context-compacted') {
+      // 直连 context_compacted（对照 normalizeAgent.ts:617）→ compact 事件（trigger 顶层 + preTokens）。
+      m.event = inner !== null ? parseContextCompactedEvent(inner) : null;
     }
   }
   return m;
+}
+
+// ===== system 信封 / 直连 event → AgentEvent（对照 normalizeAgent.ts:457-520 / 617-628）=====
+//   api_error：retryAttempt/maxRetries 来自 data 顶层（data.error 当前不渲染，不入类）。
+//   microcompact_boundary：data.microcompactMetadata.{trigger,preTokens,tokensSaved}。
+//   compact_boundary：data.compactMetadata.{trigger,preTokens}。
+//   context_compacted（直连）：data.{trigger,preTokens}。
+//   trigger/preTokens 当前不被 EventPresentation 渲染（compact 仅显「Conversation compacted」），
+//   tokensSaved 显「saved Nk tokens」。trigger 缺省 → 'auto'（对照 asString(...) ?? 'auto'）。
+function parseApiErrorEvent(inner: Record<string, Object>): AgentEvent {
+  const ev: AgentEvent = new AgentEvent();
+  ev.type = 'api-error';
+  ev.retryAttempt = pickNum(inner, 'retryAttempt');
+  ev.maxRetries = pickNum(inner, 'maxRetries');
+  return ev;
+}
+
+function parseMicrocompactEvent(inner: Record<string, Object>): AgentEvent {
+  const meta: Record<string, Object> | null = pickObj(inner, 'microcompactMetadata');
+  const ev: AgentEvent = new AgentEvent();
+  ev.type = 'microcompact';
+  const trigger: string = meta !== null ? pickStr(meta, 'trigger') : '';
+  ev.trigger = trigger !== '' ? trigger : 'auto';
+  ev.preTokens = meta !== null ? pickNum(meta, 'preTokens') : 0;
+  ev.tokensSaved = meta !== null ? pickNum(meta, 'tokensSaved') : 0;
+  return ev;
+}
+
+function parseCompactBoundaryEvent(inner: Record<string, Object>): AgentEvent {
+  const meta: Record<string, Object> | null = pickObj(inner, 'compactMetadata');
+  const ev: AgentEvent = new AgentEvent();
+  ev.type = 'compact';
+  const trigger: string = meta !== null ? pickStr(meta, 'trigger') : '';
+  ev.trigger = trigger !== '' ? trigger : 'auto';
+  ev.preTokens = meta !== null ? pickNum(meta, 'preTokens') : 0;
+  return ev;
+}
+
+function parseContextCompactedEvent(inner: Record<string, Object>): AgentEvent {
+  const ev: AgentEvent = new AgentEvent();
+  ev.type = 'compact';
+  const trigger: string = pickStr(inner, 'trigger');
+  ev.trigger = trigger !== '' ? trigger : 'auto';
+  // preTokens 兼容 pre_tokens（对照 normalizeAgent.ts:625-626）；存在性优先 preTokens，缺失才退 snake。
+  const preRaw = inner['preTokens'];
+  if (preRaw !== null && preRaw !== undefined && typeof preRaw === 'number') {
+    ev.preTokens = preRaw as number;
+  } else {
+    ev.preTokens = pickNum(inner, 'pre_tokens');
+  }
+  return ev;
+}
+
+// ===== Claude 用量限额文本嗅探（对照 reducerEvents.ts parseClaudeUsageLimit）=====
+//   agent 偶把「Claude AI usage limit reached|<ts>[|<type>]」或
+//   「Claude AI usage limit warning|<ts>|<util%>|<type>]」当文本发出。Reducer 据此把该 agent-text
+//   块替换为 limit agent-event 块（#4 限额提示）。上游用正则 + 非捕获组；ArkTS 禁 →
+//   手写 startsWith + split('|') 等价扫描：
+//   reached：前缀后恰 [ts] 或 [ts,type]（≤2 段）；warning：前缀后恰 [ts,util,type]（3 段）。
+export function parseClaudeUsageLimit(text: string): AgentEvent | null {
+  const reachedHead: string = 'Claude AI usage limit reached';
+  if (text.startsWith(reachedHead)) {
+    const rest: string = text.substring(reachedHead.length);
+    if (rest.length > 0 && rest.charAt(0) === '|') {
+      const parts: string[] = rest.substring(1).split('|');
+      if (parts.length >= 1 && parts.length <= 2) {
+        const ts: number | null = parseDigitsInt(parts[0]);
+        if (ts !== null) {
+          const ev: AgentEvent = new AgentEvent();
+          ev.type = 'limit-reached';
+          ev.endsAt = ts;
+          ev.limitType = parts.length === 2 ? parts[1] : '';
+          return ev;
+        }
+      }
+    }
+    return null;
+  }
+  const warningHead: string = 'Claude AI usage limit warning';
+  if (text.startsWith(warningHead)) {
+    const rest: string = text.substring(warningHead.length);
+    if (rest.length > 0 && rest.charAt(0) === '|') {
+      const parts: string[] = rest.substring(1).split('|');
+      if (parts.length === 3) {
+        const ts: number | null = parseDigitsInt(parts[0]);
+        const utilInt: number | null = parseDigitsInt(parts[1]);
+        if (ts !== null && utilInt !== null) {
+          const ev: AgentEvent = new AgentEvent();
+          ev.type = 'limit-warning';
+          ev.endsAt = ts;
+          ev.utilization = utilInt / 100;   // 管线值为百分比整数 → 0–1 比例
+          ev.limitType = parts[2];
+          return ev;
+        }
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
+// 全数字串 → int（按位累加，免 parseInt 全局可用性疑虑）；空/非全数字 → null（替代 \d+ 捕获保证）。
+function parseDigitsInt(s: string): number | null {
+  if (s.length === 0) {
+    return null;
+  }
+  let n: number = 0;
+  for (let i = 0; i < s.length; i++) {
+    const cc: number = s.charCodeAt(i);
+    if (cc < 48 || cc > 57) {   // '0'(48)..'9'(57)
+      return null;
+    }
+    n = n * 10 + (cc - 48);
+  }
+  return n;
 }
 
 // 从已解析的响应对象取 messages 数组，逐条 parseMessage 后按 seq（无则 createdAt）升序。
