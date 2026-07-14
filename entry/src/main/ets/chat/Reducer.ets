@@ -18,6 +18,7 @@ import {
   ToolState,
   PermissionStatus
 } from './ChatBlock';
+import { isCliOutputText, mergeCliOutputBlocks } from './CliOutput';
 
 // ===== getPermissions：agentState → Map<id, PermissionEntry>（completed 先、pending 后，completed 优先）=====
 function getPermissions(agentState: AgentState | null): Map<string, PermissionEntry> {
@@ -186,9 +187,11 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
   for (let mi = 0; mi < messages.length; mi++) {
     const msg: ChatMessage = messages[mi];
 
-    // user 消息：一行文本气泡（blocks 为空）
+    // user 消息：CLI 命令输出（sentFrom==='cli' 且含 CLI 标签）→ cli-output 块（source='user'）；否则一行文本气泡
     if (msg.role === 'user') {
-      if (msg.text !== '') {
+      if (isCliOutputText(msg.text, msg.sentFrom)) {
+        blocks.push(ChatBlock.cliOutput(msg.id, msg.createdAt, msg.text, 'user'));
+      } else if (msg.text !== '') {
         const ub: ChatBlock = ChatBlock.userText(msg.id, msg.createdAt, msg.text);
         ub.userOptimistic = msg.isOptimistic;
         ub.userStatus = msg.status;
@@ -206,7 +209,12 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
 
       if (c.type === 'text') {
         if (c.text !== '') {
-          blocks.push(ChatBlock.agentText(`${msg.id}:${bi}`, msg.createdAt, c.text));
+          // CLI 命令输出（sentFrom==='cli' 且含 CLI 标签）→ cli-output 块（source='assistant'）；否则 agent-text
+          if (isCliOutputText(c.text, msg.sentFrom)) {
+            blocks.push(ChatBlock.cliOutput(`${msg.id}:${bi}`, msg.createdAt, c.text, 'assistant'));
+          } else {
+            blocks.push(ChatBlock.agentText(`${msg.id}:${bi}`, msg.createdAt, c.text));
+          }
         }
       } else if (c.type === 'reasoning') {
         // 思考过程块（对照上游 reasoning.tsx）：非空才产出（空 thinking 不渲染，同 text 块处理）
@@ -286,5 +294,6 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
     // pending 孤儿卡：state 保持 ensureToolBlock 设的 pending，permission.status=pending（footer 据此挂载）
   });
 
-  return blocks;
+  // 合并相邻 cli-output 块（command-name 块 + 紧随 stdout 块）——对照 web mergeCliOutputBlocks
+  return mergeCliOutputBlocks(blocks);
 }

@@ -25,6 +25,7 @@ import generatedImageCacheUtilsTest from './GeneratedImageCacheUtils.test';
 import terminalToolDisplayTest from './TerminalToolDisplay.test';
 import sessionGroupingTest from './SessionGrouping.test';
 import codeHighlightTest from './CodeHighlight.test';
+import cliOutputTest from './CliOutput.test';
 import voiceFormattersTest from './VoiceFormatters.test';
 import voiceLanguagesTest from './VoiceLanguages.test';
 import voiceVoicesTest from './VoiceVoices.test';
@@ -54,6 +55,7 @@ export default function testsuite() {
   terminalToolDisplayTest();
   sessionGroupingTest();
   codeHighlightTest();
+  cliOutputTest();
   voiceFormattersTest();
   voiceLanguagesTest();
   voiceVoicesTest();

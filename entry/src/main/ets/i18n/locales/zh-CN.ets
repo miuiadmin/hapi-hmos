@@ -226,6 +226,14 @@ export const zhCN: Record<string, string> = {
   'terminal.noSelection': '未选中文本',
   'terminal.pasteEmpty': '剪贴板为空',
   'terminal.quotaExceeded': '终端数已达上限（最多 {max}）',
+  // CLI 命令输出块（对照 web CliOutputBlock LABELS）
+  'terminal.commandName': '命令',
+  'terminal.commandMessage': '命令消息',
+  'terminal.commandArgs': '参数',
+  'terminal.stdout': '标准输出',
+  'terminal.stderr': '标准错误',
+  'terminal.output': '终端输出',
+  'terminal.icon': '⌘',
 
   // —— 语音页（ElevenLabs Conversational AI）——
   'voice.title': '语音',

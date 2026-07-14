@@ -29,6 +29,10 @@ export class ChatMessage {
   //   由 parseUsage 从 data.message.usage 提取；ContextStatusBar 据最新可见 usage 显上下文占比/告警。
   usage: UsageData | null = null;
 
+  // 消息来源标记（对齐 web msg.meta.sentFrom；''=未标记）。'cli' = CLI 注入的命令输出消息，
+  //   reducerCliOutput 据此（AND 标签）门控产出 cli-output ChatBlock。由 content 信封 meta.sentFrom 解析。
+  sentFrom: string = '';
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -60,6 +64,7 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.isOptimistic = m.isOptimistic;
   c.blocks = m.blocks;            // 浅拷贝引用：blocks 解析后不可变，无需深拷
   c.usage = m.usage;              // 浅拷贝引用：UsageData 解析后不可变，无需深拷
+  c.sentFrom = m.sentFrom;
   return c;
 }
 
@@ -479,6 +484,11 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     role = pickStr(env, 'role');
     if (role !== '') {
       inner = pickObj(env, 'content');
+      // meta.sentFrom（CLI 来源标记，对照 web msg.meta.sentFrom；reducerCliOutput 据此门控 cli-output）
+      const metaObj: Record<string, Object> | null = pickObj(env, 'meta');
+      if (metaObj !== null) {
+        m.sentFrom = pickStr(metaObj, 'sentFrom');
+      }
     } else {
       const msg = pickObj(env, 'message');
       if (msg !== null) {

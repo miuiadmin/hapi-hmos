@@ -3,7 +3,7 @@
 // 0 表示 null 时间戳（startedAt/completedAt/createdAt of permission）。
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -63,6 +63,11 @@ export class ChatBlock {
   fileName: string = '';
   mimeType: string = '';
 
+  // 仅 cli-output：CLI 命令输出块（对照 web CliOutputBlock）。
+  //   text 为带 <command-name>/<local-command-stdout> 等标签的原始文本；CliOutputCard 解析渲染。
+  //   source = 'user' | 'assistant'（消息角色来源，对照上游；mergeCliOutputBlocks 据此判断相邻块同源可合并）。
+  source: string = '';
+
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string): ChatBlock {
     const b: ChatBlock = new ChatBlock();
@@ -101,6 +106,17 @@ export class ChatBlock {
     b.imageId = imageId;
     b.fileName = fileName;
     b.mimeType = mimeType;
+    return b;
+  }
+
+  // CLI 命令输出块（对照上游 CliOutputBlock；source='user'|'assistant' 为消息角色来源）
+  static cliOutput(id: string, createdAt: number, text: string, source: string): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'cli-output';
+    b.id = id;
+    b.createdAt = createdAt;
+    b.text = text;
+    b.source = source;
     return b;
   }
 }

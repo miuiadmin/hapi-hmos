@@ -225,6 +225,14 @@ export const en: Record<string, string> = {
   'terminal.noSelection': 'No text selected',
   'terminal.pasteEmpty': 'Clipboard is empty',
   'terminal.quotaExceeded': 'Terminal limit reached (max {max})',
+  // CLI command output block (web CliOutputBlock LABELS)
+  'terminal.commandName': 'Command',
+  'terminal.commandMessage': 'Command message',
+  'terminal.commandArgs': 'Arguments',
+  'terminal.stdout': 'Stdout',
+  'terminal.stderr': 'Stderr',
+  'terminal.output': 'Terminal output',
+  'terminal.icon': '⌘',
 
   // —— Voice (ElevenLabs Conversational AI) ——
   'voice.title': 'Voice',
