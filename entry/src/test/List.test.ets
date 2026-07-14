@@ -35,6 +35,7 @@ import sessionListStatusModeTest from './SessionListStatusMode.test';
 import syncResyncTest from './SyncResync.test';
 import directorySuggestionsTest from './DirectorySuggestions.test';
 import spawnErrorTest from './SpawnError.test';
+import hapticsTest from './Haptics.test';
 
 export default function testsuite() {
   diffTest();
@@ -71,4 +72,5 @@ export default function testsuite() {
   syncResyncTest();
   directorySuggestionsTest();
   spawnErrorTest();
+  hapticsTest();
 }

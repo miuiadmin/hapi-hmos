@@ -9,6 +9,7 @@ import { TerminalToolDisplayService, TerminalToolDisplayMode } from '../services
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
 import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
+import { HapticService } from '../services/HapticService';
 import { VALID_TERMINAL_FONT_SIZES } from '../chat/TerminalFontSize';
 import { SessionListStatusMode } from '../chat/SessionListStatusMode';
 import { showToast } from '../utils/Toast';
@@ -85,6 +86,11 @@ struct SettingsPage {
     return SessionListStatusModeService.currentMode;
   }
 
+  // 触感反馈（读 @Trace enabled；Toggle 即时反映）
+  private get hapticsEnabled(): boolean {
+    return HapticService.currentEnabled;
+  }
+
   // 切终端字号：setSize 改 fontSize @Trace（TerminalPage @Monitor 实时 applyFontSize）+ 持久化
   private selectTerminalFontSize(size: number): void {
     TerminalFontSizeService.setSize(size);
@@ -92,6 +98,10 @@ struct SettingsPage {
   // 切会话列表状态模式：setMode 改 mode @Trace（Index SessionItem 即时重渲染）+ 持久化
   private selectSessionListStatusMode(mode: SessionListStatusMode): void {
     SessionListStatusModeService.setMode(mode);
+  }
+  // 切触感反馈：setEnabled 改 enabled @Trace（各 tap 即用）+ 持久化
+  private setHapticsEnabled(isOn: boolean): void {
+    HapticService.setEnabled(isOn);
   }
   // 预览行数输入：onChange 解析整数（非数字忽略）→ setLimit clamp 1–99（@Trace 改即重算 sessionRows）+ 持久化
   private onPreviewLimitChange(value: string): void {
@@ -674,6 +684,8 @@ struct SettingsPage {
         this.SectionHeader(t('settings.section.input'))
         Column() {
           this.ToggleRow(t('settings.enterToSend'), this.enterToSend, (v: boolean): void => { this.saveEnterToSend(v); })
+          // 触感反馈（移动端：发送/删除/长按/错误短震动；默认开；读 HapticService @Trace 即时重渲染）
+          this.ToggleRow(t('settings.haptics'), this.hapticsEnabled, (v: boolean): void => { this.setHapticsEnabled(v); })
         }
         .width('100%')
         .backgroundColor(this.c.bg)

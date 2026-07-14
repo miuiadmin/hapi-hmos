@@ -1,5 +1,6 @@
 import { getHubClient } from '../api/HubClient';
 import { getGeneratedImageCache } from '../services/GeneratedImageCache';
+import { HapticService } from '../services/HapticService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
 import { t } from '../i18n/I18nService';
@@ -183,11 +184,14 @@ export struct SessionActionMenu {
         getGeneratedImageCache().clearSession(this.sessionId);
         this.onDeleted();
         showToast(t('sessionMenu.deleted'));
+        HapticService.tap('delete');
       } else {
         showToast(t('sessionMenu.deleteFailed'));
+        HapticService.tap('error');
       }
     } catch (e) {
       showToast(t('sessionMenu.deleteFailed'));
+      HapticService.tap('error');
     } finally {
       this.isActing = false;
     }

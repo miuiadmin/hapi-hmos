@@ -36,6 +36,7 @@ export const zhCN: Record<string, string> = {
   'settings.fontSize.default': '默认',
   'settings.fontSize.large': '大',
   'settings.enterToSend': '回车发送消息',
+  'settings.haptics': '触感反馈',
   'settings.chat.terminalToolDisplay': '终端工具卡片',
   'settings.chat.terminalToolDisplay.compact': '简洁（仅命令）',
   'settings.chat.terminalToolDisplay.detailed': '详细（显示输出预览）',

@@ -40,6 +40,7 @@ import { common } from '@kit.AbilityKit';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
+import { HapticService } from '../services/HapticService';
 import { PreferenceKeys } from '../config/Keys';
 import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
@@ -761,8 +762,10 @@ struct ChatPage {
       }
       const ok = await getHubClient().sendMessage(this.sessionId, text, localId, schedule, attachments);
       this.updateOptimisticStatus(localId, ok ? 'queued' : 'failed');
+      HapticService.tap(ok ? 'send' : 'error');   // 触感：成功轻点 / 失败警示震
     } catch (e) {
       this.updateOptimisticStatus(localId, 'failed');
+      HapticService.tap('error');
     } finally {
       this.isSending = false;
     }

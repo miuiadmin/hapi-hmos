@@ -17,6 +17,7 @@ import { SessionPreviewLimitService } from '../services/SessionPreviewLimitServi
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
 import { SyncStateService } from '../services/SyncStateService';
+import { HapticService } from '../services/HapticService';
 import { shouldResync } from '../chat/SyncResync';
 
 const DOMAIN: number = 0x0000;
@@ -68,6 +69,8 @@ export default class EntryAbility extends UIAbility {
     await TerminalFontSizeService.init();
     // 会话列表状态模式须在 loadContent 前从持久化读回（Index SessionItem 首帧即用，避默认 standard 闪一下）
     await SessionListStatusModeService.init();
+    // 触感反馈开关须在 loadContent 前从持久化读回（各交互 tap 即用正确 enabled，避默认开闪一下）
+    await HapticService.init();
     // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
     await getGeneratedImageCache().initialize(this.context);
     // 按登录态选首屏

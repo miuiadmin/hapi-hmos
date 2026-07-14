@@ -19,6 +19,10 @@
     {
       "name": "permission_microphone_reason",
       "value": "语音对话模式下采集麦克风音频，与 ElevenLabs 语音助手实时通话"
+    },
+    {
+      "name": "permission_vibrate_reason",
+      "value": "发送消息、删除会话等关键交互的触感反馈（短震动）"
     }
   ]
 }
