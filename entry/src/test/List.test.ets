@@ -30,6 +30,10 @@ import chatSurfaceColorsTest from './ChatSurfaceColors.test';
 import voiceFormattersTest from './VoiceFormatters.test';
 import voiceLanguagesTest from './VoiceLanguages.test';
 import voiceVoicesTest from './VoiceVoices.test';
+import terminalFontSizeTest from './TerminalFontSize.test';
+import sessionListStatusModeTest from './SessionListStatusMode.test';
+import syncResyncTest from './SyncResync.test';
+import directorySuggestionsTest from './DirectorySuggestions.test';
 
 export default function testsuite() {
   diffTest();
@@ -61,4 +65,8 @@ export default function testsuite() {
   voiceFormattersTest();
   voiceLanguagesTest();
   voiceVoicesTest();
+  terminalFontSizeTest();
+  sessionListStatusModeTest();
+  syncResyncTest();
+  directorySuggestionsTest();
 }

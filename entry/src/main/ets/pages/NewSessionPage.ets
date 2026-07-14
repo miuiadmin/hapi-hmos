@@ -1,6 +1,7 @@
 import { getHubClient } from '../api/HubClient';
 import { t } from '../i18n/I18nService';
-import { Machine, DirEntry, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
+import { Machine, DirEntry, SessionSummary, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
+import { buildDirectorySuggestions } from '../chat/DirectorySuggestions';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -36,6 +37,8 @@ struct NewSessionPage {
   @Local selectedMachineId: string = '';
   @Local directory: string = '';
   @Local recentPaths: string[] = [];
+  // 全量会话（fetchSessions 一次；DirectorySuggestions 按选中 machine 内部过滤派生 path/worktree 建议）
+  @Local allSessions: SessionSummary[] = [];
   @Local selectedAgent: string = 'claude';
 
   // spawn 高级选项（对照上游 web NewSession 表单）
@@ -115,6 +118,8 @@ struct NewSessionPage {
 
       await this.loadRecentFor(chosenId);
       await this.refreshModels();   // 初始：按 agent + machine(+预填目录 for opencode) 拉一次 model 列表
+      // 拉全量会话供 DirectorySuggestions 派生（path/worktree 建议）；best-effort，失败不阻塞页面
+      try { this.allSessions = await getHubClient().fetchSessions(); } catch (e) {}
     } catch (e) {
       this.loadError = e instanceof Error ? e.message : t('newSession.loadMachinesFailed');
     } finally {
@@ -151,6 +156,12 @@ struct NewSessionPage {
 
   private useRecentPath(path: string): void {
     this.applyDirectory(path);
+  }
+
+  // 目录建议（对照上游 useDirectorySuggestions）：recent 在前 + 同机会话的 path/worktree basePath
+  //   合并去重 + 其余按 localeCompare。machineId 过滤在纯函数内部（null→全部）。
+  get directorySuggestions(): string[] {
+    return buildDirectorySuggestions(this.selectedMachineId, this.allSessions, this.recentPaths);
   }
 
   // 统一目录赋值入口：切目录时若 agent=opencode 重拉 model 列表（opencode 的可用模型随 cwd 变）。
@@ -641,15 +652,15 @@ struct NewSessionPage {
                   .borderRadius(8)
                   .onClick(() => { this.openBrowser(); })
 
-                // 最近路径联想
-                if (this.recentPaths.length > 0) {
+                // 目录建议（recent 在前 + 同机会话 path/worktree；对照上游 useDirectorySuggestions）
+                if (this.directorySuggestions.length > 0) {
                   Text(t('newSession.recent'))
                     .fontSize(fs(12))
                     .fontColor(this.c.textTertiary)
                     .width('100%')
                     .margin({ top: 10, bottom: 2 })
                   Column() {
-                    ForEach(this.recentPaths, (path: string) => {
+                    ForEach(this.directorySuggestions, (path: string) => {
                       this.RecentPathRow(path)
                     }, (path: string) => path)
                   }

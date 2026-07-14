@@ -6,6 +6,11 @@ import { window } from '@kit.ArkUI';
 import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeService, ThemeMode, FontScaleMode } from '../theme/ThemeService';
 import { TerminalToolDisplayService, TerminalToolDisplayMode } from '../services/TerminalToolDisplayService';
+import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
+import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
+import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
+import { VALID_TERMINAL_FONT_SIZES } from '../chat/TerminalFontSize';
+import { SessionListStatusMode } from '../chat/SessionListStatusMode';
 import { showToast } from '../utils/Toast';
 import { t, I18nService, LanguageChoice } from '../i18n/I18nService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
@@ -63,6 +68,36 @@ struct SettingsPage {
   // 终端工具卡片显示模式（读 @Trace mode 建立刷新依赖；切换即时重渲染 ✓ 高亮）
   private get terminalToolMode(): TerminalToolDisplayMode {
     return TerminalToolDisplayService.currentMode;
+  }
+
+  // 终端字号（读 @Trace fontSize 建立刷新依赖；5 档 radio ✓ 高亮）
+  private get terminalFontSize(): number {
+    return TerminalFontSizeService.currentSize;
+  }
+
+  // 会话列表每组预览行数（读 @Trace limit；TextInput 双向绑定 localInput，onChange clamp 1–99）
+  private get sessionPreviewLimit(): number {
+    return SessionPreviewLimitService.currentLimit;
+  }
+
+  // 会话列表状态模式（读 @Trace mode；standard/detailed radio ✓ 高亮）
+  private get sessionListStatusMode(): SessionListStatusMode {
+    return SessionListStatusModeService.currentMode;
+  }
+
+  // 切终端字号：setSize 改 fontSize @Trace（TerminalPage @Monitor 实时 applyFontSize）+ 持久化
+  private selectTerminalFontSize(size: number): void {
+    TerminalFontSizeService.setSize(size);
+  }
+  // 切会话列表状态模式：setMode 改 mode @Trace（Index SessionItem 即时重渲染）+ 持久化
+  private selectSessionListStatusMode(mode: SessionListStatusMode): void {
+    SessionListStatusModeService.setMode(mode);
+  }
+  // 预览行数输入：onChange 解析整数（非数字忽略）→ setLimit clamp 1–99（@Trace 改即重算 sessionRows）+ 持久化
+  private onPreviewLimitChange(value: string): void {
+    const n: number = parseInt(value, 10);
+    if (isNaN(n)) { return; }
+    SessionPreviewLimitService.setLimit(n);
   }
 
   // —— 语音设置（读 VoiceSettingsService @Trace；切换即时重渲染，下次进语音页生效）——
@@ -649,6 +684,56 @@ struct SettingsPage {
           this.SelectRow(t('settings.chat.terminalToolDisplay.compact'), this.terminalToolMode === 'compact', (): void => { this.selectTerminalToolDisplay('compact'); })
           Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
           this.SelectRow(t('settings.chat.terminalToolDisplay.detailed'), this.terminalToolMode === 'detailed', (): void => { this.selectTerminalToolDisplay('detailed'); })
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+
+        // 终端字号分组（5 档离散；boot 用 + 设置页改即时 applyFontSize，对照上游 terminal fontSize）
+        this.SectionHeader(t('settings.terminal.fontSize'))
+        Column() {
+          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[0]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[0], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[0]); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[1]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[1], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[1]); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[2]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[2], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[2]); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[3]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[3], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[3]); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[4]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[4], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[4]); })
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+
+        // 会话列表分组（每组预览行数 + 状态模式 standard/detailed；对照上游 SessionList 偏好）
+        this.SectionHeader(t('settings.chat.sessionList'))
+        Column() {
+          // 预览行数（1–99，默认 8）：超出显示「展开更多」；TextInput 数字输入 onChange clamp
+          Row() {
+            Text(t('settings.chat.sessionPreviewLimit'))
+              .fontSize(fs(15))
+              .fontColor(this.c.textPrimary)
+              .layoutWeight(1)
+            TextInput({
+              text: `${this.sessionPreviewLimit}`,
+              placeholder: '8'
+            })
+              .type(InputType.Number)
+              .width(72)
+              .height(40)
+              .fontSize(fs(15))
+              .fontColor(this.c.textPrimary)
+              .backgroundColor(this.c.surface)
+              .borderRadius(8)
+              .textAlign(TextAlign.Center)
+              .onChange((value: string) => { this.onPreviewLimitChange(value); })
+          }
+          .width('100%')
+          .height(54)
+          .padding({ left: 16, right: 16 })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(t('statusMode.standard'), this.sessionListStatusMode === 'standard', (): void => { this.selectSessionListStatusMode('standard'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SelectRow(t('statusMode.detailed'), this.sessionListStatusMode === 'detailed', (): void => { this.selectSessionListStatusMode('detailed'); })
         }
         .width('100%')
         .backgroundColor(this.c.bg)

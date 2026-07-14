@@ -19,7 +19,11 @@ import {
 } from '../chat/SessionGrouping';
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
+import { SyncingBanner } from '../components/SyncingBanner';
 import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
+import { SessionPreviewLimitService, getSessionPreviewLimitState } from '../services/SessionPreviewLimitService';
+import { getSessionListStatusModeState } from '../services/SessionListStatusModeService';
+import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
 import { t } from '../i18n/I18nService';
@@ -42,6 +46,9 @@ struct Index {
   @Local sessionFilter: 'all' | 'active' | 'archived' = 'all';   // 列表 Tab 筛选：archived = 非活跃（hapi 归档即 active=false）
   @Local machines: Machine[] = [];                                              // 机器列表（机器组头 label 用；MACHINE_UPDATED 刷新）
   @Local collapsedOverride: Map<string, boolean> = new Map<string, boolean>();  // 用户显式折叠/展开态（true=折叠）
+  @Local expandedGroups: Set<string> = new Set<string>();   // 用户显式展开的目录组 key（超出预览行数时点「展开更多」登记；reassign 触发 V2）
+  // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
+  @Local sync: SyncState = getSyncState();
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -227,7 +234,28 @@ struct Index {
   //   读 @Local sessions/sessionFilter/searchQuery/collapsedOverride → 任一变化 V2 自动重渲染
   //   （同 filteredSessions getter / theme `c` getter 模式）。
   get sessionRows(): RenderRow[] {
-    return flattenGroups(groupSessionsByDirectory(this.filteredSessions), this.isSearching(), this.collapsedOverride);
+    // 读 @Trace limit（SessionPreviewLimitService 单例）建立 V2 刷新依赖（设置页改 limit 即重算），同 theme `c` getter 模式。
+    return flattenGroups(
+      groupSessionsByDirectory(this.filteredSessions),
+      this.isSearching(),
+      this.collapsedOverride,
+      getSessionPreviewLimitState().limit,
+      this.expandedGroups
+    );
+  }
+
+  // 前台重同步触发（EntryAbility.onForeground beginSync → resyncSeq++）：重拉列表 + 结束同步（关横幅）。
+  @Monitor('sync.resyncSeq')
+  onResync(monitor: IMonitor): void {
+    this.loadSessions().then((): void => { SyncStateService.endSync(); });
+  }
+
+  // 「展开更多」：登记目录组 key 到 expandedGroups 并 reassign 触发 V2 重渲染（flattenGroups 见已展开则全显）。
+  private expandGroup(groupKey: string): void {
+    const next: Set<string> = new Set<string>();
+    this.expandedGroups.forEach((k: string) => { next.add(k); });
+    next.add(groupKey);
+    this.expandedGroups = next;
   }
 
   private isSearching(): boolean { return this.searchQuery.trim() !== ''; }
@@ -357,7 +385,10 @@ struct Index {
   }
 
   // 会话注意力分级（对照 web lib/sessionAttention）：thinking 不打扰；返回左侧色点类型。
+  //   detailed 模式才显 attention 指示器（对照上游 showDetailedStatus ? classify : null）；standard 隐藏色点。
   private attentionFor(session: SessionSummary): AttentionKind | null {
+    // 读 @Trace mode 建立 V2 刷新依赖（设置页切 detailed/standard 即重渲染），同 theme `c` getter 模式
+    if (getSessionListStatusModeState().mode !== 'detailed') { return null; }
     // 移动端栈式导航：列表可见时用户不在任何会话内 → selected 恒 false（thinking 由 classify 内部抑制）。
     const seen: SessionSeenService = getSessionSeenService();
     // 读 @Trace revision 建立 V2 刷新依赖：ChatPage markSeen 自增 → 列表重渲染 → 重读 lastSeen 拿最新时间戳。
@@ -462,6 +493,19 @@ struct Index {
     .opacity(session.active ? 1 : 0.5)
     .gesture(LongPressGesture({ duration: 500, repeat: false })
       .onAction(() => { this.openActionMenu(session); }))
+  }
+
+  // 「展开更多 (剩 N)」行（目录组会话数超出预览上限时显示；点击登记 groupKey 全显该组）。
+  @Builder
+  private ShowMoreRow(row: RenderRow) {
+    Row() {
+      Text(t('sessions.showMore', { n: row.remaining }))
+        .fontSize(fs(12))
+        .fontColor(this.c.primary)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .justifyContent(FlexAlign.Center)
   }
 
   // 机器组头行（▼/▶ + 💻 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
@@ -617,6 +661,8 @@ struct Index {
 
         // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
         ConnectionBanner()
+        // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadSessions，完成后 endSync）
+        SyncingBanner()
 
         if (this.isLoading) {
           Column() {
@@ -641,6 +687,8 @@ struct Index {
                     this.MachineHeader(row.machineGroup as MachineGroup)
                   } else if (row.kind === 'directory') {
                     this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
+                  } else if (row.kind === 'show-more') {
+                    this.ShowMoreRow(row)
                   } else {
                     this.SessionItem(row.session as SessionSummary)
                   }
@@ -650,6 +698,8 @@ struct Index {
                     this.toggleMachine(row.machineGroup as MachineGroup);
                   } else if (row.kind === 'directory') {
                     this.toggleDirectory(row.directoryGroup as DirectoryGroup);
+                  } else if (row.kind === 'show-more') {
+                    this.expandGroup(row.groupKey);
                   } else {
                     this.openSession(row.session as SessionSummary);
                   }

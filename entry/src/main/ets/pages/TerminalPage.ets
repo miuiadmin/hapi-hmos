@@ -15,6 +15,7 @@ import {
   classifyTerminalError,
   TerminalErrorInfo
 } from '../chat/TerminalInput';
+import { TerminalFontSizeService, getTerminalFontSizeState, TerminalFontSizeState } from '../services/TerminalFontSizeService';
 
 // 终端页（NavDestination）—— 对照 hapi web /sessions/$sessionId/terminal
 //   Web 组件托管 xterm.js + socket.io-client（rawfile/terminal/terminal.html）：
@@ -41,6 +42,7 @@ interface TerminalBootCfg {
   sessionId: string;
   terminalId: string;
   theme: XtermTheme;
+  fontSize: number;
 }
 
 // xterm theme（背景/前景/光标；主题切换时 applyTheme 重推）
@@ -90,6 +92,8 @@ struct TerminalPage {
   // @Local 持有主题单例 → 作为 @Monitor('theme.isDark') 的可观测根（@Monitor 根须被 @Local/@Param 等装饰；
   //   ThemeState 为 @ObservedV2、isDark 为 @Trace → 嵌套属性变化可监听，见 arkts-new-monitor.md）。
   @Local theme: ThemeState = getThemeState();
+  // @Local 持有字号状态单例 → 作为 @Monitor('fontSizeState.fontSize') 的可观测根（字号设置页改即触发 applyFontSize）
+  @Local fontSizeState: TerminalFontSizeState = getTerminalFontSizeState();
   private navPathStack: NavPathStack | null = null;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -156,7 +160,8 @@ struct TerminalPage {
       jwt: getConnectionService().jwt,
       sessionId: this.sessionId,
       terminalId: this.terminalId,
-      theme: this.xtermTheme()
+      theme: this.xtermTheme(),
+      fontSize: TerminalFontSizeService.currentSize
     };
     this.runJs('bootTerminal(' + JSON.stringify(cfg) + ')');
   }
@@ -172,6 +177,13 @@ struct TerminalPage {
   onThemeChange(monitor: IMonitor): void {
     if (!this.booted) { return; }
     this.runJs('applyTheme(' + JSON.stringify(this.xtermTheme()) + ')');
+  }
+
+  // 字号变化 → 实时 applyFontSize（设置页改字号无需重启终端；@Monitor 驱动）
+  @Monitor('fontSizeState.fontSize')
+  onFontSizeChange(monitor: IMonitor): void {
+    if (!this.booted) { return; }
+    this.runJs('applyFontSize(' + String(TerminalFontSizeService.currentSize) + ')');
   }
 
   // 快捷键 tap：修饰键切换 / seq 经 applyModifierState 合成后 sendInput

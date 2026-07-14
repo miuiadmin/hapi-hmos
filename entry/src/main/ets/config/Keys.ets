@@ -14,6 +14,9 @@ export class PreferenceKeys {
   static readonly VOICE_ID: string = 'hapi_voice_id';   // 语音声音（ElevenLabs voice id；''=Hub 默认 agent）
   static readonly TOOL_GROUP_BG: string = 'hapi_tool_group_bg';   // 工具组气泡配色偏好串（'default'|'preset:soft-x'|'custom:#hex'）
   static readonly USER_MESSAGE_BG: string = 'hapi_user_message_bg';   // 用户消息气泡配色偏好串
+  static readonly SESSION_PREVIEW_LIMIT: string = 'hapi_session_preview_limit';   // 会话列表每组预览行数（整数，默认 8）
+  static readonly TERMINAL_FONT_SIZE: string = 'hapi_terminal_font_size';   // 终端字号（离散 9/11/13/15/17，默认 13）
+  static readonly SESSION_LIST_STATUS_MODE: string = 'hapi_session_list_status_mode';   // 会话列表状态模式（'standard'|'detailed'，默认 standard）
 
   // per-session 输入草稿 key（hapi_draft_<sessionId>）：草稿随会话存，切换/重进恢复，发送即清。
   static draftKey(sessionId: string): string {

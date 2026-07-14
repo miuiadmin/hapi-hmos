@@ -13,6 +13,11 @@ import { I18nService } from '../i18n/I18nService';
 import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
 import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
+import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
+import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
+import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
+import { SyncStateService } from '../services/SyncStateService';
+import { shouldResync } from '../chat/SyncResync';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -23,6 +28,10 @@ const TAG: string = 'EntryAbility';
 // 注意：onWindowStageCreate 保持 void 签名以匹配 UIAbility 基类，
 //       async 初始化放私有 bootstrap（内部 await 保证「先初始化、后 loadContent」的顺序）。
 export default class EntryAbility extends UIAbility {
+  // 上次切到后台的时刻（ms）。onBackground 记录；onForeground 用 shouldResync 门控是否触发重同步。
+  //   纯实例字段（UIAbility 非 V2 组件，不用 @Local）；Date.now() 由 Ability 调用方取，shouldResync 纯函数不取（可测）。
+  private lastHideAt: number = 0;
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
   }
@@ -53,6 +62,12 @@ export default class EntryAbility extends UIAbility {
     await TerminalToolDisplayService.init();
     // 语音语言/声音须在 loadContent 前从持久化读回（VoicePage boot 即用，避默认声闪一下）
     await VoiceSettingsService.init();
+    // 会话列表每组预览行数须在 loadContent 前从持久化读回（Index sessionRows 首帧即用，避默认 8 闪一下）
+    await SessionPreviewLimitService.init();
+    // 终端字号须在 loadContent 前从持久化读回（TerminalPage boot 即用，避默认 13 闪一下）
+    await TerminalFontSizeService.init();
+    // 会话列表状态模式须在 loadContent 前从持久化读回（Index SessionItem 首帧即用，避默认 standard 闪一下）
+    await SessionListStatusModeService.init();
     // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
     await getGeneratedImageCache().initialize(this.context);
     // 按登录态选首屏
@@ -78,11 +93,18 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
+    // 前台重同步门控（对照上游 SyncingBanner 离开 30s 触发）：离开 >30s 才 beginSync，
+    //   避免短时切出（通知中心/分屏）误触；resyncSeq++ 触发页面 @Monitor reload。
+    if (shouldResync(Date.now(), this.lastHideAt)) {
+      SyncStateService.beginSync();
+    }
     this.reportVisibility('visible');
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onBackground');
+    // 记录切后台时刻，供下次 onForeground 的 shouldResync 门控
+    this.lastHideAt = Date.now();
     this.reportVisibility('hidden');
   }
 

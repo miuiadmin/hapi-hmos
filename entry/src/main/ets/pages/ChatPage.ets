@@ -12,6 +12,8 @@ import { TeamPanel } from '../components/TeamPanel';
 import { TodoPanel } from '../components/TodoPanel';
 import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
 import { ConnectionBanner } from '../components/ConnectionBanner';
+import { SyncingBanner } from '../components/SyncingBanner';
+import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { DateDivider } from '../components/DateDivider';
 import { ChatBlock } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
@@ -74,6 +76,8 @@ struct ChatPage {
   @Local nowTick: number = 0;                   // running 卡 elapsed 实时刷新驱动值（ticker 每秒 +1，仅 running 卡收到非 0）
   @Local hasMoreMessages: boolean = false;       // 还有更旧历史可加载（取自响应 page.hasMore）
   @Local isLoadingOlder: boolean = false;        // 加载更旧中（防抖 + 顶部指示器）
+  // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
+  @Local sync: SyncState = getSyncState();
 
   // 会话生命周期（标题栏 ⋯ 菜单：重命名 / 归档 / 删除；委托 SessionActionMenu 组件，与 Index 长按菜单复用）
   @Local sessionTitle: string = '';              // 标题栏显示标题（aboutToAppear 取种子，重命名/SSE 更新）
@@ -172,6 +176,13 @@ struct ChatPage {
       getSSEClient().removeListener(this.sseListenerId);
       this.sseListenerId = -1;
     }
+  }
+
+  // 前台重同步触发（EntryAbility.onForeground beginSync → resyncSeq++）：重拉消息 + 结束同步（关横幅）。
+  @Monitor('sync.resyncSeq')
+  onResync(monitor: IMonitor): void {
+    if (this.sessionId === '') { return; }
+    this.loadMessages().then((): void => { SyncStateService.endSync(); });
   }
 
   // 草稿持久化（per-session 输入框未发文本）：onChange 去抖写 / aboutToDisappear 即时写 / handleSend 清除。
@@ -1873,6 +1884,8 @@ struct ChatPage {
       Column() {
         // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
         ConnectionBanner()
+        // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
+        SyncingBanner()
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)

@@ -28,13 +28,16 @@ export class MachineGroup {
   totalSessions: number = 0;
 }
 
-// 渲染行（展平后单层 ForEach 用；kind 区分三态）
-export type RenderRowKind = 'machine' | 'directory' | 'session';
+// 渲染行（展平后单层 ForEach 用；kind 区分四态）
+//   'show-more' = 目录组会话数超 previewLimit 且未展开时的「展开更多 (N)」行（对照上游 show-more 按钮）。
+export type RenderRowKind = 'machine' | 'directory' | 'session' | 'show-more';
 export class RenderRow {
   kind: RenderRowKind = 'session';
   machineGroup: MachineGroup | null = null;       // kind==='machine'
   directoryGroup: DirectoryGroup | null = null;   // kind==='directory'
   session: SessionSummary | null = null;          // kind==='session'
+  groupKey: string = '';                          // kind==='show-more'：所属目录组 key（directoryGroupKey）
+  remaining: number = 0;                          // kind==='show-more'：组内剩余隐藏会话数
   key: string = '';                                // ForEach 稳定 key
 }
 
@@ -228,8 +231,17 @@ export function isGroupCollapsed(
 }
 
 // 展平为 RenderRow[]（按折叠态展开/收起；机器头 → [目录头 → 会话项…]…）。
+//   previewLimit（默认 0=不限流）：目录组会话数 > previewLimit 且该组未在 expandedGroups 展开时，仅取前
+//     previewLimit 个会话 + 追加一行 'show-more'（remaining=超出数）。展开或搜索中 → 全显（对照上游 getVisibleSessionPreview
+//     + show-more 按钮；本项目简化：不实现 required-row 强制包含，组内已 active+pending 优先排序故取前 N 自然覆盖活跃项）。
+//   expandedGroups（默认空 Set）：已点「展开更多」的目录组 key 集合（key = directoryGroupKey）。
+//   默认参数保后向兼容：旧调用 flattenGroups(mgs, isSearching, override) 等价于不限流（previewLimit=0）。
 export function flattenGroups(
-  mgs: MachineGroup[], isSearching: boolean, override: Map<string, boolean>
+  mgs: MachineGroup[],
+  isSearching: boolean,
+  override: Map<string, boolean>,
+  previewLimit: number = 0,
+  expandedGroups: Set<string> = new Set<string>()
 ): RenderRow[] {
   const rows: RenderRow[] = [];
   for (let i = 0; i < mgs.length; i++) {
@@ -255,13 +267,26 @@ export function flattenGroups(
       const dirCollapsed: boolean = isGroupCollapsed(dirKey, directoryGroupHasActive(dg), isSearching, override);
       if (dirCollapsed) { continue; }
 
-      for (let k = 0; k < dg.sessions.length; k++) {
+      // 限流判定：非搜索 + previewLimit>0 + 组超限 + 未展开 → 仅前 previewLimit + show-more 行
+      const limit: number = previewLimit > 0 ? previewLimit : dg.sessions.length;
+      const overLimit: boolean = !isSearching && previewLimit > 0 && dg.sessions.length > previewLimit
+        && !expandedGroups.has(dirKey);
+      const visibleCount: number = overLimit ? limit : dg.sessions.length;
+      for (let k = 0; k < visibleCount; k++) {
         const s: SessionSummary = dg.sessions[k];
         const sRow: RenderRow = new RenderRow();
         sRow.kind = 'session';
         sRow.session = s;
         sRow.key = `s:${s.id}`;
         rows.push(sRow);
+      }
+      if (overLimit) {
+        const moreRow: RenderRow = new RenderRow();
+        moreRow.kind = 'show-more';
+        moreRow.groupKey = dirKey;
+        moreRow.remaining = dg.sessions.length - limit;
+        moreRow.key = `more:${dirKey}`;
+        rows.push(moreRow);
       }
     }
   }

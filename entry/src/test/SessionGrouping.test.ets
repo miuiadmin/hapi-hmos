@@ -291,4 +291,90 @@ export default function sessionGroupingTest(): void {
       expect(rows[1].kind).assertEqual('directory');
     });
   });
+
+  describe('SessionGrouping — flattenGroups 预览限流 + show-more（previewLimit/expandedGroups）', () => {
+    it('previewLimit=0（默认）→ 不限流，全显无 show-more（后向兼容）', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 3),
+        mk('s2', 'm1', '/p', true, 2),
+        mk('s3', 'm1', '/p', true, 1)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>());
+      // machine + directory + 3 sessions（无 show-more）
+      expect(rows.length).assertEqual(5);
+      expect(rows[4].kind).assertEqual('session');
+    });
+    it('组超 previewLimit 且未展开 → 仅前 previewLimit 个会话 + show-more 行', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 3),
+        mk('s2', 'm1', '/p', true, 2),
+        mk('s3', 'm1', '/p', true, 1)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>(), 2, new Set<string>());
+      // machine + directory + 2 sessions + 1 show-more
+      expect(rows.length).assertEqual(5);
+      expect(rows[2].kind).assertEqual('session');
+      expect(rows[3].kind).assertEqual('session');
+      expect(rows[4].kind).assertEqual('show-more');
+      expect((rows[4] as RenderRow).remaining).assertEqual(1);
+      expect((rows[4] as RenderRow).groupKey).assertEqual('m1::/p');
+    });
+    it('show-more key 带前缀 more:', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 1),
+        mk('s2', 'm1', '/p', true, 0)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>(), 1, new Set<string>());
+      const more: RenderRow = rows[rows.length - 1];
+      expect(more.kind).assertEqual('show-more');
+      expect(more.key).assertEqual('more:m1::/p');
+    });
+    it('组在 expandedGroups → 全显无 show-more（展开后不限流）', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 3),
+        mk('s2', 'm1', '/p', true, 2),
+        mk('s3', 'm1', '/p', true, 1)
+      ]);
+      const expanded: Set<string> = new Set<string>();
+      expanded.add('m1::/p');
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>(), 2, expanded);
+      // machine + directory + 3 sessions（已展开 → 无 show-more）
+      expect(rows.length).assertEqual(5);
+      expect(rows[4].kind).assertEqual('session');
+    });
+    it('limit=1 边界：仅 1 会话 + show-more(remaining=2)', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 3),
+        mk('s2', 'm1', '/p', true, 2),
+        mk('s3', 'm1', '/p', true, 1)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>(), 1, new Set<string>());
+      // machine + directory + 1 session + show-more
+      expect(rows.length).assertEqual(4);
+      expect(rows[2].kind).assertEqual('session');
+      expect(rows[3].kind).assertEqual('show-more');
+      expect((rows[3] as RenderRow).remaining).assertEqual(2);
+    });
+    it('搜索态不限流（isSearching=true → 即使超 previewLimit 也全显）', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 3),
+        mk('s2', 'm1', '/p', true, 2),
+        mk('s3', 'm1', '/p', true, 1)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, true, new Map<string, boolean>(), 1, new Set<string>());
+      // 搜索态全显：machine + directory + 3 sessions（无 show-more）
+      expect(rows.length).assertEqual(5);
+      expect(rows[4].kind).assertEqual('session');
+    });
+    it('组数 == previewLimit（恰好不超）→ 全显无 show-more', 0, () => {
+      const mgs: MachineGroup[] = groupSessionsByDirectory([
+        mk('s1', 'm1', '/p', true, 2),
+        mk('s2', 'm1', '/p', true, 1)
+      ]);
+      const rows: RenderRow[] = flattenGroups(mgs, false, new Map<string, boolean>(), 2, new Set<string>());
+      // 恰好 == limit 不触发限流：machine + directory + 2 sessions
+      expect(rows.length).assertEqual(4);
+      expect(rows[3].kind).assertEqual('session');
+    });
+  });
 }

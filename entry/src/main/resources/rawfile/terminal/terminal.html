@@ -81,10 +81,11 @@
       }
       var theme = cfg.theme || { background: '#000000', foreground: '#e6e6e6', cursor: '#e6e6e6' };
 
-      // xterm 实例
+      // xterm 实例（fontSize 从 cfg 取，由 ArkTS TerminalFontSizeService 注入；缺省 13）
+      var fontPx = (cfg.fontSize && cfg.fontSize > 0) ? cfg.fontSize : 13;
       term = new Terminal({
         fontFamily: 'monospace, "Cascadia Code", "Menlo", "Consolas", monospace',
-        fontSize: 13,
+        fontSize: fontPx,
         lineHeight: 1.1,
         cursorBlink: true,
         theme: theme,
@@ -231,6 +232,14 @@
       try {
         var theme = (typeof themeJson === 'string') ? JSON.parse(themeJson) : themeJson;
         if (term && theme) { term.options.theme = theme; }
+      } catch (e) {}
+    };
+
+    // 字号实时切换（设置页改字号无需重启终端）：ArkTS 传 px 数
+    window.applyFontSize = function (size) {
+      try {
+        var px = (typeof size === 'number') ? size : parseInt(size, 10);
+        if (term && px > 0) { term.options.fontSize = px; }
       } catch (e) {}
     };
 

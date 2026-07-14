@@ -11,6 +11,7 @@ export class SessionSummaryMetadata {
   summaryText: string = '';    // 摘要文本
   flavor: string = '';
   agentSessionId: string = '';
+  worktreeBasePath: string = '';   // metadata.worktree.basePath（目录建议第二源；对照 shared WorktreeMetadata.basePath）
 }
 
 export class SessionSummary {
@@ -397,6 +398,11 @@ export function parseSessionSummary(raw: Record<string, Object>): SessionSummary
       m.summaryText = pickStr(sumRaw, 'text');
     }
     m.flavor = pickStr(metaRaw, 'flavor');
+    // worktree.basePath（目录建议第二源；对照 shared WorktreeMetadataSchema.basePath：metadata.worktree?.basePath）
+    const worktreeRaw = pickObj(metaRaw, 'worktree');
+    if (worktreeRaw !== null) {
+      m.worktreeBasePath = pickStr(worktreeRaw, 'basePath');
+    }
     s.metadata = m;
   }
 
