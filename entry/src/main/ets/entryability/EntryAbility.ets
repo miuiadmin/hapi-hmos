@@ -8,8 +8,9 @@ import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { getSSEClient } from '../api/SSEClient';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
-import { ThemeService } from '../theme/ThemeService';
+import { ThemeService, getThemeState } from '../theme/ThemeService';
 import { I18nService } from '../i18n/I18nService';
+import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
 import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 
@@ -44,6 +45,8 @@ export default class EntryAbility extends UIAbility {
     await getConnectionService().initialize();
     // 主题须在 loadContent 前应用，避免首屏默认色→切换闪烁（chatcube 教训）
     await ThemeService.init(this.context);
+    // 气泡配色须在 loadContent 前从持久化读回 + 按当前 isDark resolve（ToolCard/ChatPage 首帧即用，避默认色闪一下）
+    await ChatSurfaceColorsService.init(getThemeState().isDark);
     // 语言须在 loadContent 前解析，首屏即用持久化/系统语言（避首帧中文→切英文闪烁，同主题）
     await I18nService.init(this.context);
     // 终端工具卡片显示模式须在 loadContent 前从持久化读回（ToolCard 首帧即用正确模式，避默认 compact 闪一下）

@@ -11,6 +11,15 @@ import { t, I18nService, LanguageChoice } from '../i18n/I18nService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { VOICE_LANGUAGES, VoiceLanguage, findLanguageByCode, getLanguageDisplayName } from '../chat/VoiceLanguages';
 import { VOICE_PRESETS, VoicePreset, getPresetDisplayName } from '../chat/VoiceVoices';
+import {
+  ChatSurfaceColorPreference,
+  ChatSurfaceColorPreset,
+  getPickerValue,
+  normalizeHexColor,
+  toPresetPreference,
+  toCustomPreference
+} from '../chat/ChatSurfaceColors';
+import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
 
 // 设置页（NavDestination）—— 主题/字号/语言/输入 + 连接信息 + 关于 + 退出登录
 // UI 对照 chatcube 设置类页面（NavDestination + 分组信息行 + 危险操作按钮），V2 状态管理
@@ -31,6 +40,9 @@ struct SettingsPage {
   @Local langChoice: LanguageChoice = 'system';   // 语言选择高亮用（与 I18nService.currentChoice 同步）
   @Local voiceSheetOpen: boolean = false;          // 语音设置选择器 sheet 开关（bindSheet 双向）
   @Local voiceSheetMode: 'lang' | 'voice' = 'lang'; // 当前 sheet 内容：识别语言 / 声音
+  @Local surfaceSheetOpen: boolean = false;         // 气泡配色选择器 sheet 开关（bindSheet 双向）
+  @Local surfaceSheetMode: 'tool' | 'user' = 'tool'; // 当前 sheet 内容：工具组背景 / 用户消息背景
+  @Local customHex: string = '';                    // 自定义 hex 输入（sheet 内 TextInput 双向）
 
   // 主题（读 @Trace isDark/mode 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -80,6 +92,59 @@ struct SettingsPage {
   private pickVoice(id: string): void {
     VoiceSettingsService.setVoice(id);
     this.voiceSheetOpen = false;
+  }
+
+  // —— 气泡配色（读 ChatSurfaceColorsService @Trace；切换即时重渲染，reapply 同步重 mix）——
+  // 取色器显示色（swatch 用；default→中性灰，preset/custom→其强调色）
+  private pickerColorOf(pref: ChatSurfaceColorPreference): string {
+    return getPickerValue(pref);
+  }
+  // 偏好 → 行内短名（default→「默认」/ preset→预设名 / custom→hex 串）
+  private prefDisplayName(pref: ChatSurfaceColorPreference): string {
+    if (pref === 'default') { return t('settings.chat.surfaceColor.default'); }
+    if (pref === 'preset:soft-blue') { return t('settings.chat.surfaceColor.softBlue'); }
+    if (pref === 'preset:soft-green') { return t('settings.chat.surfaceColor.softGreen'); }
+    if (pref === 'preset:soft-yellow') { return t('settings.chat.surfaceColor.softYellow'); }
+    if (pref.startsWith('custom:')) { return pref.substring('custom:'.length); }
+    return t('settings.chat.surfaceColor.default');
+  }
+  // 打开选择器（mode 区分工具组/用户消息）；customHex 预填当前 custom 值
+  private openSurfaceSheet(mode: 'tool' | 'user'): void {
+    this.surfaceSheetMode = mode;
+    const pref: ChatSurfaceColorPreference = mode === 'tool'
+      ? ChatSurfaceColorsService.currentToolGroupPref
+      : ChatSurfaceColorsService.currentUserMessagePref;
+    this.customHex = pref.startsWith('custom:') ? pref.substring('custom:'.length) : '#';
+    this.surfaceSheetOpen = true;
+  }
+  // 选预设：setXxx 改 @Trace（reapply 同步重 mix + 持久化）+ 关 sheet
+  private pickSurfacePreset(preset: ChatSurfaceColorPreset): void {
+    const pref: ChatSurfaceColorPreference = toPresetPreference(preset);
+    if (this.surfaceSheetMode === 'tool') {
+      ChatSurfaceColorsService.setToolGroupBg(pref);
+    } else {
+      ChatSurfaceColorsService.setUserMessageBg(pref);
+    }
+    this.surfaceSheetOpen = false;
+  }
+  // 自定义 hex 输入：合法（#rrggbb）即应用 toCustomPreference（每键校验，完整 7 字符时生效一次）
+  private onCustomHexChange(hex: string): void {
+    this.customHex = hex;
+    const normalized: string | null = normalizeHexColor(hex);
+    if (normalized === null) { return; }
+    const pref: ChatSurfaceColorPreference = toCustomPreference(hex);
+    if (this.surfaceSheetMode === 'tool') {
+      ChatSurfaceColorsService.setToolGroupBg(pref);
+    } else {
+      ChatSurfaceColorsService.setUserMessageBg(pref);
+    }
+  }
+  // 当前选项是否选中（对照 sheet 内 PickerOptionRow 高亮）
+  private isSurfacePrefSelected(pref: ChatSurfaceColorPreference): boolean {
+    const current: ChatSurfaceColorPreference = this.surfaceSheetMode === 'tool'
+      ? ChatSurfaceColorsService.currentToolGroupPref
+      : ChatSurfaceColorsService.currentUserMessagePref;
+    return current === pref;
   }
 
   // 切终端工具卡片显示：setMode 改 mode @Trace（全量 ToolCard 重渲染）+ 持久化
@@ -384,6 +449,153 @@ struct SettingsPage {
     .backgroundColor(this.c.bg)
   }
 
+  // 气泡配色项行（label + swatch 圆点 + 当前值短名 + ›；tap 开选择器 sheet）
+  @Builder
+  private SurfaceColorRow(label: string, pref: ChatSurfaceColorPreference, onTap: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+      Circle({ width: 16, height: 16 })
+        .fill(this.pickerColorOf(pref))
+        .stroke(this.c.border)
+        .strokeWidth(0.5)
+        .margin({ right: 8 })
+      Text(this.prefDisplayName(pref))
+        .fontSize(fs(14))
+        .fontColor(this.c.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '40%' })
+      Text('›')
+        .fontSize(fs(16))
+        .fontColor(this.c.textTertiary)
+        .margin({ left: 6 })
+    }
+    .width('100%')
+    .height(54)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { onTap(); })
+  }
+
+  // 选择器选项行（swatch 圆点 + label + 当前选中 ✓）
+  @Builder
+  private SurfaceOptionRow(label: string, swatch: string, selected: boolean, onSelect: () => void) {
+    Row() {
+      Circle({ width: 18, height: 18 })
+        .fill(swatch)
+        .stroke(this.c.border)
+        .strokeWidth(0.5)
+      Text(label)
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+        .margin({ left: 12 })
+      if (selected) {
+        Text('✓')
+          .fontSize(fs(16))
+          .fontColor(this.c.primary)
+      }
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { onSelect(); })
+  }
+
+  // 自定义 hex 输入行（swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
+  @Builder
+  private SurfaceCustomRow() {
+    Row() {
+      Circle({ width: 18, height: 18 })
+        .fill(this.customSwatch())
+        .stroke(this.c.border)
+        .strokeWidth(0.5)
+      Text(t('settings.chat.surfaceColor.custom'))
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .margin({ left: 12 })
+      TextInput({ text: this.customHex, placeholder: '#rrggbb' })
+        .fontSize(fs(14))
+        .fontColor(this.c.textPrimary)
+        .backgroundColor(this.c.surface)
+        .borderRadius(8)
+        .height(40)
+        .margin({ left: 12 })
+        .layoutWeight(1)
+        .onChange((value: string) => { this.onCustomHexChange(value); })
+    }
+    .width('100%')
+    .height(64)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 气泡配色选择器 sheet（工具组/用户消息两态；4 预设 + 自定义 hex 输入）
+  @Builder
+  private SurfaceColorSheet() {
+    Column() {
+      Row() {
+        Text(this.surfaceSheetMode === 'tool'
+          ? t('settings.chat.surfaceColor.toolGroup')
+          : t('settings.chat.surfaceColor.userMessage'))
+          .fontSize(fs(16))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.c.textPrimary)
+          .layoutWeight(1)
+        Text('✕')
+          .fontSize(fs(18))
+          .fontColor(this.c.textSecondary)
+          .onClick(() => { this.surfaceSheetOpen = false; })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 14, bottom: 12 })
+      .backgroundColor(this.c.bg)
+
+      Scroll() {
+        Column() {
+          this.SurfaceOptionRow(t('settings.chat.surfaceColor.default'),
+            getPickerValue('default'),
+            this.isSurfacePrefSelected('default'),
+            (): void => { this.pickSurfacePreset('default'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softBlue'),
+            getPickerValue('preset:soft-blue'),
+            this.isSurfacePrefSelected('preset:soft-blue'),
+            (): void => { this.pickSurfacePreset('soft-blue'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softGreen'),
+            getPickerValue('preset:soft-green'),
+            this.isSurfacePrefSelected('preset:soft-green'),
+            (): void => { this.pickSurfacePreset('soft-green'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softYellow'),
+            getPickerValue('preset:soft-yellow'),
+            this.isSurfacePrefSelected('preset:soft-yellow'),
+            (): void => { this.pickSurfacePreset('soft-yellow'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SurfaceCustomRow()
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+      }
+      .layoutWeight(1)
+      .backgroundColor(this.c.bg)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.c.bg)
+  }
+
+  // 自定义 hex 预览 swatch（合法→归一化色；非法→中性灰 placeholder）
+  private customSwatch(): string {
+    const normalized: string | null = normalizeHexColor(this.customHex);
+    return normalized !== null ? normalized : getPickerValue('default');
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -455,6 +667,26 @@ struct SettingsPage {
           detents: [SheetSize.LARGE],
           backgroundColor: this.c.bg,
           onDisappear: () => { this.voiceSheetOpen = false; }
+        })
+
+        // 气泡配色分组（工具组背景 + 用户消息背景；tap 开 sheet 选择器，对照上游 useChatSurfaceColors）
+        this.SectionHeader(t('settings.chat.surfaceColor'))
+        Column() {
+          this.SurfaceColorRow(t('settings.chat.surfaceColor.toolGroup'),
+            ChatSurfaceColorsService.currentToolGroupPref,
+            (): void => { this.openSurfaceSheet('tool'); })
+          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+          this.SurfaceColorRow(t('settings.chat.surfaceColor.userMessage'),
+            ChatSurfaceColorsService.currentUserMessagePref,
+            (): void => { this.openSurfaceSheet('user'); })
+        }
+        .width('100%')
+        .backgroundColor(this.c.bg)
+        .bindSheet(this.surfaceSheetOpen!!, this.SurfaceColorSheet(), {
+          height: SheetSize.LARGE,
+          detents: [SheetSize.LARGE],
+          backgroundColor: this.c.bg,
+          onDisappear: () => { this.surfaceSheetOpen = false; }
         })
 
         // 连接信息分组

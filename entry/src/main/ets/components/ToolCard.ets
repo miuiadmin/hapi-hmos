@@ -10,6 +10,7 @@ import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
 import { shouldShowInlineToolCardBody, shouldUseCompactTerminalToolCard, TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
 import { getTerminalToolDisplayState } from '../services/TerminalToolDisplayService';
+import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -532,7 +533,7 @@ struct ToolCard {
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(this.c.surface)
+    .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.surface)
     .borderRadius(16)
     .bindSheet(this.isDetailOpen!!, this.DetailSheet(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],

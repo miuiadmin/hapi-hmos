@@ -37,6 +37,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
+import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { PreferenceKeys } from '../config/Keys';
 import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
@@ -1372,7 +1373,9 @@ struct ChatPage {
           }
         }
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor(b.userStatus === 'failed' ? this.c.error : this.c.primary)
+        .backgroundColor(b.userStatus === 'failed'
+          ? this.c.error
+          : (getChatSurfaceColorsState().userMessageBg || this.c.primary))
         .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 16, bottomRight: 4 })
         .constraintSize({ maxWidth: '78%' })
         .alignItems(HorizontalAlign.End)

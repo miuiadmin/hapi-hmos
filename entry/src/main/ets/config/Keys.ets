@@ -12,6 +12,8 @@ export class PreferenceKeys {
   static readonly RECENT_SKILLS: string = 'hapi_recent_skills';   // $ 技能最近使用 map（JSON name→timestamp，上限 200）
   static readonly VOICE_LANG: string = 'hapi_voice_lang';   // 语音识别语言（locale 码，如 'zh-CN'；''=自动检测）
   static readonly VOICE_ID: string = 'hapi_voice_id';   // 语音声音（ElevenLabs voice id；''=Hub 默认 agent）
+  static readonly TOOL_GROUP_BG: string = 'hapi_tool_group_bg';   // 工具组气泡配色偏好串（'default'|'preset:soft-x'|'custom:#hex'）
+  static readonly USER_MESSAGE_BG: string = 'hapi_user_message_bg';   // 用户消息气泡配色偏好串
 
   // per-session 输入草稿 key（hapi_draft_<sessionId>）：草稿随会话存，切换/重进恢复，发送即清。
   static draftKey(sessionId: string): string {

@@ -26,6 +26,7 @@ import terminalToolDisplayTest from './TerminalToolDisplay.test';
 import sessionGroupingTest from './SessionGrouping.test';
 import codeHighlightTest from './CodeHighlight.test';
 import cliOutputTest from './CliOutput.test';
+import chatSurfaceColorsTest from './ChatSurfaceColors.test';
 import voiceFormattersTest from './VoiceFormatters.test';
 import voiceLanguagesTest from './VoiceLanguages.test';
 import voiceVoicesTest from './VoiceVoices.test';
@@ -56,6 +57,7 @@ export default function testsuite() {
   sessionGroupingTest();
   codeHighlightTest();
   cliOutputTest();
+  chatSurfaceColorsTest();
   voiceFormattersTest();
   voiceLanguagesTest();
   voiceVoicesTest();
