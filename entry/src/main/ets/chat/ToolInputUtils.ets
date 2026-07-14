@@ -40,46 +40,151 @@ export function truncateStr(s: string, max: number): string {
   return s.substring(0, max) + '…';
 }
 
-// 从 tool_result.content 提取可展示文本。content 形态多样：
-//   string                            → 原样
-//   Array<{type:'text', text:string}> → 拼接各 text（Anthropic 标准格式）
-//   Array<string>                     → 换行拼接
-//   其它对象                           → 尽力取 .text/.output/.message，否则 ''
-export function extractResultText(content: Object | null): string {
-  if (content === null || content === undefined) {
-    return '';
+// <tool_use_error>…</tool_use_error> 标签剥离（对照 web _results.tsx parseToolUseError）
+// 手写扫描器（非正则，避 s-flag dotall 限制）：仅取首对 tag 的 inner（trim），不管外层文本。
+const TOOL_USE_ERROR_OPEN: string = '<tool_use_error>';
+const TOOL_USE_ERROR_CLOSE: string = '</tool_use_error>';
+
+export function parseToolUseError(message: string): { isToolUseError: boolean; errorMessage: string | null } {
+  const openIdx: number = message.indexOf(TOOL_USE_ERROR_OPEN);
+  if (openIdx < 0) {
+    return { isToolUseError: false, errorMessage: null };
   }
-  if (typeof content === 'string') {
-    return content;
+  const innerStart: number = openIdx + TOOL_USE_ERROR_OPEN.length;
+  const closeIdx: number = message.indexOf(TOOL_USE_ERROR_CLOSE, innerStart);
+  if (closeIdx < 0) {
+    return { isToolUseError: false, errorMessage: null };
   }
-  if (Array.isArray(content)) {
-    const arr: Object[] = content as Object[];
+  return { isToolUseError: true, errorMessage: message.substring(innerStart, closeIdx).trim() };
+}
+
+// 单个内容块取文本：string 直返；对象优先 type==='text' 的 text，次取裸 text（对照 web extractTextFromContentBlock）
+function extractTextFromContentBlock(block: Object | null | undefined): string | null {
+  if (typeof block === 'string') {
+    return block;
+  }
+  if (block === null || block === undefined || typeof block !== 'object') {
+    return null;
+  }
+  const r: Record<string, Object> = block as Record<string, Object>;
+  const btype: Object = r['type'];
+  const btext: Object = r['text'];
+  if (btype === 'text' && typeof btext === 'string') {
+    return btext;
+  }
+  if (typeof btext === 'string') {
+    return btext;
+  }
+  return null;
+}
+
+// flat 字符串字段优先序（对照 web extractTextFromResult：content→text→output→error→message）
+const RESULT_FLAT_KEYS: string[] = ['content', 'text', 'output', 'error', 'message'];
+
+// 递归提取结果文本（对照 web extractTextFromResult）。返回 null 表示未命中；depth > 2 截断。
+//   string → 剥 tool_use_error 后原样
+//   Array  → 各内容块文本换行拼接
+//   object → flat 字符串字段 → content 数组 → 嵌套 output.{content,text} → 嵌套 error.{message,error} → 递归 result/data
+function extractTextDeep(result: Object | null | undefined, depth: number): string | null {
+  if (depth > 2) {
+    return null;
+  }
+  if (result === null || result === undefined) {
+    return null;
+  }
+  if (typeof result === 'string') {
+    const tue: { isToolUseError: boolean; errorMessage: string | null } = parseToolUseError(result);
+    return tue.isToolUseError ? (tue.errorMessage ?? '') : result;
+  }
+  if (Array.isArray(result)) {
+    const arr: Object[] = result as Object[];
     const parts: string[] = [];
     for (let i = 0; i < arr.length; i++) {
-      const item: Object = arr[i];
-      if (typeof item === 'string') {
-        parts.push(item);
-      } else if (item !== null && item !== undefined && typeof item === 'object') {
-        const rec: Record<string, Object> = item as Record<string, Object>;
-        const t: Object = rec['text'];
-        if (typeof t === 'string') {
-          parts.push(t);
-        }
+      const t: string | null = extractTextFromContentBlock(arr[i]);
+      if (t !== null && t.length > 0) {
+        parts.push(t);
       }
     }
-    return parts.join('\n');
+    return parts.length > 0 ? parts.join('\n') : null;
   }
-  if (typeof content === 'object') {
-    const rec: Record<string, Object> = content as Record<string, Object>;
-    const keys: string[] = ['text', 'output', 'message', 'content'];
-    for (let i = 0; i < keys.length; i++) {
-      const v: Object = rec[keys[i]];
-      if (typeof v === 'string') {
-        return v;
-      }
+  if (typeof result !== 'object') {
+    return null;
+  }
+  const rec: Record<string, Object> = result as Record<string, Object>;
+
+  // flat 字符串字段
+  for (let i = 0; i < RESULT_FLAT_KEYS.length; i++) {
+    const v: Object = rec[RESULT_FLAT_KEYS[i]];
+    if (typeof v === 'string') {
+      return v;
     }
   }
-  return '';
+
+  // content 为数组
+  const contentVal: Object = rec['content'];
+  if (Array.isArray(contentVal)) {
+    const carr: Object[] = contentVal as Object[];
+    const parts: string[] = [];
+    for (let i = 0; i < carr.length; i++) {
+      const t: string | null = extractTextFromContentBlock(carr[i]);
+      if (t !== null && t.length > 0) {
+        parts.push(t);
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join('\n');
+    }
+  }
+
+  // 嵌套 output.{content,text}
+  const outputVal: Object = rec['output'];
+  if (outputVal !== null && outputVal !== undefined && typeof outputVal === 'object' && !Array.isArray(outputVal)) {
+    const orec: Record<string, Object> = outputVal as Record<string, Object>;
+    if (typeof orec['content'] === 'string') {
+      return orec['content'] as string;
+    }
+    if (typeof orec['text'] === 'string') {
+      return orec['text'] as string;
+    }
+  }
+
+  // 嵌套 error.{message,error}
+  const errorVal: Object = rec['error'];
+  if (errorVal !== null && errorVal !== undefined && typeof errorVal === 'object' && !Array.isArray(errorVal)) {
+    const erec: Record<string, Object> = errorVal as Record<string, Object>;
+    if (typeof erec['message'] === 'string') {
+      return erec['message'] as string;
+    }
+    if (typeof erec['error'] === 'string') {
+      return erec['error'] as string;
+    }
+  }
+
+  // 递归 result
+  const resultVal: Object = rec['result'];
+  if (resultVal !== null && resultVal !== undefined && typeof resultVal === 'object' && !Array.isArray(resultVal)) {
+    const nested: string | null = extractTextDeep(resultVal, depth + 1);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+
+  // 递归 data
+  const dataVal: Object = rec['data'];
+  if (dataVal !== null && dataVal !== undefined && typeof dataVal === 'object' && !Array.isArray(dataVal)) {
+    const nested: string | null = extractTextDeep(dataVal, depth + 1);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+
+  return null;
+}
+
+// 从 tool_result.content 提取可展示文本（公开 API，契约 (Object|null)→string 不变）。
+//   string（含 <tool_use_error> 剥离）/ Array<内容块> / 嵌套对象（递归 result/data、output/error 嵌套，深度 ≤2）
+export function extractResultText(content: Object | null): string {
+  return extractTextDeep(content, 0) ?? '';
 }
 
 // Bash 结果：从对象取 {stdout, stderr}（含 output 嵌套），任一非空即返回；否则 null

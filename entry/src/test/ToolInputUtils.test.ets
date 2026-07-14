@@ -9,6 +9,7 @@ import {
   hasInputStr,
   getInputStrAny,
   truncateStr,
+  parseToolUseError,
   extractResultText,
   extractStdoutStderr,
   isMultilineText,
@@ -83,6 +84,39 @@ export default function toolInputUtilsTest(): void {
     });
   });
 
+  describe('parseToolUseError', () => {
+    it('returns not-an-error when the tag is absent', 0, () => {
+      const r = parseToolUseError('just text');
+      expect(r.isToolUseError).assertFalse();
+      expect(r.errorMessage === null).assertTrue();
+    });
+    it('extracts the inner message from a pure tag', 0, () => {
+      const r = parseToolUseError('<tool_use_error>Permission denied</tool_use_error>');
+      expect(r.isToolUseError).assertTrue();
+      expect(r.errorMessage).assertEqual('Permission denied');
+    });
+    it('extracts only the inner message, ignoring surrounding text', 0, () => {
+      const r = parseToolUseError('prefix <tool_use_error>msg</tool_use_error> suffix');
+      expect(r.isToolUseError).assertTrue();
+      expect(r.errorMessage).assertEqual('msg');
+    });
+    it('trims whitespace inside the tag (incl. newlines)', 0, () => {
+      const r = parseToolUseError('<tool_use_error>\n  boom  \n</tool_use_error>');
+      expect(r.isToolUseError).assertTrue();
+      expect(r.errorMessage).assertEqual('boom');
+    });
+    it('returns an empty inner message for an empty tag', 0, () => {
+      const r = parseToolUseError('<tool_use_error></tool_use_error>');
+      expect(r.isToolUseError).assertTrue();
+      expect(r.errorMessage).assertEqual('');
+    });
+    it('returns not-an-error when the close tag is missing', 0, () => {
+      const r = parseToolUseError('<tool_use_error>orphan');
+      expect(r.isToolUseError).assertFalse();
+      expect(r.errorMessage === null).assertTrue();
+    });
+  });
+
   describe('extractResultText', () => {
     it('returns empty for null', 0, () => {
       expect(extractResultText(null)).assertEqual('');
@@ -108,8 +142,43 @@ export default function toolInputUtilsTest(): void {
     it('falls back to object.message', 0, () => {
       expect(extractResultText(rec('{"message":"m"}'))).assertEqual('m');
     });
+    it('falls back to object.error (latent-bug fix: error was missing from the key list)', 0, () => {
+      expect(extractResultText(rec('{"error":"boom"}'))).assertEqual('boom');
+    });
     it('returns empty for an object with no recognizable text field', 0, () => {
       expect(extractResultText(rec('{"foo":"bar"}'))).assertEqual('');
+    });
+    it('strips a <tool_use_error> tag from a string result', 0, () => {
+      expect(extractResultText('<tool_use_error>Permission denied</tool_use_error>')).assertEqual('Permission denied');
+    });
+    it('strips the tag and discards surrounding text in a string result', 0, () => {
+      expect(extractResultText('prefix <tool_use_error>msg</tool_use_error> suffix')).assertEqual('msg');
+    });
+    it('extracts nested output.content', 0, () => {
+      expect(extractResultText(rec('{"output":{"content":"oc"}}'))).assertEqual('oc');
+    });
+    it('extracts nested output.text', 0, () => {
+      expect(extractResultText(rec('{"output":{"text":"ot"}}'))).assertEqual('ot');
+    });
+    it('extracts nested error.message', 0, () => {
+      expect(extractResultText(rec('{"error":{"message":"em"}}'))).assertEqual('em');
+    });
+    it('extracts nested error.error', 0, () => {
+      expect(extractResultText(rec('{"error":{"error":"ee"}}'))).assertEqual('ee');
+    });
+    it('recurses into result', 0, () => {
+      expect(extractResultText(rec('{"result":{"text":"deep"}}'))).assertEqual('deep');
+    });
+    it('recurses into data', 0, () => {
+      expect(extractResultText(rec('{"data":{"content":"dd"}}'))).assertEqual('dd');
+    });
+    it('extracts a content array living on an object', 0, () => {
+      const o: Object = JSON.parse('{"content":[{"type":"text","text":"x"},{"text":"y"}]}');
+      expect(extractResultText(o)).assertEqual('x\ny');
+    });
+    it('stops recursing beyond depth 2 (returns empty)', 0, () => {
+      const o: Object = JSON.parse('{"result":{"result":{"result":{"text":"too deep"}}}}');
+      expect(extractResultText(o)).assertEqual('');
     });
   });
 
