@@ -27,6 +27,7 @@ import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands, mergeSl
 import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skills';
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
 import { getLatestThreadGoal } from '../chat/ThreadGoal';
+import { extractLeadingDirectives, formatDirectiveLabel, DirectiveExtract } from '../chat/UserDirectives';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
 import { SkillsMenu } from '../components/SkillsMenu';
@@ -1442,9 +1443,7 @@ struct ChatPage {
       Column() {
         Column() {
           if (b.text !== '') {
-            Text(b.text)
-              .fontSize(fs(15))
-              .fontColor(this.c.bubbleUserText)
+            this.UserBubbleText(b.text)
           }
           if (b.attachments.length > 0) {
             this.AttachmentGrid(b.attachments, b.text !== '')
@@ -1478,6 +1477,47 @@ struct ChatPage {
     // priorityGesture 与 agent 气泡保持一致（user 气泡是纯 Text 无内部长按冲突，但统一写法）
     .priorityGesture(LongPressGesture({ duration: 500, repeat: false })
       .onAction(() => { this.openMessageMenu(b); }))
+  }
+
+  // 用户气泡正文：抽前导指令（/slash·$skill）显成独立 chip，剩余 body 作正文（对照 web user-bubble.tsx
+  //   UserBubbleContent）。鸿蒙简化为「chip 行（Flex wrap）+ 正文 Text」恒堆叠——上游 inline 模式
+  //   （chip 与单行 body 同流换行）在 ArkUI 混排换行不稳，移动端堆叠更稳，视觉差异可忽略。
+  @Builder
+  private UserBubbleText(text: string) {
+    const extract: DirectiveExtract = extractLeadingDirectives(text);
+    if (extract.directives.length > 0) {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(extract.directives, (d: string) => {
+          this.DirectiveChipPill(d)
+        }, (d: string, idx: number) => `${d}@${idx}`)
+      }
+      .margin({ bottom: extract.body !== '' ? 6 : 0 })
+    }
+    if (extract.body !== '') {
+      Text(extract.body)
+        .fontSize(fs(15))
+        .fontColor(this.c.bubbleUserText)
+    }
+  }
+
+  // 指令 chip（对照 web DirectiveChip）：✨ + label 的圆角 pill，半透明白叠在彩色气泡上（Palette 无
+  //   chip 专用色，rgba(255,255,255,0.22) 在任意 userMessageBg 上皆成立；字色复用 bubbleUserText 白）。
+  @Builder
+  private DirectiveChipPill(value: string) {
+    Row({ space: 4 }) {
+      Text('✨')
+        .fontSize(fs(12))
+      Text(formatDirectiveLabel(value))
+        .fontSize(fs(13))
+        .fontColor(this.c.bubbleUserText)
+        .maxLines(1)
+        .textOverflow(TextOverflow.Ellipsis)
+    }
+    .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+    .borderRadius(12)
+    .backgroundColor('rgba(255,255,255,0.22)')
+    .alignItems(VerticalAlign.Center)
+    .margin({ right: 6, bottom: 6 })
   }
 
   // 用户附件渲染（对照 web MessageAttachments.tsx）：images（图片 && previewUrl 非空）→ FlexWrap 缩略图网格
