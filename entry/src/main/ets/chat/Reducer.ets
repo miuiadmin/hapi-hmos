@@ -191,10 +191,12 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
     if (msg.role === 'user') {
       if (isCliOutputText(msg.text, msg.sentFrom)) {
         blocks.push(ChatBlock.cliOutput(msg.id, msg.createdAt, msg.text, 'user'));
-      } else if (msg.text !== '') {
+      } else if (msg.text !== '' || msg.attachments.length > 0) {
+        // 纯图消息（text 空、有附件）也产出 user-text 块以渲染附件（对照 web：text 可空，附件照常渲染）
         const ub: ChatBlock = ChatBlock.userText(msg.id, msg.createdAt, msg.text);
         ub.userOptimistic = msg.isOptimistic;
         ub.userStatus = msg.status;
+        ub.attachments = msg.attachments;
         blocks.push(ub);
       }
       continue;

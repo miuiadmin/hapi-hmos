@@ -6,6 +6,7 @@ import { MarkdownText } from '../components/MarkdownText';
 import { ToolCard } from '../components/ToolCard';
 import { ReasoningBubble } from '../components/ReasoningBubble';
 import { GeneratedImageCard } from '../components/GeneratedImageCard';
+import { ImagePreviewSheet } from '../components/ImagePreviewSheet';
 import { CliOutputCard } from '../components/CliOutputCard';
 import { CodexReviewCard } from '../components/CodexReviewCard';
 import { SessionActionMenu } from '../components/SessionActionMenu';
@@ -45,6 +46,7 @@ import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { HapticService } from '../services/HapticService';
 import { flavorLabel, flavorColorHex } from '../chat/AgentFlavor';
+import { isImageMimeType, formatFileSize } from '../chat/AttachmentFormat';
 import { PreferenceKeys } from '../config/Keys';
 import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
@@ -110,6 +112,8 @@ struct ChatPage {
   @Local searchQuery: string = '';                     // 搜索查询（纯客户端过滤，对照 Index filteredSessions）
   @Local pendingSchedule: number = 0;                  // 待发定时（0=无/>0=epoch-ms；发送时拼 scheduledAt，对照 PendingSchedule）
   @Local scheduleSheetOpen: boolean = false;           // 定时选择 sheet 显隐
+  @Local attachmentPreviewSrc: string = '';            // 用户气泡图片全屏预览源（data: URI 或路径）
+  @Local attachmentPreviewOpen: boolean = false;       // 用户气泡图片全屏预览显隐
   @Local scheduleCustomMode: boolean = false;          // 定时 sheet：自定义绝对时间分支（DatePicker+TimePicker）
   @Local pickDate: Date = new Date();                  // 自定义定时所选日期（DatePicker 驱动）
   @Local pickHour: number = 0;                          // 自定义定时所选时（TimePicker 驱动）
@@ -776,6 +780,7 @@ struct ChatPage {
     optimistic.isOptimistic = true;
     optimistic.createdAt = Date.now();
     optimistic.scheduledAt = schedule;       // 定时乐观行：QueuedMessagesBar 显「⏰ X 后发送」
+    optimistic.attachments = attachments;    // 乐观携带附件（含图片 previewUrl）→ 历史立即显缩略图
 
     this.setMessages(this.messages.concat([optimistic]));
     this.inputText = '';
@@ -1083,6 +1088,11 @@ struct ChatPage {
         meta.mimeType = pf.mimeType;
         meta.size = pf.size;
         meta.path = result.path;
+        // 图片 <5MB：拼 data: URI 作 previewUrl（对照上游 attachmentAdapter.ts MAX_PREVIEW_BYTES=5MB），
+        //   使「刚发的图」在历史里立即显缩略图（乐观 + 服务端回推均携带此 previewUrl）。非图片/过大留空 → 文件卡片。
+        if (isImageMimeType(pf.mimeType) && pf.size < 5 * 1024 * 1024) {
+          meta.previewUrl = `data:${pf.mimeType};base64,${pf.base64Content}`;
+        }
         this.pendingAttachments = this.pendingAttachments.concat([meta]);
         okCount += 1;
       }
@@ -1425,9 +1435,14 @@ struct ChatPage {
       // 右簇：气泡 + 时间，整体右对齐（时间贴气泡右下）
       Column() {
         Column() {
-          Text(b.text)
-            .fontSize(fs(15))
-            .fontColor(this.c.bubbleUserText)
+          if (b.text !== '') {
+            Text(b.text)
+              .fontSize(fs(15))
+              .fontColor(this.c.bubbleUserText)
+          }
+          if (b.attachments.length > 0) {
+            this.AttachmentGrid(b.attachments, b.text !== '')
+          }
           if (b.userOptimistic) {
             Text(this.statusText(b.userStatus))
               .fontSize(fs(10))
@@ -1457,6 +1472,69 @@ struct ChatPage {
     // priorityGesture 与 agent 气泡保持一致（user 气泡是纯 Text 无内部长按冲突，但统一写法）
     .priorityGesture(LongPressGesture({ duration: 500, repeat: false })
       .onAction(() => { this.openMessageMenu(b); }))
+  }
+
+  // 用户附件渲染（对照 web MessageAttachments.tsx）：images（图片 && previewUrl 非空）→ FlexWrap 缩略图网格
+  //   （点击 ImagePreviewSheet 放大）；files（其余）→ 文件卡片（图标 + 文件名 + 大小）。两组分开渲染。
+  private imageAttachments(attachments: AttachmentMetadata[]): AttachmentMetadata[] {
+    return attachments.filter((m: AttachmentMetadata): boolean => isImageMimeType(m.mimeType) && m.previewUrl !== '');
+  }
+  private fileAttachments(attachments: AttachmentMetadata[]): AttachmentMetadata[] {
+    return attachments.filter((m: AttachmentMetadata): boolean => !isImageMimeType(m.mimeType) || m.previewUrl === '');
+  }
+  @Builder
+  private AttachmentGrid(attachments: AttachmentMetadata[], hasText: boolean) {
+    Column({ space: 6 }) {
+      if (this.imageAttachments(attachments).length > 0) {
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(this.imageAttachments(attachments), (meta: AttachmentMetadata) => {
+            Image(meta.previewUrl)
+              .width(96)
+              .height(96)
+              .objectFit(ImageFit.Cover)
+              .borderRadius(8)
+              .draggable(false)
+              .margin({ right: 6, bottom: 6 })
+              .onClick(() => {
+                this.attachmentPreviewSrc = meta.previewUrl;
+                this.attachmentPreviewOpen = true;
+              })
+          }, (meta: AttachmentMetadata) => meta.id)
+        }
+        .width('100%')
+      }
+      if (this.fileAttachments(attachments).length > 0) {
+        Column({ space: 4 }) {
+          ForEach(this.fileAttachments(attachments), (meta: AttachmentMetadata) => {
+            Row({ space: 8 }) {
+              Text(this.attachmentIcon(meta.mimeType))
+                .fontSize(fs(16))
+              Column() {
+                Text(meta.filename)
+                  .fontSize(fs(13))
+                  .fontColor(this.c.bubbleUserText)
+                  .maxLines(1)
+                  .textOverflow(TextOverflow.Ellipsis)
+                Text(formatFileSize(meta.size))
+                  .fontSize(fs(11))
+                  .fontColor('rgba(255,255,255,0.75)')
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .borderRadius(8)
+            .backgroundColor('rgba(255,255,255,0.15)')
+            .alignItems(VerticalAlign.Center)
+          }, (meta: AttachmentMetadata) => meta.id)
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .margin({ top: hasText ? 8 : 0 })
+    .alignItems(HorizontalAlign.Start)
   }
 
   // agent 文本气泡（靠左、表面色，Markdown 渲染）+ 时间（HH:mm，气泡下方左对齐）+ 元数据脚注（可折叠）
@@ -2139,6 +2217,13 @@ struct ChatPage {
           onRenamed: (name: string) => { this.sessionTitle = name; },
           onArchived: () => { this.isActive = false; },
           onDeleted: () => { if (this.navPathStack !== null) { this.navPathStack.pop(); } }
+        })
+
+        // 用户气泡图片全屏预览（自带 bindSheet + 双指缩放，复用 markdown/生成图片同款；open=false 不渲染）
+        ImagePreviewSheet({
+          src: this.attachmentPreviewSrc,
+          open: this.attachmentPreviewOpen,
+          onClose: (): void => { this.attachmentPreviewOpen = false; }
         })
       }
       .width('100%')

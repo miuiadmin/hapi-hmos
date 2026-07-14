@@ -1,6 +1,7 @@
-import { pickStr, pickNum, pickObj } from './Types';
+import { pickStr, pickNum, pickObj, AttachmentMetadata } from './Types';
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
 import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
+import { parseAttachmentsFromContent } from '../chat/AttachmentFormat';
 import { t } from '../i18n/Translate';
 
 // Hapi 对话消息（对齐 shared/src/schemas.ts DecryptedMessage + web/src/chat 归一化）
@@ -38,6 +39,11 @@ export class ChatMessage {
   //   reducerCliOutput 据此（AND 标签）门控产出 cli-output ChatBlock。由 content 信封 meta.sentFrom 解析。
   sentFrom: string = '';
 
+  // user 消息的附件（对齐 web content.content.attachments；agent/event 为空）。
+  //   仅 user 侧（agent 产图走 generated-image 块、改文件走 tool-call）。parseMessage 从 inner.attachments 解析；
+  //   乐观消息在发送端填 previewUrl（data: URI），使「刚发的图」立即在历史里显缩略图。Reducer 透传到 user-text 块。
+  attachments: AttachmentMetadata[] = [];
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -71,6 +77,7 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.usage = m.usage;              // 浅拷贝引用：UsageData 解析后不可变，无需深拷
   c.model = m.model;
   c.sentFrom = m.sentFrom;
+  c.attachments = m.attachments;    // 浅拷贝引用：AttachmentMetadata 解析后不可变，无需深拷
   return c;
 }
 
@@ -544,6 +551,7 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
 
   if (normalizedRole === 'user') {
     m.text = inner !== null ? pickStr(inner, 'text') : '';
+    m.attachments = inner !== null ? parseAttachmentsFromContent(inner['attachments']) : [];
     m.status = m.invokedAt === 0 ? 'queued' : 'sent';
   } else if (normalizedRole === 'agent') {
     m.text = extractAgentText(inner);

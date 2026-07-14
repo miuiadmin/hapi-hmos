@@ -42,6 +42,7 @@ import networkBannerResolveTest from './NetworkBannerResolve.test';
 import messageMetadataTest from './MessageMetadata.test';
 import statusBarStatusTest from './StatusBarStatus.test';
 import codexReviewTest from './CodexReview.test';
+import attachmentFormatTest from './AttachmentFormat.test';
 
 export default function testsuite() {
   diffTest();
@@ -85,4 +86,5 @@ export default function testsuite() {
   messageMetadataTest();
   statusBarStatusTest();
   codexReviewTest();
+  attachmentFormatTest();
 }

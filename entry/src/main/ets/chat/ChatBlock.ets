@@ -4,6 +4,7 @@
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
 import { UsageData } from '../models/Message';
+import { AttachmentMetadata } from '../models/Types';
 import { CodexReview } from './CodexReview';
 
 export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review';
@@ -48,6 +49,11 @@ export class ChatBlock {
   // 仅 user-text：携带乐观发送态（迁移到 blocks 模型后仍需显示「发送中/排队中/失败」）
   userOptimistic: boolean = false;
   userStatus: string = '';                   // ''|'sending'|'queued'|'failed'
+
+  // 仅 user-text：用户附件（对照 web MessageAttachments）。reducer 从 ChatMessage.attachments 透传；
+  //   图片附件（previewUrl 非空）→ 缩略图网格（点击 ImagePreviewSheet 放大）；其余 → 文件卡片。
+  //   纯图消息（text 空）也产出 user-text 块以渲染附件。
+  attachments: AttachmentMetadata[] = [];
 
   // 渲染标记：本块前是否插入跨日日期分隔（首条或与上一块不同日）。
   //   由 ChatPage.recomputeBlocks 在 reducer 产出后盖戳（纯序列判定，无 now 依赖）；
@@ -102,6 +108,7 @@ export class ChatBlock {
     b.id = id;
     b.createdAt = createdAt;
     b.text = text;
+    b.attachments = [];
     return b;
   }
 
