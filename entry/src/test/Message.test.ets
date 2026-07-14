@@ -613,6 +613,34 @@ export default function messageTest(): void {
     });
   });
 
+  describe('parseMessage — system/turn_duration event（对照 normalizeAgent.ts:473）', () => {
+    it('extracts turnDurationMs + targetMessageId from a turn_duration system event', 0, () => {
+      const m: ChatMessage = parse('{"id":"e1","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"system","subtype":"turn_duration","durationMs":1500,"messageId":"a1:0"}}}');
+      expect(m.role).assertEqual('event');
+      expect(m.turnDurationMs).assertEqual(1500);
+      expect(m.turnDurationTargetId).assertEqual('a1:0');
+    });
+    it('accepts the hyphenated subtype turn-duration（蛇形/连字符兼容）', 0, () => {
+      const m: ChatMessage = parse('{"id":"e2","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"system","subtype":"turn-duration","durationMs":2345,"messageId":"msg_x"}}}');
+      expect(m.turnDurationMs).assertEqual(2345);
+      expect(m.turnDurationTargetId).assertEqual('msg_x');
+    });
+    it('leaves turnDurationMs<0 for other system events (api_error 等)', 0, () => {
+      const m: ChatMessage = parse('{"id":"e3","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"system","subtype":"api_error","message":"boom"}}}');
+      expect(m.turnDurationMs).assertEqual(-1);
+      expect(m.turnDurationTargetId).assertEqual('');
+    });
+    it('messageId 缺失 → targetId=""；durationMs 缺失 → 0（pickNum 默认，对齐上游 ??0）', 0, () => {
+      const m: ChatMessage = parse('{"id":"e4","createdAt":1,"content":{"role":"event",' +
+        '"content":{"type":"system","subtype":"turn_duration"}}}');
+      expect(m.turnDurationMs).assertEqual(0);
+      expect(m.turnDurationTargetId).assertEqual('');
+    });
+  });
+
   describe('cloneMessage — usage', () => {
     it('preserves the usage reference (shallow copy)', 0, () => {
       const m = makeMsg('a', '', false, '');

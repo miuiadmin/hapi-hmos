@@ -168,6 +168,7 @@ export const zhCN: Record<string, string> = {
   'chat.noMessagesToExport': '暂无可导出的消息',
   'chat.exportTitle': '导出对话',
   'chat.defaultTitle': '对话',
+  'session.item.worktree': '工作树',
   'chat.exportUser': '{time} 用户',
   'chat.exportAssistant': '{time} 助手',
   'chat.unreadDivider': '以下为未读',
@@ -201,6 +202,7 @@ export const zhCN: Record<string, string> = {
 
   // —— 消息元数据脚注（meta）——
   'meta.invoke': '调用 {time}',
+  'meta.duration': '耗时: {sec}s',
   'meta.model': '{model}',
   'meta.tier': '{tier} 档',
   'meta.usage': '{total} tokens（入 {input} / 出 {output}）',

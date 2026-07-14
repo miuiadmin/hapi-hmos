@@ -10,7 +10,7 @@
 //   - 分页（早于最旧消息的权限不显示）、顺序保序、空输入
 
 import { describe, it, expect } from '@ohos/hypium';
-import { reduceChatBlocks } from '../main/ets/chat/Reducer';
+import { reduceChatBlocks, applyTurnDuration } from '../main/ets/chat/Reducer';
 import { ChatBlock, ChatToolCall } from '../main/ets/chat/ChatBlock';
 import { ChatMessage } from '../main/ets/models/Message';
 import { NormalizedAgentContent } from '../main/ets/chat/NormalizedContent';
@@ -44,6 +44,18 @@ function eventMsg(id: string, createdAt: number): ChatMessage {
   m.role = 'event';
   m.createdAt = createdAt;
   m.status = 'sent';
+  return m;
+}
+
+// turn-duration event（role='event' + 携带耗时/目标 id；对照 normalizeAgent.ts:473 system/turn_duration）。
+function turnDurationEvent(id: string, createdAt: number, targetId: string, durationMs: number): ChatMessage {
+  const m: ChatMessage = new ChatMessage();
+  m.id = id;
+  m.role = 'event';
+  m.createdAt = createdAt;
+  m.status = 'sent';
+  m.turnDurationMs = durationMs;
+  m.turnDurationTargetId = targetId;
   return m;
 }
 
@@ -387,6 +399,88 @@ export default function reducerTest(): void {
       expect(blocks[0].text).assertEqual('intro');
       expect(blocks[1].kind).assertEqual('generated-image');
       expect(blocks[1].id).assertEqual('a1:1');   // 第二块 idx=1
+    });
+  });
+
+  describe('applyTurnDuration — turn 耗时回填（对照 reducerTimeline.ts:443-468）', () => {
+    // 直接构造 ChatBlock 测三段匹配优先级（reduceChatBlocks 集成见下）。
+    function agentText(id: string): ChatBlock {
+      return ChatBlock.agentText(id, 0, 'x', 0, '', null);
+    }
+    function toolBlock(blockId: string, toolId: string): ChatBlock {
+      const b: ChatBlock = new ChatBlock();
+      b.kind = 'tool-call';
+      b.id = blockId;
+      b.tool = new ChatToolCall();
+      b.tool.id = toolId;
+      return b;
+    }
+
+    it('targetId 精确匹配 → 回填该块', 0, () => {
+      const blocks: ChatBlock[] = [agentText('m1:0')];
+      applyTurnDuration(blocks, 'm1:0', 1500);
+      expect(blocks[0].durationMs).assertEqual(1500);
+    });
+    it('targetId 前缀匹配（id.startsWith(targetId+\\':\\')) → 回填最后一个命中块', 0, () => {
+      const blocks: ChatBlock[] = [agentText('m1:0'), agentText('m1:1')];
+      applyTurnDuration(blocks, 'm1', 2300);
+      expect(blocks[0].durationMs).assertEqual(-1);     // 非最后命中，不动
+      expect(blocks[1].durationMs).assertEqual(2300);   // 最后命中块
+    });
+    it('id 未命中 → tool-call 块按 tool.id 命中回填', 0, () => {
+      // b.id='use_1' 不等 'tool_abc'、不以 'tool_abc:' 开头；step1 落空，step2 tool.id 命中。
+      const blocks: ChatBlock[] = [toolBlock('use_1', 'tool_abc')];
+      applyTurnDuration(blocks, 'tool_abc', 4200);
+      expect(blocks[0].durationMs).assertEqual(4200);
+    });
+    it('targetId 未命中任何块 → 回退到最后一个 duration-target 块', 0, () => {
+      const blocks: ChatBlock[] = [agentText('m1:0'), agentText('m1:1')];
+      applyTurnDuration(blocks, 'nonexistent', 9000);
+      expect(blocks[0].durationMs).assertEqual(-1);
+      expect(blocks[1].durationMs).assertEqual(9000);   // 回退到最后一个 target 块
+    });
+    it('targetId 为空 → 回退到最后一个 duration-target 块', 0, () => {
+      const blocks: ChatBlock[] = [agentText('m1:0')];
+      applyTurnDuration(blocks, '', 1000);
+      expect(blocks[0].durationMs).assertEqual(1000);
+    });
+    it('无 duration-target 块（仅 user-text）→ 空操作', 0, () => {
+      const blocks: ChatBlock[] = [ChatBlock.userText('u1', 0, 'hi')];
+      applyTurnDuration(blocks, '', 1000);
+      expect(blocks[0].durationMs).assertEqual(-1);     // user-text 不被回填
+    });
+    it('空块数组 → 空操作（不抛）', 0, () => {
+      const blocks: ChatBlock[] = [];
+      applyTurnDuration(blocks, 'm1:0', 1500);
+      expect(blocks.length).assertEqual(0);
+    });
+  });
+
+  describe('reduceChatBlocks — turn-duration event 集成', () => {
+    it('agent turn 后的 turn-duration event 回填目标 agent-text 块耗时', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 100, [textBlock('hi')]),
+        turnDurationEvent('e1', 200, 'a1:0', 1500)
+      ], null);
+      expect(blocks.length).assertEqual(1);            // event 不产块
+      expect(blocks[0].durationMs).assertEqual(1500);   // 回填到 a1:0
+    });
+    it('targetId 为空的 event 回填到最后一个 agent-text 块', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 100, [textBlock('first'), textBlock('last')]),
+        turnDurationEvent('e1', 200, '', 3200)
+      ], null);
+      expect(blocks.length).assertEqual(2);
+      expect(blocks[0].durationMs).assertEqual(-1);
+      expect(blocks[1].durationMs).assertEqual(3200);
+    });
+    it('turnDurationMs<0 的普通 event 不回填、不产块', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 100, [textBlock('hi')]),
+        eventMsg('e1', 200)
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].durationMs).assertEqual(-1);     // 默认哨兵，未被改
     });
   });
 }

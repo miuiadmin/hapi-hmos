@@ -95,6 +95,7 @@ struct ChatPage {
   @Local todos: TodoItem[] = [];                 // 会话内待办清单（agent TodoWrite 上报；非空时消息列表上方渲染 TodoPanel）
   @Local model: string = '';                     // 会话 model（ContextStatusBar 算预算上限用；首屏/SSE 播种）
   @Local flavor: string = '';                    // 会话 flavor（claude/codex/…；getContextBudgetTokens 门控 + 配置 overlay 门控）
+  @Local worktreeBranch: string = '';            // 会话 worktree git 分支（metadata.worktree.branch；标题副标题显示）
   @Local effort: string = '';                    // claude 努力度（/effort；首屏/SSE 播种；SessionConfigOverlay 用）
   @Local modelReasoningEffort: string = '';      // codex/opencode 推理努力（/model-reasoning-effort；首屏/SSE 播种）
   @Local permissionMode: string = '';            // 权限模式（/permission-mode；首屏/SSE 播种）
@@ -372,14 +373,16 @@ struct ChatPage {
   //   list 内，complete 抑制 / cleared 清空逻辑均可见）。仅 codex 由 StatusBar.ets shouldShowGoalChip 门控显隐。
   private get threadGoal(): ThreadGoal | null { return getLatestThreadGoal(this.messages); }
 
-  // 标题栏副标题：agent 名 + model 显示名（对照上游 AgentFlavorIcon 头部上下文）。
-  //   flavor 未播种（''）→ ''（无副标题行，标题回退单行原行为）；model 空 → 仅 agent 名。
+  // 标题栏副标题：agent 名 + model 显示名 + worktree 分支（对照上游 SessionHeader 副标题多 span：flavor/model/worktree）。
+  //   鸿蒙简化为单行（上游 flex-wrap 多 span），长则省略号截断。flavor 未播种（''）→ ''（无副标题行）。
   private get chatSubtitle(): string {
     if (this.flavor === '') { return ''; }
     const agent: string = agentDisplayName(this.flavor);
     const model: string = modelDisplayName(this.flavor, this.model);
-    if (model === '') { return agent; }
-    return `${agent} · ${model}`;
+    let s: string = agent;
+    if (model !== '') { s = `${s} · ${model}`; }
+    if (this.worktreeBranch !== '') { s = `${s} · ${t('session.item.worktree')}: ${this.worktreeBranch}`; }
+    return s;
   }
 
   // 标题栏（NavDestinationCustomTitle）：flavor 色块徽章 + 标题 + 副标题。
@@ -501,6 +504,7 @@ struct ChatPage {
         this.todos = session.todos;
         this.model = session.model;
         this.flavor = session.flavor;
+        this.worktreeBranch = session.worktreeBranch;
         this.effort = session.effort;
         this.permissionMode = session.permissionMode;
         this.collaborationMode = session.collaborationMode;
@@ -1649,7 +1653,7 @@ struct ChatPage {
   // agent-text 气泡的元数据标签：model 用消息自身（b.model），缺失（REST 历史无 data.model）回退会话 model。
   private metaForBlock(b: ChatBlock): string[] {
     const effectiveModel: string = b.model !== '' ? b.model : this.model;
-    return buildMessageMetadataLabels(b.invokedAt, b.usage, effectiveModel);
+    return buildMessageMetadataLabels(b.invokedAt, b.durationMs, b.usage, effectiveModel);
   }
 
   // 空态：无消息且非生成中

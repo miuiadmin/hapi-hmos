@@ -83,6 +83,10 @@ export class ChatBlock {
   usage: UsageData | null = null;
   model: string = '';
   invokedAt: number = 0;
+  // turn 耗时（对照 web block.durationMs）：-1 = 无；>=0 = turn-duration event 回填的毫秒。
+  //   仅 agent-text/reasoning/tool-call/cli-output/codex-review 块被回填（Reducer.applyTurnDuration 据
+  //   targetMessageId 匹配，对照 reducerTimeline.ts:443-468）。MessageMetadata 据此显 Duration 脚注。
+  durationMs: number = -1;
 
   // 仅 codex-review：Codex agent 偶把 review JSON 当文本发出；parse 嗅探命中后携带解析结果
   //   （对照 web CodexReviewBlock）。reducer 从 NormalizedAgentContent.review 映射；null = 非 review 块。

@@ -12,6 +12,7 @@ import { ChatMessage } from '../models/Message';
 import { AgentState } from './AgentState';
 import {
   ChatBlock,
+  ChatBlockKind,
   ChatToolCall,
   ToolPermission,
   PermissionEntry,
@@ -201,7 +202,13 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
       }
       continue;
     }
-    // event 消息：MVP 不渲染
+    // event 消息：不产 block；turn-duration event 回填目标块耗时（对照 reducerTimeline.ts:443-468）。
+    if (msg.role === 'event') {
+      if (msg.turnDurationMs >= 0) {
+        applyTurnDuration(blocks, msg.turnDurationTargetId, msg.turnDurationMs);
+      }
+      continue;
+    }
     if (msg.role !== 'agent') {
       continue;
     }
@@ -304,4 +311,50 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
 
   // 合并相邻 cli-output 块（command-name 块 + 紧随 stdout 块）——对照 web mergeCliOutputBlocks
   return mergeCliOutputBlocks(blocks);
+}
+
+// ===== turn-duration 回填（对照 web reducerTimeline.ts:443-468）=====
+// event/turn_duration 消息带 targetMessageId + durationMs，需回填到本次 agent turn 产出的块。
+// 回填后 MessageMetadata 脚注据此显 Duration。单趟遍历可行：event 在其 agent turn 之后到达，
+// 目标块已在 blocks 中。
+
+// 可挂耗时的块类型（对照 reducerTimeline isDurationTarget）：agent 正文 / 推理 / review / cli 输出 / 工具调用。
+export function isDurationTargetKind(kind: ChatBlockKind): boolean {
+  return kind === 'agent-text' || kind === 'reasoning' || kind === 'codex-review' ||
+    kind === 'cli-output' || kind === 'tool-call';
+}
+
+// 回填目标块耗时。匹配优先级（与上游一致）：
+//   1. targetId 非空 → block.id 精确或 id.startsWith(targetId+':')（agent-text 的 `${msgId}:${idx}` 前缀命中）；
+//   2. targetId 非空且上未命中 → tool-call 块 tool.id === targetId；
+//   3. targetId 空 / 上都未命中 → 最后一个 duration-target 块。
+// 反向手写查找（ArkTS 无 findLastIndex）。
+export function applyTurnDuration(blocks: ChatBlock[], targetId: string, durationMs: number): void {
+  if (blocks.length === 0) {
+    return;
+  }
+  if (targetId !== '') {
+    const prefix = targetId + ':';
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b: ChatBlock = blocks[i];
+      if (isDurationTargetKind(b.kind) && (b.id === targetId || b.id.startsWith(prefix))) {
+        b.durationMs = durationMs;
+        return;
+      }
+    }
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b: ChatBlock = blocks[i];
+      if (b.kind === 'tool-call' && b.tool !== null && b.tool.id === targetId) {
+        b.durationMs = durationMs;
+        return;
+      }
+    }
+  }
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b: ChatBlock = blocks[i];
+    if (isDurationTargetKind(b.kind)) {
+      b.durationMs = durationMs;
+      return;
+    }
+  }
 }

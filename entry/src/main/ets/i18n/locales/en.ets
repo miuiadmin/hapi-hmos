@@ -167,6 +167,7 @@ export const en: Record<string, string> = {
   'chat.noMessagesToExport': 'No messages to export',
   'chat.exportTitle': 'Export conversation',
   'chat.defaultTitle': 'Conversation',
+  'session.item.worktree': 'Worktree',
   'chat.exportUser': '{time} User',
   'chat.exportAssistant': '{time} Assistant',
   'chat.unreadDivider': 'Unread below',
@@ -200,6 +201,7 @@ export const en: Record<string, string> = {
 
   // —— Message metadata footer (meta) ——
   'meta.invoke': 'Invoked {time}',
+  'meta.duration': 'Duration: {sec}s',
   'meta.model': '{model}',
   'meta.tier': '{tier} tier',
   'meta.usage': '{total} tokens (in {input} / out {output})',

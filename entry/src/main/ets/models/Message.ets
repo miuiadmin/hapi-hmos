@@ -50,6 +50,13 @@ export class ChatMessage {
   goal: ThreadGoal | null = null;
   goalCleared: boolean = false;
 
+  // event 消息携带的 turn-duration（对齐 web role:'event' 的 system/turn_duration 事件）。
+  //   parseMessage 从 inner.type==='system' && subtype==='turn_duration' 解析；turnDurationMs<0 = 非该事件。
+  //   turnDurationTargetId = data.messageId（Reducer 回填目标 block 的键，对照 reducerTimeline.ts:443-468）。
+  //   仅 event 侧；user/agent 不用。
+  turnDurationMs: number = -1;
+  turnDurationTargetId: string = '';
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -86,6 +93,8 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.attachments = m.attachments;    // 浅拷贝引用：AttachmentMetadata 解析后不可变，无需深拷
   c.goal = m.goal;                  // 浅拷贝引用：ThreadGoal 解析后不可变，无需深拷
   c.goalCleared = m.goalCleared;
+  c.turnDurationMs = m.turnDurationMs;
+  c.turnDurationTargetId = m.turnDurationTargetId;
   return c;
 }
 
@@ -583,6 +592,15 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
       m.goal = goalObj !== null ? parseThreadGoal(goalObj) : null;
     } else if (innerType === 'thread_goal_cleared' || innerType === 'thread-goal-cleared') {
       m.goalCleared = true;
+    } else if (innerType === 'system') {
+      // system 信封事件（对照 normalizeAgent.ts:457/473/488/505 data.type==='system' + subtype）：
+      //   turn_duration（turn 耗时；data.messageId → 目标 block 回填，对照 reducerTimeline.ts:443-468）。
+      //   api_error / compact_boundary 等暂不渲染（留 follow-up）。蛇形/连字符 subtype 兼容。
+      const subtype: string = inner !== null ? pickStr(inner, 'subtype') : '';
+      if (subtype === 'turn_duration' || subtype === 'turn-duration') {
+        m.turnDurationMs = pickNum(inner, 'durationMs');
+        m.turnDurationTargetId = pickStr(inner, 'messageId');
+      }
     }
   }
   return m;

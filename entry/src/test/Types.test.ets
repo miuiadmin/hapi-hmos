@@ -225,6 +225,27 @@ export default function typesTest(): void {
       expect(s.seq).assertEqual(0);
       expect(s.agentStateRaw === null).assertTrue();
     });
+
+    it('parses metadata.worktree.branch（对照 shared WorktreeMetadata.branch）', 0, () => {
+      const s = parseSessionDetail(
+        '{"session":{"id":"s1","metadata":{"flavor":"claude","path":"/repo",' +
+        '"worktree":{"branch":"feat/shipping","basePath":"/repo/.wt/abc"}}}}');
+      expect(s.flavor).assertEqual('claude');
+      expect(s.path).assertEqual('/repo');
+      expect(s.worktreeBranch).assertEqual('feat/shipping');
+    });
+
+    it('worktreeBranch 为空当 metadata 无 worktree（普通会话）', 0, () => {
+      const s = parseSessionDetail(
+        '{"session":{"id":"s1","metadata":{"flavor":"codex","path":"/repo"}}}');
+      expect(s.worktreeBranch).assertEqual('');
+    });
+
+    it('worktreeBranch 为空当 worktree.branch 缺失', 0, () => {
+      const s = parseSessionDetail(
+        '{"session":{"id":"s1","metadata":{"worktree":{"basePath":"/r/.wt/x"}}}}');
+      expect(s.worktreeBranch).assertEqual('');
+    });
   });
 
   describe('parseMachinesResponse', () => {
