@@ -23,6 +23,10 @@
     {
       "name": "permission_vibrate_reason",
       "value": "发送消息、删除会话等关键交互的触感反馈（短震动）"
+    },
+    {
+      "name": "permission_network_info_reason",
+      "value": "检测设备网络在线状态，离线时提示检查网络连接"
     }
   ]
 }

@@ -38,6 +38,7 @@ import spawnErrorTest from './SpawnError.test';
 import hapticsTest from './Haptics.test';
 import agentFlavorTest from './AgentFlavor.test';
 import linkSchemesTest from './LinkSchemes.test';
+import networkBannerResolveTest from './NetworkBannerResolve.test';
 
 export default function testsuite() {
   diffTest();
@@ -77,4 +78,5 @@ export default function testsuite() {
   hapticsTest();
   agentFlavorTest();
   linkSchemesTest();
+  networkBannerResolveTest();
 }

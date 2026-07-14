@@ -408,6 +408,7 @@ export const en: Record<string, string> = {
   // —— Connection / reasoning / queued / checklist ——
   'connection.reconnecting': 'Reconnecting…',
   'connection.disconnected': 'Disconnected — real-time updates paused',
+  'connection.deviceOffline': 'Device offline — check your network',
   'sync.syncing': 'Syncing…',
   'reasoning.label': 'Reasoning',
   'queued.count': 'Queued {count}',

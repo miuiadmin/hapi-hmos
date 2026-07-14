@@ -18,6 +18,7 @@ import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
 import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
+import { DeviceNetworkService } from '../services/DeviceNetworkService';
 import { shouldResync } from '../chat/SyncResync';
 
 const DOMAIN: number = 0x0000;
@@ -71,6 +72,9 @@ export default class EntryAbility extends UIAbility {
     await SessionListStatusModeService.init();
     // 触感反馈开关须在 loadContent 前从持久化读回（各交互 tap 即用正确 enabled，避默认开闪一下）
     await HapticService.init();
+    // 设备网络探测须在 loadContent 前注册（hasDefaultNet 初始探测 + netAvailable/netUnavailable 监听），
+    //   ConnectionBanner 首帧即用正确在线态（避乐观默认在线→离线闪烁）
+    await DeviceNetworkService.init();
     // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
     await getGeneratedImageCache().initialize(this.context);
     // 按登录态选首屏

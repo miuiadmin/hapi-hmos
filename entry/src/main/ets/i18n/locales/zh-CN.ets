@@ -409,6 +409,7 @@ export const zhCN: Record<string, string> = {
   // —— 连接横幅 / 推理 / 排队 / 清单 ——
   'connection.reconnecting': '正在重新连接…',
   'connection.disconnected': '连接已断开，实时更新暂停',
+  'connection.deviceOffline': '设备已离线，请检查网络连接',
   'sync.syncing': '正在同步…',
   'reasoning.label': '思考过程',
   'queued.count': '排队中 {count}',
