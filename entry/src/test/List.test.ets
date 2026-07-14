@@ -44,6 +44,7 @@ import statusBarStatusTest from './StatusBarStatus.test';
 import codexReviewTest from './CodexReview.test';
 import attachmentFormatTest from './AttachmentFormat.test';
 import codexDiffTest from './CodexDiff.test';
+import statusBarChipsTest from './StatusBarChips.test';
 
 export default function testsuite() {
   diffTest();
@@ -89,4 +90,5 @@ export default function testsuite() {
   codexReviewTest();
   attachmentFormatTest();
   codexDiffTest();
+  statusBarChipsTest();
 }

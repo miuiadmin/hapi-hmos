@@ -2053,7 +2053,15 @@ struct ChatPage {
         // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
         SyncingBanner()
         // 顶部常驻状态行（色点 + 文案：离线/权限待批/思考动词/在线；SSE/net 由 StatusBar 自管）
-        StatusBar({ isThinking: this.isThinking, agentState: this.agentState })
+        StatusBar({
+          isThinking: this.isThinking,
+          agentState: this.agentState,
+          permissionMode: this.permissionMode,
+          collaborationMode: this.collaborationMode,
+          modelReasoningEffort: this.modelReasoningEffort,
+          model: this.model,
+          flavor: this.flavor
+        })
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
