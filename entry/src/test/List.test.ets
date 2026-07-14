@@ -40,6 +40,7 @@ import agentFlavorTest from './AgentFlavor.test';
 import linkSchemesTest from './LinkSchemes.test';
 import networkBannerResolveTest from './NetworkBannerResolve.test';
 import messageMetadataTest from './MessageMetadata.test';
+import statusBarStatusTest from './StatusBarStatus.test';
 
 export default function testsuite() {
   diffTest();
@@ -81,4 +82,5 @@ export default function testsuite() {
   linkSchemesTest();
   networkBannerResolveTest();
   messageMetadataTest();
+  statusBarStatusTest();
 }

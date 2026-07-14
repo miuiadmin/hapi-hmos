@@ -13,6 +13,7 @@ import { TodoPanel } from '../components/TodoPanel';
 import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SyncingBanner } from '../components/SyncingBanner';
+import { StatusBar } from '../components/StatusBar';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { DateDivider } from '../components/DateDivider';
 import { ChatBlock } from '../chat/ChatBlock';
@@ -1972,6 +1973,8 @@ struct ChatPage {
         ConnectionBanner()
         // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
         SyncingBanner()
+        // 顶部常驻状态行（色点 + 文案：离线/权限待批/思考动词/在线；SSE/net 由 StatusBar 自管）
+        StatusBar({ isThinking: this.isThinking, agentState: this.agentState })
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
