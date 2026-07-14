@@ -26,6 +26,7 @@ import { buildMessageMetadataLabels } from '../chat/MessageMetadata';
 import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands, mergeSlashCommands, serverCommandsToSlash } from '../chat/SlashCommands';
 import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skills';
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
+import { getLatestThreadGoal } from '../chat/ThreadGoal';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
 import { SkillsMenu } from '../components/SkillsMenu';
@@ -36,7 +37,7 @@ import { FilesRouteParams } from './FilesPage';
 import { TerminalRouteParams } from './TerminalPage';
 import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName } from '../models/Types';
+import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName, ThreadGoal } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -364,6 +365,11 @@ struct ChatPage {
     if (u === null || u.cacheRead <= 0) { return ''; }
     return `cache ${formatTokenCount(u.cacheRead)}`;
   }
+
+  // 最新有效 thread-goal（对照 reducer.ts getLatestThreadGoal）：读 @Local messages 派生，同
+  //   latestUsage 范式——messages 整体重赋值即重算，免 seed/live-sync 三点接线（乐观 user 消息已在
+  //   list 内，complete 抑制 / cleared 清空逻辑均可见）。仅 codex 由 StatusBar.ets shouldShowGoalChip 门控显隐。
+  private get threadGoal(): ThreadGoal | null { return getLatestThreadGoal(this.messages); }
 
   // 标题栏副标题：agent 名 + model 显示名（对照上游 AgentFlavorIcon 头部上下文）。
   //   flavor 未播种（''）→ ''（无副标题行，标题回退单行原行为）；model 空 → 仅 agent 名。
@@ -2060,7 +2066,8 @@ struct ChatPage {
           collaborationMode: this.collaborationMode,
           modelReasoningEffort: this.modelReasoningEffort,
           model: this.model,
-          flavor: this.flavor
+          flavor: this.flavor,
+          threadGoal: this.threadGoal
         })
         if (this.isLoading && this.messages.length === 0) {
           Column() {

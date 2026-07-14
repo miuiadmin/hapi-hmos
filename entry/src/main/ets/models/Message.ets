@@ -1,4 +1,4 @@
-import { pickStr, pickNum, pickObj, AttachmentMetadata } from './Types';
+import { pickStr, pickNum, pickObj, AttachmentMetadata, ThreadGoal, parseThreadGoal } from './Types';
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
 import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
 import { parseAttachmentsFromContent } from '../chat/AttachmentFormat';
@@ -44,6 +44,12 @@ export class ChatMessage {
   //   乐观消息在发送端填 previewUrl（data: URI），使「刚发的图」立即在历史里显缩略图。Reducer 透传到 user-text 块。
   attachments: AttachmentMetadata[] = [];
 
+  // event 消息携带的 thread-goal（对齐 web role:'event' 的 thread-goal-updated/cleared 事件）。
+  //   parseMessage 从 inner.type==='thread_goal_updated' 解析 goal；goalCleared 标记 cleared 事件。
+  //   仅 event 侧；user/agent 为 null/false。chat/ThreadGoal.ets getLatestThreadGoal 据此取最新有效 goal。
+  goal: ThreadGoal | null = null;
+  goalCleared: boolean = false;
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -78,6 +84,8 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.model = m.model;
   c.sentFrom = m.sentFrom;
   c.attachments = m.attachments;    // 浅拷贝引用：AttachmentMetadata 解析后不可变，无需深拷
+  c.goal = m.goal;                  // 浅拷贝引用：ThreadGoal 解析后不可变，无需深拷
+  c.goalCleared = m.goalCleared;
   return c;
 }
 
@@ -568,6 +576,13 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     if (innerType === 'token_count' || innerType === 'token-count') {
       const infoObj: Record<string, Object> | null = inner !== null ? pickObj(inner, 'info') : null;
       m.usage = normalizeCodexTokenUsage(infoObj, inner);
+    } else if (innerType === 'thread_goal_updated' || innerType === 'thread-goal-updated') {
+      // thread-goal-updated event：inner.goal 与 token_count 的 inner.info 同层（对照 normalizeAgent.ts:651）。
+      //   蛇形/连字符 type 兼容；goal 解析失败（缺字段/非法 status）→ null，等同无 goal 事件。
+      const goalObj: Record<string, Object> | null = inner !== null ? pickObj(inner, 'goal') : null;
+      m.goal = goalObj !== null ? parseThreadGoal(goalObj) : null;
+    } else if (innerType === 'thread_goal_cleared' || innerType === 'thread-goal-cleared') {
+      m.goalCleared = true;
     }
   }
   return m;

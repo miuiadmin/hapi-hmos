@@ -34,7 +34,8 @@ import {
   parseFileReadResponse,
   SessionDirEntry,
   parseSessionDirectoryResponse,
-  parseUploadFileResponse
+  parseUploadFileResponse,
+  parseThreadGoal
 } from '../main/ets/models/Types';
 
 function rec(json: string): Record<string, Object> {
@@ -556,6 +557,66 @@ export default function typesTest(): void {
       const list = parseTodoList(JSON.parse('["str",null,5,{"content":"keep"}]'));
       expect(list.length).assertEqual(1);
       expect(list[0].content).assertEqual('keep');
+    });
+  });
+
+  // ThreadGoal（codex 持久目标，对照 shared/src/schemas.ts:150-164 + normalizeAgent.ts:35-52）。
+  describe('parseThreadGoal', () => {
+    it('合法 camelCase 全字段 → 返 ThreadGoal', 0, () => {
+      const g = parseThreadGoal(rec(
+        '{"threadId":"t1","objective":"ship it","status":"active","tokenBudget":5000,"tokensUsed":1200,' +
+        '"timeUsedSeconds":42,"createdAt":1700000000000,"updatedAt":1700000001000}'));
+      expect(g).assertNotNull();
+      expect(g!.threadId).assertEqual('t1');
+      expect(g!.objective).assertEqual('ship it');
+      expect(g!.status).assertEqual('active');
+      expect(g!.tokenBudget).assertEqual(5000);
+      expect(g!.tokensUsed).assertEqual(1200);
+      expect(g!.timeUsedSeconds).assertEqual(42);
+      expect(g!.createdAt).assertEqual(1700000000000);
+      expect(g!.updatedAt).assertEqual(1700000001000);
+    });
+    it('snake_case 双向容错', 0, () => {
+      const g = parseThreadGoal(rec(
+        '{"thread_id":"t2","objective":"o","status":"complete","token_budget":1000,"tokens_used":10,' +
+        '"time_used_seconds":5,"created_at":1,"updated_at":2}'));
+      expect(g).assertNotNull();
+      expect(g!.threadId).assertEqual('t2');
+      expect(g!.tokenBudget).assertEqual(1000);
+      expect(g!.tokensUsed).assertEqual(10);
+      expect(g!.timeUsedSeconds).assertEqual(5);
+      expect(g!.createdAt).assertEqual(1);
+      expect(g!.updatedAt).assertEqual(2);
+      expect(g!.status).assertEqual('complete');
+    });
+    it('status 四值合法（active/paused/budgetLimited/complete）', 0, () => {
+      const statuses: string[] = ['active', 'paused', 'budgetLimited', 'complete'];
+      for (let i = 0; i < statuses.length; i++) {
+        const s = statuses[i];
+        const g = parseThreadGoal(rec('{"threadId":"t","objective":"o","status":"' + s + '"}'));
+        expect(g).assertNotNull();
+        expect(g!.status).assertEqual(s);
+      }
+    });
+    it('缺 threadId/objective/status 任一 → null', 0, () => {
+      expect(parseThreadGoal(rec('{"objective":"o","status":"active"}'))).assertNull();    // 无 threadId
+      expect(parseThreadGoal(rec('{"threadId":"t","status":"active"}'))).assertNull();     // 无 objective
+      expect(parseThreadGoal(rec('{"threadId":"t","objective":"o"}'))).assertNull();       // 无 status
+    });
+    it('status 非四值之一 → null', 0, () => {
+      expect(parseThreadGoal(rec('{"threadId":"t","objective":"o","status":"running"}'))).assertNull();
+      expect(parseThreadGoal(rec('{"threadId":"t","objective":"o","status":""}'))).assertNull();
+    });
+    it('tokenBudget 缺省 → -1 哨兵（上游 nullable）；其余数值缺省 0', 0, () => {
+      const g = parseThreadGoal(rec('{"threadId":"t","objective":"o","status":"active"}'));
+      expect(g).assertNotNull();
+      expect(g!.tokenBudget).assertEqual(-1);
+      expect(g!.tokensUsed).assertEqual(0);
+      expect(g!.timeUsedSeconds).assertEqual(0);
+    });
+    it('非对象输入 → null', 0, () => {
+      expect(parseThreadGoal(JSON.parse('null') as Record<string, Object>)).assertNull();
+      expect(parseThreadGoal(JSON.parse('5') as Record<string, Object>)).assertNull();
     });
   });
 

@@ -103,6 +103,21 @@ export class TodoItem {
   activeForm: string = '';       // 可空 → ''（进行时描述，本端 v1 不渲染）
 }
 
+// —— Thread goal（codex 持久目标，对齐 shared/src/schemas.ts ThreadGoal）——
+//   以 role:'event' 消息下发（thread_goal_updated/cleared），由 parseMessage 标记到 ChatMessage；
+//   chat/ThreadGoal.ets getLatestThreadGoal 反向遍历消息取最新有效 goal（含 cleared/complete 抑制），
+//   喂 StatusBar goal chip（仅 codex 显）。status ∈ {active, paused, budgetLimited, complete}。
+export class ThreadGoal {
+  threadId: string = '';          // 必填
+  objective: string = '';         // 必填（目标文本）
+  status: string = '';            // 必填；'active' | 'paused' | 'budgetLimited' | 'complete'
+  tokenBudget: number = -1;       // < 0 = null/缺省（上游 nullable；chip 不用此字段）
+  tokensUsed: number = 0;
+  timeUsedSeconds: number = 0;
+  createdAt: number = 0;          // epoch-ms
+  updatedAt: number = 0;          // epoch-ms
+}
+
 // —— 会话详情（对齐 shared/src/schemas.ts Session）——
 // 本类即上游 Session（完整会话记录）。当前只取渲染/工具卡所需字段，其余按需再补。
 export class Session {
@@ -738,6 +753,45 @@ export function parseTodoList(raw: Object | null): TodoItem[] {
     out.push(item);
   }
   return out;
+}
+
+// Thread goal 解析（对照 web normalizeAgent.ts:35-52 normalizeThreadGoal）。
+//   camelCase↔snake_case 双向容错；缺 threadId/objective/status 或 status 非四值之一 → null。
+//   tokenBudget 上游可空 → -1 哨兵；其余数值缺省 → 0（同上游 ?? 0）。
+function threadGoalStr(r: Record<string, Object>, camel: string, snake: string): string {
+  const c: string = pickStr(r, camel);
+  return c !== '' ? c : pickStr(r, snake);
+}
+function threadGoalNum(r: Record<string, Object>, camel: string, snake: string): number {
+  const c: Object = r[camel];
+  if (typeof c === 'number') { return c; }
+  const s: Object = r[snake];
+  if (typeof s === 'number') { return s; }
+  return -1;   // 缺省哨兵；调用方按需 ?? 0
+}
+export function parseThreadGoal(raw: Record<string, Object>): ThreadGoal | null {
+  const threadId: string = threadGoalStr(raw, 'threadId', 'thread_id');
+  const objective: string = pickStr(raw, 'objective');
+  const status: string = pickStr(raw, 'status');
+  if (threadId === '' || objective === '' || status === '') { return null; }
+  if (status !== 'active' && status !== 'paused'
+    && status !== 'budgetLimited' && status !== 'complete') {
+    return null;
+  }
+  const g: ThreadGoal = new ThreadGoal();
+  g.threadId = threadId;
+  g.objective = objective;
+  g.status = status;
+  g.tokenBudget = threadGoalNum(raw, 'tokenBudget', 'token_budget');   // < 0 = null（保留）
+  const used: number = threadGoalNum(raw, 'tokensUsed', 'tokens_used');
+  g.tokensUsed = used < 0 ? 0 : used;
+  const time: number = threadGoalNum(raw, 'timeUsedSeconds', 'time_used_seconds');
+  g.timeUsedSeconds = time < 0 ? 0 : time;
+  const created: number = threadGoalNum(raw, 'createdAt', 'created_at');
+  g.createdAt = created < 0 ? 0 : created;
+  const updated: number = threadGoalNum(raw, 'updatedAt', 'updated_at');
+  g.updatedAt = updated < 0 ? 0 : updated;
+  return g;
 }
 
 function parseTeamMemberList(arr: Object): TeamMember[] {

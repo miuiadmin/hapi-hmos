@@ -13,7 +13,8 @@ import {
   shouldShowReasoningChip,
   shouldShowFastChip,
   shouldShowCollaborationChip,
-  shouldShowPermissionChip
+  shouldShowPermissionChip,
+  shouldShowGoalChip
 } from '../main/ets/chat/StatusBarChips';
 import { LIGHT, DARK } from '../main/ets/theme/Palette';
 
@@ -156,6 +157,12 @@ export default function statusBarChipsTest(): void {
       expect(shouldShowPermissionChip('', 'claude')).assertFalse();
       // flavor 域不允许 → 不显（acceptEdits 不在 codex 域）
       expect(shouldShowPermissionChip('acceptEdits', 'codex')).assertFalse();
+    });
+    it('shouldShowGoalChip：仅 codex + 有 goal（hasGoal:boolean）', 0, () => {
+      expect(shouldShowGoalChip('codex', true)).assertTrue();
+      expect(shouldShowGoalChip('codex', false)).assertFalse();     // 无有效 goal
+      expect(shouldShowGoalChip('claude', true)).assertFalse();      // 仅 codex
+      expect(shouldShowGoalChip('opencode', true)).assertFalse();    // 仅 codex
     });
   });
 }

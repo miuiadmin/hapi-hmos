@@ -9,18 +9,19 @@ import {
   shouldShowFastChip,
   shouldShowCollaborationChip,
   shouldShowPermissionChip,
+  shouldShowGoalChip,
   permissionModeTone,
   toneColor,
   normalizeReasoningEffort
 } from '../chat/StatusBarChips';
-import { permissionModeDisplayName, collaborationModeDisplayName } from '../models/Types';
+import { permissionModeDisplayName, collaborationModeDisplayName, ThreadGoal } from '../models/Types';
 import { t } from '../i18n/I18nService';
 
 // 顶部常驻细状态行：左 色点 + 文案；右 模式 chip 簇。对照上游 AssistantChat/StatusBar。
 // 左侧状态优先级：设备离线/SSE 未连(灰) → 权限待批(橙) → 思考中(蓝 + 随机 vibing 动词) → 在线(绿)。
 //   省略上游 voice-connecting / backgroundTaskCount 两态（鸿蒙 ChatPage 不可达）；pulse v1 静态色点。
-// 右侧 chip 簇（对照 StatusBar.tsx:248-274 固定序，goal 留 follow-up）：
-//   reasoning(codex/opencode,灰) → fast(codex+fast,绿) → collaboration(codex+plan,蓝) → permission(非default,色调)。
+// 右侧 chip 簇（对照 StatusBar.tsx:248-274 固定序）：
+//   reasoning(codex/opencode,灰) → fast(codex+fast,绿) → goal(codex+有目标,蓝) → collaboration(codex+plan,蓝) → permission(非default,色调)。
 //
 // 自管一条独立 SSE onStateChange 监听者（与宿主页/ConnectionBanner 互不影响）；设备在线态读
 //   @Local net（@ObservedV2@Trace 应用级单例，变更即触发重渲染）。isThinking/agentState/5 模式由 ChatPage 传入。
@@ -33,6 +34,7 @@ export struct StatusBar {
   @Param modelReasoningEffort: string = '';     // codex/opencode 推理努力；reasoning chip label
   @Param model: string = '';                    // fast 判定（含 mini/fast）
   @Param flavor: string = '';                   // codex/opencode/cursor/…；门控各 chip
+  @Param threadGoal: ThreadGoal | null = null;  // 最新有效 thread-goal（ChatPage getLatestThreadGoal 派生）；仅 codex 显 goal chip
   @Local sseState: SSEConnectionState = 'idle';
   @Local net: DeviceNetworkState = getDeviceNetworkState();
   @Local vibingIndex: number = 0;   // 思考动词随机下标（aboutToAppear 滚一次；注入纯层保可测）
@@ -51,6 +53,19 @@ export struct StatusBar {
     const token: string = normalizeReasoningEffort(this.modelReasoningEffort);
     if (token === 'default') { return t('statusBar.reasoningDefault'); }
     return t('statusBar.reasoning', { effort: token });
+  }
+
+  // goal chip label（对照 StatusBar.tsx:215-218）：active→goal；budgetLimited→goal limited；
+  //   paused→goal paused；complete→goal complete。complete 仅当未被新非-goal user 消息覆盖才到此
+  //   （见 chat/ThreadGoal.ets getLatestThreadGoal 的 complete 抑制）。上游 link 色，Palette 无 link → 复用 primary。
+  private goalLabel(): string {
+    const g = this.threadGoal;
+    if (g === null) { return ''; }
+    if (g.status === 'active') { return t('statusBar.goal'); }
+    if (g.status === 'budgetLimited') { return t('statusBar.goalLimited'); }
+    if (g.status === 'paused') { return t('statusBar.goalPaused'); }
+    if (g.status === 'complete') { return t('statusBar.goalComplete'); }
+    return t('statusBar.goal');   // 未知 status 回退 active 文案
   }
 
   aboutToAppear(): void {
@@ -97,13 +112,16 @@ export struct StatusBar {
       .layoutWeight(1)
       .alignItems(VerticalAlign.Center)
 
-      // 右：模式 chip 簇（shrink，固定序 reasoning → fast → collaboration → permission；goal 留 follow-up）
+      // 右：模式 chip 簇（shrink，固定序 reasoning → fast → goal → collaboration → permission）
       Row({ space: 8 }) {
         if (shouldShowReasoningChip(this.flavor)) {
           this.ModeChip(this.reasoningLabel(), this.c.textTertiary)
         }
         if (shouldShowFastChip(this.flavor, this.model, this.modelReasoningEffort)) {
           this.ModeChip(t('statusBar.fast'), this.c.success)
+        }
+        if (shouldShowGoalChip(this.flavor, this.threadGoal !== null)) {
+          this.ModeChip(this.goalLabel(), this.c.primary)
         }
         if (shouldShowCollaborationChip(this.flavor, this.collaborationMode)) {
           this.ModeChip(collaborationModeDisplayName(this.collaborationMode), this.c.primary)

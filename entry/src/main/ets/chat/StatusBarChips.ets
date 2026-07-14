@@ -64,7 +64,7 @@ export function toneColor(tone: string, palette: PaletteColors): string {
   return palette.textTertiary;   // neutral + 未知
 }
 
-// —— chip 可见性谓词（对照 StatusBar.tsx:192-213 的 display 判定，goal 留 follow-up）——
+// —— chip 可见性谓词（对照 StatusBar.tsx:192-213 的 display 判定）——
 
 // reasoning chip：codex / opencode 才显示（对照 StatusBar.tsx:208-210）。
 export function shouldShowReasoningChip(flavor: string): boolean {
@@ -85,4 +85,11 @@ export function shouldShowCollaborationChip(flavor: string, collaborationMode: s
 export function shouldShowPermissionChip(mode: string, flavor: string): boolean {
   if (mode === '' || mode === 'default') { return false; }
   return isPermissionModeAllowedForFlavor(mode, flavor);
+}
+
+// goal chip：仅 codex 且存在有效 thread-goal（对照 StatusBar.tsx:214 门 agentFlavor==='codex' && threadGoal）。
+//   取 hasGoal:boolean 而非 ThreadGoal 对象，免 import models/Types 传染 i18n t() 耦合面（保本层自含）。
+//   label（goal / goal limited / goal paused / goal complete）由组件层 StatusBar.ets 据 goal.status 解析。
+export function shouldShowGoalChip(flavor: string, hasGoal: boolean): boolean {
+  return flavor === 'codex' && hasGoal;
 }
