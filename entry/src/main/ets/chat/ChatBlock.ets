@@ -3,6 +3,8 @@
 // 0 表示 null 时间戳（startedAt/completedAt/createdAt of permission）。
 // 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
 
+import { UsageData } from '../models/Message';
+
 export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
@@ -68,13 +70,24 @@ export class ChatBlock {
   //   source = 'user' | 'assistant'（消息角色来源，对照上游；mergeCliOutputBlocks 据此判断相邻块同源可合并）。
   source: string = '';
 
+  // 仅 agent-text：消息元数据脚注（对照 web MessageMetadata）。usage=消息用量（null=无）；
+  //   model=消息模型名（'' 时 UI 回退会话 model）；invokedAt=消息调用时间（0=未知，脚注不显 Invoke）。
+  //   reducer 从 ChatMessage 拷贝；多条 agent-text 共享同消息的同一份 usage（与上游「每块挂消息用量」一致）。
+  usage: UsageData | null = null;
+  model: string = '';
+  invokedAt: number = 0;
+
   // 便捷工厂
-  static agentText(id: string, createdAt: number, text: string): ChatBlock {
+  static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
+    model: string = '', usage: UsageData | null = null): ChatBlock {
     const b: ChatBlock = new ChatBlock();
     b.kind = 'agent-text';
     b.id = id;
     b.createdAt = createdAt;
     b.text = text;
+    b.invokedAt = invokedAt;
+    b.model = model;
+    b.usage = usage;
     return b;
   }
 

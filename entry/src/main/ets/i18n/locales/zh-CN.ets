@@ -196,6 +196,14 @@ export const zhCN: Record<string, string> = {
   'chat.resend': '重发',
   'chat.share': '分享',
   'chat.loadFailed': '加载失败',
+  'chat.showInfo': '显示信息',
+  'chat.hideInfo': '隐藏信息',
+
+  // —— 消息元数据脚注（meta）——
+  'meta.invoke': '调用 {time}',
+  'meta.model': '{model}',
+  'meta.tier': '{tier} 档',
+  'meta.usage': '{total} tokens（入 {input} / 出 {output}）',
 
   // —— 文件浏览页 ——
   'files.page.title': '文件',

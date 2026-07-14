@@ -195,6 +195,14 @@ export const en: Record<string, string> = {
   'chat.resend': 'Resend',
   'chat.share': 'Share',
   'chat.loadFailed': 'Failed to load',
+  'chat.showInfo': 'Show info',
+  'chat.hideInfo': 'Hide info',
+
+  // —— Message metadata footer (meta) ——
+  'meta.invoke': 'Invoked {time}',
+  'meta.model': '{model}',
+  'meta.tier': '{tier} tier',
+  'meta.usage': '{total} tokens (in {input} / out {output})',
 
   // —— Files ——
   'files.page.title': 'Files',

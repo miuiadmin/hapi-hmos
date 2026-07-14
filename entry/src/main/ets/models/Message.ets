@@ -29,6 +29,10 @@ export class ChatMessage {
   //   由 parseUsage 从 data.message.usage 提取；ContextStatusBar 据最新可见 usage 显上下文占比/告警。
   usage: UsageData | null = null;
 
+  // agent 消息的模型名（对齐 web NormalizedMessage.model；从 data.model 提取，user/event 为 ''）。
+  //   消息脚注 Model 用之；REST 历史 data 无 model 时为 ''，UI 回退会话 model（parseMessage 尽力解析）。
+  model: string = '';
+
   // 消息来源标记（对齐 web msg.meta.sentFrom；''=未标记）。'cli' = CLI 注入的命令输出消息，
   //   reducerCliOutput 据此（AND 标签）门控产出 cli-output ChatBlock。由 content 信封 meta.sentFrom 解析。
   sentFrom: string = '';
@@ -64,6 +68,7 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.isOptimistic = m.isOptimistic;
   c.blocks = m.blocks;            // 浅拷贝引用：blocks 解析后不可变，无需深拷
   c.usage = m.usage;              // 浅拷贝引用：UsageData 解析后不可变，无需深拷
+  c.model = m.model;
   c.sentFrom = m.sentFrom;
   return c;
 }
@@ -79,6 +84,7 @@ export class UsageData {
   contextTokens: number = -1;     // < 0 = 缺省（context_tokens）
   contextWindow: number = -1;     // < 0 = 缺省（context_window；缺则按 model/flavor 静态回退）
   scopeRole: string = '';         // 'child' = 子链不并入父上下文（对照 isUsageVisibleInParentContext）
+  serviceTier: string = '';       // 计费档（usage.service_tier；'standard' 不显示，对照上游 MessageMetadata）
 
   // 父上下文是否可见（对照 reducer.ts:18 isUsageVisibleInParentContext：scope_role !== 'child'）
   get isVisibleInParent(): boolean {
@@ -113,6 +119,8 @@ export function parseUsage(message: Record<string, Object>): UsageData | null {
   if (typeof cw === 'number') { u.contextWindow = cw; }
   const sr: string = pickStr(usageRaw, 'scope_role');
   if (sr !== '') { u.scopeRole = sr; }
+  const tier: string = pickStr(usageRaw, 'service_tier');
+  if (tier !== '') { u.serviceTier = tier; }
   return u;
 }
 
@@ -461,7 +469,13 @@ function extractAgentUsage(inner: Record<string, Object> | null): UsageData | nu
   return parseUsage(message);
 }
 
-// 解析单条 DecryptedMessage（content 信封解包 + role 分流）
+// 从 agent content（inner → data）提取模型名（对照 normalizeAgent.ts 读 data.model）。无 → ''。
+function extractAgentModel(inner: Record<string, Object> | null): string {
+  if (inner === null) { return ''; }
+  const data: Record<string, Object> | null = pickObj(inner, 'data');
+  if (data === null) { return ''; }
+  return pickStr(data, 'model');
+}
 export function parseMessage(raw: Record<string, Object>): ChatMessage {
   const m = new ChatMessage();
   m.id = pickStr(raw, 'id');
@@ -514,6 +528,7 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     m.text = extractAgentText(inner);
     m.blocks = extractAgentBlocks(inner);
     m.usage = extractAgentUsage(inner);   // Token 用量（data.message.usage；缺必填字段则 null）
+    m.model = extractAgentModel(inner);   // 模型名（data.model；REST 历史无则 ''，UI 回退会话 model）
     m.status = 'sent';
   } else {
     // event 消息：文本留空被列表过滤；token_count（codex 用量）提取 usage 供 ContextStatusBar。

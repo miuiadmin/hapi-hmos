@@ -19,6 +19,7 @@ import { ChatBlock } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
 import { buildConversationOutline, ConversationOutlineItem } from '../chat/Outline';
 import { blockMatchesQuery } from '../chat/ChatSearch';
+import { buildMessageMetadataLabels } from '../chat/MessageMetadata';
 import { SlashCommand, slashCommandSuggestions, getBuiltinSlashCommands, mergeSlashCommands, serverCommandsToSlash } from '../chat/SlashCommands';
 import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skills';
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
@@ -98,6 +99,7 @@ struct ChatPage {
   @Local outlineItems: ConversationOutlineItem[] = [];  // 大纲项（recomputeBlocks 随 blocks 重算）
   @Local entryLastSeenAt: number = 0;            // 进入会话时的「上次已看」时间戳（markSeen 前捕获；滚到首条未读 + 未读分隔依据）
   @Local newMessagesCount: number = 0;           // 滚在上方时累计的新消息数（>0 显「↓N条新消息」浮标）
+  @Local expandedMeta: Set<string> = new Set<string>(); // 展开元数据脚注的 ChatBlock id（agent-text；reassign 触发 V2）
 
   // 消息长按菜单（复制 / 重发[仅失败] / 分享）——底部动作 sheet，复用 SessionActionMenu 的 bindSheet 模式
   @Local messageMenuBlock: ChatBlock | null = null;   // 长按目标块（复制/重发/分享读其 text/userStatus）
@@ -1455,11 +1457,11 @@ struct ChatPage {
       .onAction(() => { this.openMessageMenu(b); }))
   }
 
-  // agent 文本气泡（靠左、表面色，Markdown 渲染）+ 时间（HH:mm，气泡下方左对齐）
+  // agent 文本气泡（靠左、表面色，Markdown 渲染）+ 时间（HH:mm，气泡下方左对齐）+ 元数据脚注（可折叠）
   @Builder
   private AgentBubble(b: ChatBlock) {
     Row() {
-      // 左簇：气泡 + 时间，整体左对齐（时间贴气泡左下）
+      // 左簇：气泡 + 时间 + 脚注，整体左对齐（时间/脚注贴气泡左下）
       Column() {
         Column() {
           MarkdownText({ content: b.text })
@@ -1477,6 +1479,36 @@ struct ChatPage {
             .fontColor(this.c.textTertiary)
             .margin({ top: 3, left: 2 })
         }
+
+        // 元数据脚注开关（对照 web MessageMetadata toggle）：仅当有可显标签（Invoke/Model/Tier/Usage）时出现。
+        if (this.metaForBlock(b).length > 0) {
+          Text(this.expandedMeta.has(b.id) ? t('chat.hideInfo') : t('chat.showInfo'))
+            .fontSize(fs(10))
+            .fontColor(this.c.textTertiary)
+            .margin({ top: 2, left: 2 })
+            .onClick(() => {
+              const s: Set<string> = new Set<string>(this.expandedMeta);
+              if (s.has(b.id)) {
+                s.delete(b.id);
+              } else {
+                s.add(b.id);
+              }
+              this.expandedMeta = s;
+            })
+        }
+
+        // 展开后：脚注标签纵向堆叠（每条一行，三级文字色）。对照 web 一条 label 一项。
+        if (this.expandedMeta.has(b.id)) {
+          Column() {
+            ForEach(this.metaForBlock(b), (label: string) => {
+              Text(label)
+                .fontSize(fs(10))
+                .fontColor(this.c.textTertiary)
+            }, (label: string) => label)
+          }
+          .margin({ top: 2, left: 2 })
+          .alignItems(HorizontalAlign.Start)
+        }
       }
       .alignItems(HorizontalAlign.Start)
     }
@@ -1486,6 +1518,12 @@ struct ChatPage {
     // 否则长按 agent 气泡会被 markdown 吞掉、不开菜单。仅同型手势竞争 → 不影响链接点按。
     .priorityGesture(LongPressGesture({ duration: 500, repeat: false })
       .onAction(() => { this.openMessageMenu(b); }))
+  }
+
+  // agent-text 气泡的元数据标签：model 用消息自身（b.model），缺失（REST 历史无 data.model）回退会话 model。
+  private metaForBlock(b: ChatBlock): string[] {
+    const effectiveModel: string = b.model !== '' ? b.model : this.model;
+    return buildMessageMetadataLabels(b.invokedAt, b.usage, effectiveModel);
   }
 
   // 空态：无消息且非生成中

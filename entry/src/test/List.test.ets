@@ -39,6 +39,7 @@ import hapticsTest from './Haptics.test';
 import agentFlavorTest from './AgentFlavor.test';
 import linkSchemesTest from './LinkSchemes.test';
 import networkBannerResolveTest from './NetworkBannerResolve.test';
+import messageMetadataTest from './MessageMetadata.test';
 
 export default function testsuite() {
   diffTest();
@@ -79,4 +80,5 @@ export default function testsuite() {
   agentFlavorTest();
   linkSchemesTest();
   networkBannerResolveTest();
+  messageMetadataTest();
 }

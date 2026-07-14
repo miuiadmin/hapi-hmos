@@ -213,7 +213,7 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
           if (isCliOutputText(c.text, msg.sentFrom)) {
             blocks.push(ChatBlock.cliOutput(`${msg.id}:${bi}`, msg.createdAt, c.text, 'assistant'));
           } else {
-            blocks.push(ChatBlock.agentText(`${msg.id}:${bi}`, msg.createdAt, c.text));
+            blocks.push(ChatBlock.agentText(`${msg.id}:${bi}`, msg.createdAt, c.text, msg.invokedAt, msg.model, msg.usage));
           }
         }
       } else if (c.type === 'reasoning') {

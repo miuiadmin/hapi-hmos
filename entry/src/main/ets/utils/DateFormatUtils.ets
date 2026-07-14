@@ -67,3 +67,21 @@ export function formatClock(timestamp: number): string {
   const mm: string = m < 10 ? `0${m}` : `${m}`;
   return `${hh}:${mm}`;
 }
+
+/**
+ * 消息调用时间 HH:mm:ss（24 时制，秒级，对照上游 MessageMetadata 的 Invoke 秒精度）。
+ * ts<=0 返回空。用于每消息元数据脚注（formatClock 仅到分，此处补秒以区分气泡时间戳）。
+ */
+export function formatClockSeconds(timestamp: number): string {
+  if (timestamp <= 0) {
+    return '';
+  }
+  const d: Date = new Date(timestamp);
+  const h: number = d.getHours();
+  const m: number = d.getMinutes();
+  const s: number = d.getSeconds();
+  const hh: string = h < 10 ? `0${h}` : `${h}`;
+  const mm: string = m < 10 ? `0${m}` : `${m}`;
+  const ss: string = s < 10 ? `0${s}` : `${s}`;
+  return `${hh}:${mm}:${ss}`;
+}
