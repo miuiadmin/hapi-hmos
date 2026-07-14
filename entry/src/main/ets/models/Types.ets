@@ -56,6 +56,10 @@ export class Machine {
   activeAt: number = 0;
   updatedAt: number = 0;
   displayName: string = '';
+  // 上次 spawn 错误（对齐 shared/src/schemas.ts runnerState.lastSpawnError {message,at}）。
+  //   仅读 Hub 已有字段，零协议改动；message 非空即有错误，at=0 表无时间戳。NewSessionPage 据此显红字诊断。
+  lastSpawnErrorMessage: string = '';
+  lastSpawnErrorAt: number = 0;
 }
 
 // —— Team（会话内多 agent 团队，对齐 shared/src/schemas.ts TeamState）——
@@ -472,6 +476,19 @@ function parseMachine(raw: Record<string, Object>): Machine {
   if (meta !== null) {
     m.displayName = pickStr(meta, 'displayName');
     if (m.displayName === '') { m.displayName = pickStr(meta, 'host'); }
+  }
+  // runnerState.lastSpawnError（对照 web/src/utils/formatRunnerSpawnError getLastSpawnError）：
+  //   message 为空串则视为无错误（两字段留默认）。
+  const runnerState = pickObj(raw, 'runnerState');
+  if (runnerState !== null) {
+    const lastSpawnError = pickObj(runnerState, 'lastSpawnError');
+    if (lastSpawnError !== null) {
+      const message = pickStr(lastSpawnError, 'message');
+      if (message !== '') {
+        m.lastSpawnErrorMessage = message;
+        m.lastSpawnErrorAt = pickNum(lastSpawnError, 'at');
+      }
+    }
   }
   return m;
 }

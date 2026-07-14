@@ -34,6 +34,7 @@ import terminalFontSizeTest from './TerminalFontSize.test';
 import sessionListStatusModeTest from './SessionListStatusMode.test';
 import syncResyncTest from './SyncResync.test';
 import directorySuggestionsTest from './DirectorySuggestions.test';
+import spawnErrorTest from './SpawnError.test';
 
 export default function testsuite() {
   diffTest();
@@ -69,4 +70,5 @@ export default function testsuite() {
   sessionListStatusModeTest();
   syncResyncTest();
   directorySuggestionsTest();
+  spawnErrorTest();
 }

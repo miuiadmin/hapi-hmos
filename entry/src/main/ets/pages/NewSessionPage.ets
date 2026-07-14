@@ -1,6 +1,7 @@
 import { getHubClient } from '../api/HubClient';
 import { t } from '../i18n/I18nService';
 import { Machine, DirEntry, SessionSummary, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
+import { formatMachineSpawnError } from '../chat/SpawnError';
 import { buildDirectorySuggestions } from '../chat/DirectorySuggestions';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
@@ -192,6 +193,14 @@ struct NewSessionPage {
     if (idx < 0) { return this.loadingMachines ? t('common.loading') : t('newSession.selectMachine'); }
     const m: Machine = this.machines[idx];
     return m.displayName !== '' ? m.displayName : m.id;
+  }
+  // 当前所选机器的上次 spawn 错误诊断文案（对照上游 formatRunnerSpawnError；message 空 → ''）。
+  //   红字提示，不阻止创建（仅诊断；用户仍可重试）。
+  private machineSpawnErrorText(): string {
+    const idx: number = this.machineIndex();
+    if (idx < 0) { return ''; }
+    const m: Machine = this.machines[idx];
+    return formatMachineSpawnError(m.lastSpawnErrorMessage, m.lastSpawnErrorAt);
   }
   private agentIndex(): number {
     for (let i = 0; i < AGENT_FLAVORS.length; i++) {
@@ -628,6 +637,15 @@ struct NewSessionPage {
                   .onSelect((index: number, text: string) => { this.onMachineSelected(index); })
                   .width('100%')
                   .height(50)
+
+                // 该机器上次 spawn 错误诊断（Hub runnerState.lastSpawnError；非空才显示）
+                if (this.machineSpawnErrorText() !== '') {
+                  Text('⚠ ' + this.machineSpawnErrorText())
+                    .fontSize(fs(12))
+                    .fontColor(this.c.error)
+                    .width('100%')
+                    .margin({ top: 8 })
+                }
               }
               .width('100%')
               .padding({ left: 16, right: 16 })
