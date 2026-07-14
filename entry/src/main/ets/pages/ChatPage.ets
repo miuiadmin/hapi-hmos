@@ -32,7 +32,7 @@ import { FilesRouteParams } from './FilesPage';
 import { TerminalRouteParams } from './TerminalPage';
 import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem } from '../models/Types';
+import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -41,6 +41,7 @@ import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { HapticService } from '../services/HapticService';
+import { flavorLabel, flavorColorHex } from '../chat/AgentFlavor';
 import { PreferenceKeys } from '../config/Keys';
 import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
@@ -354,6 +355,50 @@ struct ChatPage {
     const u = this.latestUsage;
     if (u === null || u.cacheRead <= 0) { return ''; }
     return `cache ${formatTokenCount(u.cacheRead)}`;
+  }
+
+  // 标题栏副标题：agent 名 + model 显示名（对照上游 AgentFlavorIcon 头部上下文）。
+  //   flavor 未播种（''）→ ''（无副标题行，标题回退单行原行为）；model 空 → 仅 agent 名。
+  private get chatSubtitle(): string {
+    if (this.flavor === '') { return ''; }
+    const agent: string = agentDisplayName(this.flavor);
+    const model: string = modelDisplayName(this.flavor, this.model);
+    if (model === '') { return agent; }
+    return `${agent} · ${model}`;
+  }
+
+  // 标题栏（NavDestinationCustomTitle）：flavor 色块徽章 + 标题 + 副标题。
+  //   徽章双字母 label + 背景色来自 AgentFlavor 纯层（逐字移植上游 FLAVOR_BADGES）；
+  //   标题原字号/粗细不变；副标题小字 textSecondary + maxLines 1 + 省略号。
+  //   ChatPage 不用 titleMode（NavDestinationCustomTitle 的 titleMode 失效说明 N/A）。
+  @Builder ChatTitle() {
+    Row({ space: 6 }) {
+      // flavor 徽章：18×18 圆角色块 + 白色双字母
+      Text(flavorLabel(this.flavor))
+        .fontSize(fs(9)).fontWeight(FontWeight.Medium).fontColor('#ffffff')
+        .backgroundColor(flavorColorHex(this.flavor))
+        .borderRadius(2)
+        .width(fs(18)).height(fs(18))
+        .textAlign(TextAlign.Center)
+        .maxLines(1)
+      // 标题 + 副标题列（layoutWeight 占满剩余宽度，左对齐）
+      Column() {
+        Text(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
+          .fontSize(fs(16)).fontWeight(FontWeight.Medium).fontColor(this.c.textPrimary)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.chatSubtitle !== '') {
+          Text(this.chatSubtitle)
+            .fontSize(fs(11)).fontColor(this.c.textSecondary)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 1 })
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder ContextStatusBar() {
@@ -2072,7 +2117,7 @@ struct ChatPage {
         onDisappear: (): void => { this.outlineOpen = false; }
       })
     }
-    .title(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
+    .title(this.ChatTitle)
     .menus(this.HeaderMenu)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

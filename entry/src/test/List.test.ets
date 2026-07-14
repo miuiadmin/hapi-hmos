@@ -36,6 +36,8 @@ import syncResyncTest from './SyncResync.test';
 import directorySuggestionsTest from './DirectorySuggestions.test';
 import spawnErrorTest from './SpawnError.test';
 import hapticsTest from './Haptics.test';
+import agentFlavorTest from './AgentFlavor.test';
+import linkSchemesTest from './LinkSchemes.test';
 
 export default function testsuite() {
   diffTest();
@@ -73,4 +75,6 @@ export default function testsuite() {
   directorySuggestionsTest();
   spawnErrorTest();
   hapticsTest();
+  agentFlavorTest();
+  linkSchemesTest();
 }

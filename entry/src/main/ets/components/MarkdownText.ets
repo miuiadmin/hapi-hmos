@@ -8,6 +8,7 @@ import { Want, common } from '@kit.AbilityKit'
 import { pasteboard } from '@kit.BasicServicesKit'
 import { fs, paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
 import { showToast } from '../utils/Toast';
+import { NON_HTTPS_LINKIFY_SCHEMES } from '../chat/LinkSchemes';
 import { t } from '../i18n/I18nService';
 import {
   classifyScheme,
@@ -303,7 +304,7 @@ export struct MarkdownText {
     plugin.setIsTablePlugin(true);
     plugin.setIsStrikethroughPlugin(true);
     plugin.setIsTaskListPlugin(true);
-    plugin.setIsLinkifyPlugin(true, []);
+    plugin.setIsLinkifyPlugin(true, NON_HTTPS_LINKIFY_SCHEMES);
     plugin.setIsHtmlPlugin(true);
     plugin.setIsSubPlugin(true);
     plugin.setIsSupPlugin(true);
