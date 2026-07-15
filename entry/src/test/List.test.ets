@@ -51,6 +51,7 @@ import eventPresentationTest from './EventPresentation.test';
 import userDirectivesTest from './UserDirectives.test';
 import presentationTest from './Presentation.test';
 import requestUserInputTest from './RequestUserInput.test';
+import codexAgentsTest from './CodexAgents.test';
 
 export default function testsuite() {
   diffTest();
@@ -103,4 +104,5 @@ export default function testsuite() {
   userDirectivesTest();
   presentationTest();
   requestUserInputTest();
+  codexAgentsTest();
 }

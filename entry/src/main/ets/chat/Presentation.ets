@@ -7,6 +7,7 @@ import { ChatToolCall } from './ChatBlock';
 import { getInputStrAny, truncateStr, basenameOfPath, commandStr, codexPatchFiles, extractStdoutStderr } from './ToolInputUtils';
 import { extractUpdatePlanChecklist } from './Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from './CodexDiff';
+import { getCodexAgentSummary, getCodexAgentActivity, getCodexAgentReasoningEffortLabel, getCodexAgentPrompt, getCodexAgentType, getCodexAgentTargets, summarizeCodexAgentResult } from './CodexAgents';
 import { t } from '../i18n/Translate';
 
 export class ToolPresentation {
@@ -360,6 +361,89 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.title = nbPath !== '' ? nbPath : t('pres.editNotebook');
       const editMode: string = getInputStrAny(input, ['edit_mode']);
       p.subtitle = editMode !== '' ? t('pres.editMode', { mode: editMode }) : '';
+      p.minimal = false;
+      return p;
+    }
+    case 'CodexAgent': {
+      // 对照上游 knownTools.tsx:187-204：icon 🚀、title summary??'Agent'、subtitle effort·status、minimal true。
+      //   端口增强（用户选）：minimal=false → 内联字段 pill 行（头+body）；Prompt+结果仍在点开 sheet。
+      //   ⚠️ result 摘要上游硬编码 'wait_agent'（CodexAgent 无独立 result 解析，复用 wait_agent 摘要器），忠实保留。
+      p.icon = '🚀';
+      const summary: string = getCodexAgentSummary(input);
+      p.title = summary !== '' ? t('pres.agentSummary', { summary: summary }) : t('pres.agent');
+      const activity: string = getCodexAgentActivity(input);
+      const resultSummary: string = summarizeCodexAgentResult('wait_agent', tool.result);
+      const prompt: string = getCodexAgentPrompt(input);
+      const promptPreview: string = prompt !== '' ? truncateStr(prompt, 120) : '';
+      const status: string = firstNonEmpty([activity, resultSummary, promptPreview]);
+      const effort: string = getCodexAgentReasoningEffortLabel(input);
+      if (effort !== '' && status !== '') {
+        p.subtitle = effort + ' · ' + status;
+      } else {
+        p.subtitle = firstNonEmpty([effort, status]);
+      }
+      p.minimal = false;
+      return p;
+    }
+    case 'spawn_agent': {
+      // 对照上游 knownTools.tsx:335-348：icon 🚀、title type?Spawn {type} agent:Spawn agent、
+      //   subtitle summary??(type?{type} agent:Background agent)。
+      p.icon = '🚀';
+      const agentType: string = getCodexAgentType(input);
+      p.title = agentType !== '' ? t('pres.spawnAgentType', { type: agentType }) : t('pres.spawnAgent');
+      const summary: string = summarizeCodexAgentResult('spawn_agent', tool.result);
+      if (summary !== '') {
+        p.subtitle = summary;
+      } else {
+        p.subtitle = agentType !== '' ? t('pres.typeAgent', { type: agentType }) : t('pres.backgroundAgent');
+      }
+      p.minimal = false;
+      return p;
+    }
+    case 'send_input': {
+      // 对照上游 knownTools.tsx:349-357：icon 💬、title Message agent、subtitle targets.join|Background message。
+      p.icon = '💬';
+      p.title = t('pres.messageAgent');
+      const targets: string[] = getCodexAgentTargets(input);
+      p.subtitle = targets.length > 0 ? targets.join(', ') : t('pres.backgroundMessage');
+      p.minimal = false;
+      return p;
+    }
+    case 'resume_agent': {
+      // 对照上游 knownTools.tsx:358-366：icon 🚀、title Resume agent、subtitle targets.join|null。
+      p.icon = '🚀';
+      p.title = t('pres.resumeAgent');
+      const targets: string[] = getCodexAgentTargets(input);
+      p.subtitle = targets.length > 0 ? targets.join(', ') : '';
+      p.minimal = false;
+      return p;
+    }
+    case 'wait_agent': {
+      // 对照上游 knownTools.tsx:367-380：icon 🚀、title targets>1?Wait for N agents:Wait for agent、
+      //   subtitle summary??targets.join??null。
+      p.icon = '🚀';
+      const targets: string[] = getCodexAgentTargets(input);
+      p.title = targets.length > 1 ? t('pres.waitForNAgents', { n: targets.length }) : t('pres.waitForAgent');
+      const summary: string = summarizeCodexAgentResult('wait_agent', tool.result);
+      if (summary !== '') {
+        p.subtitle = summary;
+      } else {
+        p.subtitle = targets.length > 0 ? targets.join(', ') : '';
+      }
+      p.minimal = false;
+      return p;
+    }
+    case 'close_agent': {
+      // 对照上游 knownTools.tsx:381-391：icon 🚀、title Close agent、subtitle summary??targets.join??null。
+      p.icon = '🚀';
+      p.title = t('pres.closeAgent');
+      const summary: string = summarizeCodexAgentResult('close_agent', tool.result);
+      if (summary !== '') {
+        p.subtitle = summary;
+      } else {
+        const targets: string[] = getCodexAgentTargets(input);
+        p.subtitle = targets.length > 0 ? targets.join(', ') : '';
+      }
       p.minimal = false;
       return p;
     }

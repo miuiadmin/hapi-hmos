@@ -236,6 +236,111 @@ export default function presentationTest(): void {
     });
   });
 
+  describe('getToolPresentation — CodexAgent', () => {
+    it('有 summary+effort+activity → 🚀 + 代理：{summary} + effort·status + minimal false', 0, () => {
+      const input = rec('{"summary":"Do thing","reasoning_effort":"high","activity":"Running","agentStatus":"running"}');
+      const p = getToolPresentation(mk('CodexAgent', input, null, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('代理：Do thing');
+      expect(p.subtitle).assertEqual('reasoning high · Running');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 → 🚀 + Agent + 空 subtitle + minimal false', 0, () => {
+      const p = getToolPresentation(mk('CodexAgent', rec('{}'), null, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('Agent');
+      expect(p.subtitle).assertEqual('');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
+  describe('getToolPresentation — spawn_agent', () => {
+    it('有 type + result → 🚀 + 启动 {type} 代理 + 已启动 {label} + minimal false', 0, () => {
+      const input = rec('{"agent_type":"researcher"}');
+      const result = rec('{"agent_id":"a1","nickname":"Bob"}');
+      const p = getToolPresentation(mk('spawn_agent', input, result, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('启动 researcher 代理');
+      expect(p.subtitle).assertEqual('已启动 Bob (a1)');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 + 无 result → 🚀 + 启动代理 + 后台代理（fallback）+ minimal false', 0, () => {
+      const p = getToolPresentation(mk('spawn_agent', rec('{}'), null, ''));
+      expect(p.title).assertEqual('启动代理');
+      expect(p.subtitle).assertEqual('后台代理');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
+  describe('getToolPresentation — send_input', () => {
+    it('有 targets → 💬 + 发送消息给代理 + targets join + minimal false', 0, () => {
+      const input = rec('{"targets":["agent-1","agent-2"]}');
+      const p = getToolPresentation(mk('send_input', input, null, ''));
+      expect(p.icon).assertEqual('💬');
+      expect(p.title).assertEqual('发送消息给代理');
+      expect(p.subtitle).assertEqual('agent-1, agent-2');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 → 💬 + 发送消息给代理 + 后台消息 + minimal false', 0, () => {
+      const p = getToolPresentation(mk('send_input', rec('{}'), null, ''));
+      expect(p.title).assertEqual('发送消息给代理');
+      expect(p.subtitle).assertEqual('后台消息');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
+  describe('getToolPresentation — resume_agent', () => {
+    it('有 targets → 🚀 + 恢复代理 + targets join + minimal false', 0, () => {
+      const input = rec('{"targets":["a"]}');
+      const p = getToolPresentation(mk('resume_agent', input, null, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('恢复代理');
+      expect(p.subtitle).assertEqual('a');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 → 🚀 + 恢复代理 + 空 subtitle + minimal false', 0, () => {
+      const p = getToolPresentation(mk('resume_agent', rec('{}'), null, ''));
+      expect(p.title).assertEqual('恢复代理');
+      expect(p.subtitle).assertEqual('');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
+  describe('getToolPresentation — wait_agent', () => {
+    it('targets>1 + result → 🚀 + 等待 N 个代理 + N 个完成 + minimal false', 0, () => {
+      const input = rec('{"targets":["a","b"]}');
+      const result = rec('{"status":{"a":{"completed":"done"}}}');
+      const p = getToolPresentation(mk('wait_agent', input, result, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('等待 2 个代理');
+      expect(p.subtitle).assertEqual('1 个完成');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 + 无 result → 🚀 + 等待代理 + 空 subtitle + minimal false', 0, () => {
+      const p = getToolPresentation(mk('wait_agent', rec('{}'), null, ''));
+      expect(p.title).assertEqual('等待代理');
+      expect(p.subtitle).assertEqual('');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
+  describe('getToolPresentation — close_agent', () => {
+    it('有 result → 🚀 + 关闭代理 + 已关闭（{state}）+ minimal false', 0, () => {
+      const result = rec('{"previous_status":{"completed":"ok"}}');
+      const p = getToolPresentation(mk('close_agent', rec('{}'), result, ''));
+      expect(p.icon).assertEqual('🚀');
+      expect(p.title).assertEqual('关闭代理');
+      expect(p.subtitle).assertEqual('已关闭（completed）');
+      expect(p.minimal).assertFalse();
+    });
+    it('空 + 无 result → 🚀 + 关闭代理 + 空 subtitle + minimal false', 0, () => {
+      const p = getToolPresentation(mk('close_agent', rec('{}'), null, ''));
+      expect(p.title).assertEqual('关闭代理');
+      expect(p.subtitle).assertEqual('');
+      expect(p.minimal).assertFalse();
+    });
+  });
+
   describe('getToolPresentation — 回归（既有分支不变）', () => {
     it('Bash → ⌨️ + 终端 + command subtitle', 0, () => {
       const input = rec('{"command":"pwd"}');

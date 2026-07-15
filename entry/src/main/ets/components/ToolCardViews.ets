@@ -10,6 +10,7 @@ import { ChatToolCall } from '../chat/ChatBlock';
 import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath, extractNotebookEditFields, NotebookEditFields, formatNotebookCellMeta } from '../chat/ToolInputUtils';
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
+import { getCodexAgentFieldRows, getCodexAgentPrompt, getCodexAgentActivity, getCodexAgentTargets, parseCodexSpawnAgentResult, parseCodexWaitAgentResult, parseCodexCloseAgentResult, CodexSpawnAgentResult, CodexWaitAgentResult, CodexAgentStatus, AgentFieldRow } from '../chat/CodexAgents';
 import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
 import { ChecklistList } from './ChecklistList';
@@ -18,6 +19,51 @@ import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeServi
 import { t } from '../i18n/I18nService';
 
 const MAX_COMPACT_EDITS: number = 3;
+
+// Codex 子代理集群 6 工具名（CodexAgent + 5 蛇形）
+const CODEX_AGENT_TOOLS: string[] = ['CodexAgent', 'spawn_agent', 'send_input', 'resume_agent', 'wait_agent', 'close_agent'];
+
+function isCodexAgentToolName(name: string): boolean {
+  for (let i = 0; i < CODEX_AGENT_TOOLS.length; i++) {
+    if (CODEX_AGENT_TOOLS[i] === name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// a 非空取 a，否则取 b（'' 哨兵）
+function firstNonEmpty2(a: string, b: string): string {
+  return a !== '' ? a : b;
+}
+
+// wait_agent 状态计数（state→count，保序）—— @Builder 内禁命令式循环，故前置纯函数
+class AgentStateCount {
+  state: string = '';
+  count: number = 0;
+}
+
+function aggregateAgentStateCounts(statuses: CodexAgentStatus[]): AgentStateCount[] {
+  const map: Record<string, number> = {};
+  const order: string[] = [];
+  for (let i = 0; i < statuses.length; i++) {
+    const s: string = statuses[i].state;
+    if (map[s] === undefined) {
+      map[s] = 1;
+      order.push(s);
+    } else {
+      map[s] = map[s] + 1;
+    }
+  }
+  const out: AgentStateCount[] = [];
+  for (let i = 0; i < order.length; i++) {
+    const c: AgentStateCount = new AgentStateCount();
+    c.state = order[i];
+    c.count = map[order[i]];
+    out.push(c);
+  }
+  return out;
+}
 
 class EditPair {
   oldStr: string = '';
@@ -137,6 +183,14 @@ struct ToolInputView {
     }
   }
 
+  private codexAgentRows(): AgentFieldRow[] {
+    return getCodexAgentFieldRows(this.tool.name, this.input);
+  }
+
+  private codexAgentPrompt(): string {
+    return getCodexAgentPrompt(this.input);
+  }
+
   build() {
     Column() {
       if (this.tool.name === 'Edit') {
@@ -161,6 +215,8 @@ struct ToolInputView {
         this.CodexPatchInput()
       } else if (this.tool.name === 'NotebookEdit') {
         this.NotebookEditInput()
+      } else if (isCodexAgentToolName(this.tool.name)) {
+        this.CodexAgentInput()
       } else {
         CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
@@ -293,6 +349,58 @@ struct ToolInputView {
       CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
     }
   }
+
+  // CodexAgent / spawn_agent / send_input / resume_agent / wait_agent / close_agent（对照 web CodexAgentView）。
+  //   Prompt 块仅 dialog；字段 pill 行总显（label 本地化）；不重复内联结果摘要（subtitle 已含，端口增强避冗余）；空 → JSON 回退。
+  @Builder
+  CodexAgentInput() {
+    Column({ space: 6 }) {
+      if (!this.isInline) {
+        if (this.codexAgentPrompt() !== '') {
+          Column() {
+            Text(t('agent.promptLabel'))
+              .fontSize(fs(11))
+              .fontColor(this.c.textTertiary)
+              .margin({ bottom: 4 })
+            Text(this.codexAgentPrompt())
+              .fontSize(fs(12))
+              .fontColor(this.c.textPrimary)
+              .width('100%')
+          }
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .backgroundColor(this.c.surface)
+          .borderRadius(12)
+          .alignItems(HorizontalAlign.Start)
+        }
+      }
+      if (this.codexAgentRows().length > 0) {
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(this.codexAgentRows(), (row: AgentFieldRow, idx: number) => {
+            Row({ space: 4 }) {
+              Text(row.label + ':')
+                .fontSize(fs(11))
+                .fontColor(this.c.textPrimary)
+              Text(row.value)
+                .fontSize(fs(11))
+                .fontColor(this.c.textSecondary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .constraintSize({ maxWidth: '75%' })
+            }
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .backgroundColor(this.c.surfaceSelected)
+            .borderRadius(10)
+            .margin({ right: 4, bottom: 4 })
+          }, (row: AgentFieldRow, idx: number) => `agent-field-${idx}-${row.label}`)
+        }
+        .width('100%')
+      } else {
+        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
 }
 
 // ===== 结果视图派发 =====
@@ -348,6 +456,61 @@ struct ToolResultView {
     }
   }
 
+  private codexAgentActivityText(): string {
+    return getCodexAgentActivity(this.tool.input);
+  }
+
+  private codexAgentTargetsList(): string[] {
+    return getCodexAgentTargets(this.tool.input);
+  }
+
+  private spawnParsed(): CodexSpawnAgentResult | null {
+    return parseCodexSpawnAgentResult(this.tool.result);
+  }
+
+  private waitParsed(): CodexWaitAgentResult | null {
+    return parseCodexWaitAgentResult(this.tool.result);
+  }
+
+  private closeParsed(): CodexAgentStatus | null {
+    return parseCodexCloseAgentResult(this.tool.result);
+  }
+
+  private waitStateCounts(): AgentStateCount[] {
+    const parsed: CodexWaitAgentResult | null = parseCodexWaitAgentResult(this.tool.result);
+    return parsed === null ? [] : aggregateAgentStateCounts(parsed.statuses);
+  }
+
+  private waitStatuses(): CodexAgentStatus[] {
+    const parsed: CodexWaitAgentResult | null = parseCodexWaitAgentResult(this.tool.result);
+    return parsed === null ? [] : parsed.statuses;
+  }
+
+  private waitTimedOut(): boolean {
+    const parsed: CodexWaitAgentResult | null = parseCodexWaitAgentResult(this.tool.result);
+    return parsed !== null && parsed.timedOut;
+  }
+
+  private spawnNickname(): string {
+    const parsed: CodexSpawnAgentResult | null = parseCodexSpawnAgentResult(this.tool.result);
+    return parsed === null ? '' : parsed.nickname;
+  }
+
+  private spawnAgentId(): string {
+    const parsed: CodexSpawnAgentResult | null = parseCodexSpawnAgentResult(this.tool.result);
+    return parsed === null ? '' : parsed.agentId;
+  }
+
+  private closeState(): string {
+    const parsed: CodexAgentStatus | null = parseCodexCloseAgentResult(this.tool.result);
+    return parsed === null ? '' : parsed.state;
+  }
+
+  private closeText(): string {
+    const parsed: CodexAgentStatus | null = parseCodexCloseAgentResult(this.tool.result);
+    return parsed === null ? '' : parsed.text;
+  }
+
   build() {
     Column() {
       if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command' || this.tool.name === 'CodexBash') {
@@ -363,6 +526,8 @@ struct ToolResultView {
         this.MarkdownResult()
       } else if (this.tool.name === 'Glob' || this.tool.name === 'Grep' || this.tool.name === 'LS') {
         this.LineListResult()
+      } else if (isCodexAgentToolName(this.tool.name)) {
+        this.AgentResult()
       } else {
         this.GenericResult()
       }
@@ -483,6 +648,155 @@ struct ToolResultView {
       CodeBlock({ code: this.jsonResult(), language: 'json', title: 'JSON', collapseLongContent: this.isInline })
     } else {
       this.Pill(t('tool.noOutput'))
+    }
+  }
+
+  // label+value pill（Name/ID 等，对照上游 AgentIdPill）
+  @Builder
+  LabelPill(label: string, value: string) {
+    Row({ space: 4 }) {
+      Text(label + ':')
+        .fontSize(fs(11))
+        .fontColor(this.c.textPrimary)
+      Text(value)
+        .fontSize(fs(11))
+        .fontColor(this.c.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: '70%' })
+    }
+    .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+    .backgroundColor(this.c.surfaceSelected)
+    .borderRadius(10)
+    .margin({ right: 4, bottom: 4 })
+  }
+
+  // 子代理集群结果（对照 web CodexAgentResultView）：此视图本就详情-sheet-only。
+  @Builder
+  AgentResult() {
+    if (this.tool.result === null) {
+      this.Pill(firstNonEmpty2(this.codexAgentActivityText(), this.placeholderForState()))
+    } else if (this.tool.state === 'error') {
+      Text(this.resultText().trim() !== '' ? this.resultText() : t('agent.toolFailed'))
+        .fontSize(fs(13))
+        .fontColor(this.c.error)
+        .width('100%')
+    } else if (this.tool.name === 'spawn_agent') {
+      this.SpawnAgentResult()
+    } else if (this.tool.name === 'wait_agent') {
+      this.WaitAgentResult()
+    } else if (this.tool.name === 'close_agent') {
+      this.CloseAgentResult()
+    } else {
+      if (this.resultText() !== '') {
+        MarkdownText({ content: this.resultText() })
+      } else {
+        this.Pill(this.placeholderForState())
+      }
+    }
+  }
+
+  @Builder
+  NAgentsPill(count: number) {
+    this.Pill(count === 1 ? t('agent.nAgent', { n: count }) : t('agent.nAgents', { n: count }))
+  }
+
+  @Builder
+  SpawnAgentResult() {
+    if (this.spawnParsed() !== null) {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        this.Pill(t('agent.launchedShort'))
+        if (this.spawnNickname() !== '') {
+          this.LabelPill(t('agent.name'), this.spawnNickname())
+        }
+        if (this.spawnAgentId() !== '') {
+          this.LabelPill(t('agent.id'), this.spawnAgentId())
+        }
+      }
+      .width('100%')
+    } else if (this.resultText() !== '') {
+      MarkdownText({ content: this.resultText() })
+    } else {
+      this.Pill(this.placeholderForState())
+    }
+  }
+
+  @Builder
+  WaitAgentResult() {
+    if (this.waitParsed() !== null) {
+      if (this.waitStatuses().length === 0) {
+        this.Pill(this.waitTimedOut() ? t('agent.timedOut') : t('agent.noStatus'))
+      } else {
+        Column({ space: 8 }) {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            if (this.waitTimedOut()) {
+              this.Pill(t('agent.timedOut'))
+            }
+            this.NAgentsPill(this.waitStatuses().length)
+            ForEach(this.waitStateCounts(), (sc: AgentStateCount, idx: number) => {
+              this.Pill(`${sc.count} ${sc.state}`)
+            }, (sc: AgentStateCount, idx: number) => `wstate-${idx}-${sc.state}`)
+          }
+          .width('100%')
+          Column({ space: 6 }) {
+            ForEach(this.waitStatuses(), (status: CodexAgentStatus, idx: number) => {
+              Column() {
+                Row({ space: 6 }) {
+                  this.Pill(status.state)
+                  Text(status.agentId)
+                    .fontSize(fs(11))
+                    .fontColor(this.c.textSecondary)
+                    .layoutWeight(1)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .width('100%')
+                if (status.text !== '') {
+                  MarkdownText({ content: status.text })
+                    .margin({ top: 4 })
+                }
+              }
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+              .backgroundColor(this.c.surface)
+              .borderRadius(12)
+              .alignItems(HorizontalAlign.Start)
+            }, (status: CodexAgentStatus, idx: number) => `wagent-${idx}-${status.agentId}`)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+      }
+    } else if (this.resultText() !== '') {
+      MarkdownText({ content: this.resultText() })
+    } else {
+      this.Pill(this.placeholderForState())
+    }
+  }
+
+  @Builder
+  CloseAgentResult() {
+    if (this.closeParsed() !== null) {
+      Column({ space: 6 }) {
+        Flex({ wrap: FlexWrap.Wrap }) {
+          this.Pill(t('agent.closed'))
+          if (this.codexAgentTargetsList().length > 0) {
+            this.LabelPill(t('agent.id'), this.codexAgentTargetsList()[0])
+          }
+          this.Pill(this.closeState())
+        }
+        .width('100%')
+        if (this.closeText() !== '') {
+          MarkdownText({ content: this.closeText() })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else if (this.resultText() !== '') {
+      MarkdownText({ content: this.resultText() })
+    } else {
+      this.Pill(this.placeholderForState())
     }
   }
 }
