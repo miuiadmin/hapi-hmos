@@ -501,6 +501,11 @@ export const zhCN: Record<string, string> = {
   'pres.search': '搜索',
   'pres.openLink': '打开链接',
   'pres.query': '查询',
+  'pres.terminal': '终端',
+  'pres.applyChanges': '应用更改',
+  'pres.patchFiles': '{name}（+{n}）',
+  'pres.permission': '权限：{tool}',
+  'pres.permissionRequest': '权限请求',
 
   // —— 网络 / 连接 / 登录错误（HubClient/HubClientUtils/ConnectionService）——
   'api.requestFailed': '请求失败: {detail}',

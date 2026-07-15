@@ -4,7 +4,7 @@
 // emoji 替代上游 SVG 图标（ArkUI 原生渲染，无需资源文件）。
 
 import { ChatToolCall } from './ChatBlock';
-import { getInputStrAny, truncateStr } from './ToolInputUtils';
+import { getInputStrAny, truncateStr, basenameOfPath, commandStr, codexPatchFiles, extractStdoutStderr } from './ToolInputUtils';
 import { extractUpdatePlanChecklist } from './Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from './CodexDiff';
 import { t } from '../i18n/Translate';
@@ -39,12 +39,6 @@ function formatMCPTitle(toolName: string): string {
     return `MCP: ${server} ${tool}`;
   }
   return `MCP: ${snakeToTitle(withoutPrefix)}`;
-}
-
-// 取路径末段（标题里显示短文件名用）
-function basenameOf(path: string): string {
-  const i: number = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  return i >= 0 ? path.substring(i + 1) : path;
 }
 
 // 从 url 取 hostname
@@ -163,7 +157,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       if (unified !== '') {
         const parsed: CodexDiffParsed = parseUnifiedDiff(unified);
         if (parsed.fileName !== '') {
-          p.subtitle = basenameOf(parsed.fileName);
+          p.subtitle = basenameOfPath(parsed.fileName);
         }
         const lineCount: number = unified.split('\n').length;
         p.minimal = unified.length >= 2000 || lineCount >= 50;
@@ -270,6 +264,56 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.minimal = true;
       return p;
     }
+    case 'CodexBash': {
+      // 对照上游 knownTools.tsx:144-176：icon 按 parsed_cmd[0].type（read→👁️/write→📝/else 终端）；
+      //   title 单 read cmd→name 路径，否则 desc??终端；subtitle command(string|[]|cmd)；minimal=输出皆空。
+      const pcmd: ParsedCmd | null = parsedCmdFirst(input);
+      if (pcmd !== null && pcmd.type === 'read') {
+        p.icon = '👁️';
+      } else if (pcmd !== null && pcmd.type === 'write') {
+        p.icon = '📝';
+      } else {
+        p.icon = '⌨️';
+      }
+      if (pcmd !== null && pcmd.type === 'read' && pcmd.name !== '' && parsedCmdIsSingle(input)) {
+        p.title = pcmd.name;
+      } else {
+        p.title = desc !== '' ? desc : t('pres.terminal');
+      }
+      p.subtitle = commandStr(input);
+      p.minimal = bashOutputEmpty(tool.result);
+      return p;
+    }
+    case 'shell_command':
+    case 'run_shell_command':
+      // 对照上游 knownTools.tsx:205-209（shell_command）+ run_shell_command 归入（上游无条目，body 已当 bash）。
+      p.icon = '⌨️';
+      p.title = desc !== '' ? desc : t('pres.terminal');
+      p.subtitle = commandStr(input);
+      p.minimal = true;
+      return p;
+    case 'CodexPatch': {
+      // 对照上游 knownTools.tsx:397-411 + CodexPatchView：icon 📝、title「应用更改」、subtitle 首文件 basename（多文件 +N）。
+      p.icon = '📝';
+      p.title = t('pres.applyChanges');
+      const files: string[] = codexPatchFiles(input);
+      if (files.length === 1) {
+        p.subtitle = basenameOfPath(files[0]);
+      } else if (files.length > 1) {
+        p.subtitle = t('pres.patchFiles', { name: basenameOfPath(files[0]), n: files.length - 1 });
+      }
+      p.minimal = true;
+      return p;
+    }
+    case 'CodexPermission': {
+      // 对照上游 knownTools.tsx:178-186：icon ❓、title tool?「权限：tool」:「权限请求」、subtitle message??command。
+      p.icon = '❓';
+      const toolName: string = getInputStrAny(input, ['tool']);
+      p.title = toolName !== '' ? t('pres.permission', { tool: toolName }) : t('pres.permissionRequest');
+      p.subtitle = getInputStrAny(input, ['message', 'command']);
+      p.minimal = true;
+      return p;
+    }
     default: {
       // 未知工具：字段探测兜底（file_path/command/pattern/url/query/name）
       p.icon = '🔧';
@@ -316,6 +360,52 @@ function firstNonEmpty(values: string[]): string {
     }
   }
   return '';
+}
+
+// CodexBash parsed_cmd 首条解析结果（type: read/write/…；name: 文件名）
+class ParsedCmd {
+  type: string = '';
+  name: string = '';
+}
+
+// 取 input.parsed_cmd[0] 的 {type, name}；非数组/空/首条非对象 → null（对照上游 CodexBash icon/title 判定）
+function parsedCmdFirst(input: Record<string, Object> | null): ParsedCmd | null {
+  if (input === null) {
+    return null;
+  }
+  const arr: Object = input['parsed_cmd'];
+  if (!Array.isArray(arr) || (arr as Object[]).length === 0) {
+    return null;
+  }
+  const first: Object = (arr as Object[])[0];
+  if (first === null || first === undefined || typeof first !== 'object' || Array.isArray(first)) {
+    return null;
+  }
+  const rec: Record<string, Object> = first as Record<string, Object>;
+  const t: Object = rec['type'];
+  const n: Object = rec['name'];
+  const out: ParsedCmd = new ParsedCmd();
+  out.type = typeof t === 'string' ? t : '';
+  out.name = typeof n === 'string' ? n : '';
+  return out;
+}
+
+// input.parsed_cmd 是否恰好一条（单 read cmd 时 title 用文件名）
+function parsedCmdIsSingle(input: Record<string, Object> | null): boolean {
+  if (input === null) {
+    return false;
+  }
+  const arr: Object = input['parsed_cmd'];
+  return Array.isArray(arr) && (arr as Object[]).length === 1;
+}
+
+// CodexBash minimal：stdout 与 stderr 均 trim 空 → true（有输出 → 内联展示）
+function bashOutputEmpty(result: Object | null): boolean {
+  const stdio: { stdout: string; stderr: string } | null = extractStdoutStderr(result);
+  if (stdio === null) {
+    return true;
+  }
+  return stdio.stdout.trim() === '' && stdio.stderr.trim() === '';
 }
 
 // 取 input.questions 数组（答题工具）

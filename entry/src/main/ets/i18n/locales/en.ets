@@ -500,6 +500,11 @@ export const en: Record<string, string> = {
   'pres.search': 'Search',
   'pres.openLink': 'Open link',
   'pres.query': 'Query',
+  'pres.terminal': 'Terminal',
+  'pres.applyChanges': 'Apply changes',
+  'pres.patchFiles': '{name} (+{n})',
+  'pres.permission': 'Permission: {tool}',
+  'pres.permissionRequest': 'Permission request',
 
   // —— API / connection / login errors ——
   'api.requestFailed': 'Request failed: {detail}',

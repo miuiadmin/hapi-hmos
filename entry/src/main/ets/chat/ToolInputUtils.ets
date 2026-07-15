@@ -230,3 +230,44 @@ export function looksLikeHtml(text: string): boolean {
   const t: string = text.trimStart();
   return t.startsWith('<!DOCTYPE') || t.startsWith('<html') || t.startsWith('<div') || t.startsWith('<span');
 }
+
+// 取路径末段（标题里显短文件名用；对照上游 utils/path basename）。`/` 与 `\` 分隔，手写无 regex。
+export function basenameOfPath(path: string): string {
+  const i: number = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return i >= 0 ? path.substring(i + 1) : path;
+}
+
+// 终端类工具的命令串：input.command 是 string 直返；是 Array 过滤 string 后 join(' ')；否则回落 cmd 键。
+//   （对照上游 CodexBash/shell_command subtitle：command 字符串或 command[] 拼接。供 Presentation + ToolCardViews 共用。）
+export function commandStr(input: Record<string, Object> | null): string {
+  if (input !== null) {
+    const cmd: Object = input['command'];
+    if (typeof cmd === 'string') {
+      return cmd;
+    }
+    if (Array.isArray(cmd)) {
+      const arr: Object[] = cmd as Object[];
+      const parts: string[] = [];
+      for (let i = 0; i < arr.length; i++) {
+        if (typeof arr[i] === 'string') {
+          parts.push(arr[i] as string);
+        }
+      }
+      return parts.join(' ');
+    }
+  }
+  return getInputStrAny(input, ['cmd']);
+}
+
+// CodexPatch（apply_patch）改动文件名列表：input.changes 是对象（文件→改动映射）→ Object.keys；否则 []。
+//   （对照上游 CodexPatchView：Object.keys(input.changes)。不展开改动内容，仅列文件名，忠实上游。）
+export function codexPatchFiles(input: Record<string, Object> | null): string[] {
+  if (input === null) {
+    return [];
+  }
+  const changes: Object = input['changes'];
+  if (changes === null || changes === undefined || typeof changes !== 'object' || Array.isArray(changes)) {
+    return [];
+  }
+  return Object.keys(changes as Record<string, Object>);
+}

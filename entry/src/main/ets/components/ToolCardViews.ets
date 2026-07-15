@@ -7,7 +7,7 @@
 // 降级：无 Shiki 语法高亮（CodeBlock 等宽纯文本）；Markdown 复用 MarkdownText。
 
 import { ChatToolCall } from '../chat/ChatBlock';
-import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml } from '../chat/ToolInputUtils';
+import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath } from '../chat/ToolInputUtils';
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
 import { CodeBlock } from './CodeBlock';
@@ -101,21 +101,11 @@ struct ToolInputView {
   }
 
   private bashCommand(): string {
-    const cmd: Object = this.input !== null ? this.input['command'] : null;
-    if (typeof cmd === 'string') {
-      return cmd;
-    }
-    if (Array.isArray(cmd)) {
-      const arr: Object[] = cmd as Object[];
-      const parts: string[] = [];
-      for (let i = 0; i < arr.length; i++) {
-        if (typeof arr[i] === 'string') {
-          parts.push(arr[i] as string);
-        }
-      }
-      return parts.join(' ');
-    }
-    return getInputStrAny(this.input, ['cmd']);
+    return commandStr(this.input);
+  }
+
+  private codexPatchFileList(): string[] {
+    return codexPatchFiles(this.input);
   }
 
   private planText(): string {
@@ -154,10 +144,12 @@ struct ToolInputView {
         ChecklistList({ items: extractUpdatePlanChecklist(this.input, this.tool.result), emptyLabel: t('tool.planEmpty') })
       } else if (this.tool.name === 'ExitPlanMode' || this.tool.name === 'exit_plan_mode') {
         this.PlanInput()
-      } else if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command') {
+      } else if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command' || this.tool.name === 'CodexBash') {
         this.BashInput()
       } else if (this.tool.name === 'CodexDiff') {
         this.CodexDiffInput()
+      } else if (this.tool.name === 'CodexPatch') {
+        this.CodexPatchInput()
       } else {
         CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
@@ -233,6 +225,28 @@ struct ToolInputView {
       CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
     }
   }
+
+  // CodexPatch（apply_patch）：input.changes 是文件→改动映射，body 仅列文件名 basename（对照 web CodexPatchView，
+  //   不展开 diff 内容）。空 changes → 回退 JSON。
+  @Builder
+  CodexPatchInput() {
+    if (this.codexPatchFileList().length > 0) {
+      Column({ space: 2 }) {
+        ForEach(this.codexPatchFileList(), (file: string, idx: number) => {
+          Text(basenameOfPath(file))
+            .fontSize(fs(12))
+            .fontColor(this.c.codeText)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }, (file: string, idx: number) => `patch-${idx}`)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else {
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+    }
+  }
 }
 
 // ===== 结果视图派发 =====
@@ -290,7 +304,7 @@ struct ToolResultView {
 
   build() {
     Column() {
-      if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command') {
+      if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command' || this.tool.name === 'CodexBash') {
         this.BashResult()
       } else if (this.tool.name === 'Read' || this.tool.name === 'NotebookRead') {
         this.ReadResult()

@@ -49,6 +49,7 @@ import statusBarChipsTest from './StatusBarChips.test';
 import threadGoalTest from './ThreadGoal.test';
 import eventPresentationTest from './EventPresentation.test';
 import userDirectivesTest from './UserDirectives.test';
+import presentationTest from './Presentation.test';
 
 export default function testsuite() {
   diffTest();
@@ -99,4 +100,5 @@ export default function testsuite() {
   threadGoalTest();
   eventPresentationTest();
   userDirectivesTest();
+  presentationTest();
 }
