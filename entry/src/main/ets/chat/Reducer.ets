@@ -23,6 +23,22 @@ import {
 import { isCliOutputText, mergeCliOutputBlocks } from './CliOutput';
 import { isSubagentToolName } from './SubagentTool';
 import { traceAndGroup, TracedResult } from './Tracer';
+import {
+  evStr,
+  mapAgentRunStatusToToolState,
+  isTerminalAgentRunState,
+  isFallbackAgentRunCardId,
+  getAgentRunCardId,
+  getAgentRunStartedAt,
+  getAgentRunCompletedAt,
+  getAgentRunDisplayPatch,
+  getAgentRunFingerprint,
+  isAgentToolOnlyUpdate,
+  shouldIgnoreAgentRunNonTerminalUpdateAfterTerminal,
+  shouldIgnoreAgentRunCloseCleanupAfterTerminal,
+  isOrphanAgentRunBlock,
+  normalizeTraceMessage
+} from './AgentRunTrace';
 
 // ===== getPermissions：agentState → Map<id, PermissionEntry>（completed 先、pending 后，completed 优先）=====
 function getPermissions(agentState: AgentState | null): Map<string, PermissionEntry> {
@@ -208,6 +224,8 @@ function reduceTimelineCore(
   const result: ReduceTimelineResult = new ReduceTimelineResult();
   const blocks: ChatBlock[] = result.blocks;
   const toolIdsInMessages: Set<string> = result.toolIdsInMessages;
+  // Flow B agent-run 状态（本层新建，递归各层 fresh；trace 伪消息无 agent-run 事件，子层恒空）
+  const arState: AgentRunReducerState = new AgentRunReducerState();
 
   // 按消息顺序、每条 blocks 顺序遍历（插入序，不排序）
   for (let mi = 0; mi < messages.length; mi++) {
@@ -230,6 +248,12 @@ function reduceTimelineCore(
     // event 消息：turn-duration event 回填目标块耗时（对照 reducerTimeline.ts:443-468）；
     //   携带 agent 事件（api-error/microcompact/compact）→ 居中灰条系统消息块（#1）。
     if (msg.role === 'event') {
+      // Flow B：Codex agent-run（start/update/trace）→ 合成 CodexAgent 卡 + trace 递归成 children
+      //   （对照 reducerTimeline.ts:471-628）。agentRunEvent !== null 即拦截（parseMessage 已置 role='event'）。
+      if (msg.agentRunEvent !== null) {
+        handleAgentRunMessage(msg, msg.agentRunEvent, arState, blocks, toolBlocksById, ctx);
+        continue;
+      }
       if (msg.turnDurationMs >= 0) {
         applyTurnDuration(blocks, msg.turnDurationTargetId, msg.turnDurationMs);
       }
@@ -338,6 +362,11 @@ function reduceTimelineCore(
       }
     }
   }
+
+  // Flow B 孤儿 CodexAgent 卡清理（对照 reducerTimeline.ts 末段 isOrphanAgentRunBlock/removeAgentRunBlock）：
+  //   无 children/result/终态/input.agentId 的 start 卡（多为无 agentId 的 fallback 且无后续 trace/update）
+  //   → 移出 timeline。递归层 arState 空，no-op。
+  sweepOrphanAgentRunBlocks(arState, blocks, toolBlocksById);
 
   return result;
 }
@@ -503,4 +532,288 @@ export function dedupeAgentEvents(blocks: ChatBlock[]): ChatBlock[] {
     prevKey = key;
   }
   return result;
+}
+
+// ===== Flow B：Codex agent-run 生命周期（对照 reducerTimeline.ts:471-628）=====
+// 每次 reduceTimelineCore 调用内新建 arState（递归各层 fresh；trace 伪消息无 agent-run 事件，子层恒空）。
+//   handleAgentRunMessage 在 event 分支调用（msg.agentRunEvent !== null）：cardId 规范化（agentId 稳定→
+//   named 优先、fallback `codex-agent:${agentId}` 次、msg.id 末）+ fallback↔named re-key 迁移（trace 常先于
+//   named cardId 到达）+ start/update 状态机 + trace 累积递归 reduce 成 children + 末段孤儿清理。
+
+class AgentRunReducerState {
+  blocksByCardId: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  cardByAgentId: Map<string, string> = new Map<string, string>();
+  traceMessagesByCardId: Map<string, ChatMessage[]> = new Map<string, ChatMessage[]>();
+  pendingCardByFingerprint: Map<string, string> = new Map<string, string>();
+}
+
+// 从 timeline 移除块（splice blocks + 删 toolBlocksById）。block.id === tool.id === cardId。
+function removeBlockFromTimeline(blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>, block: ChatBlock): void {
+  const idx: number = blocks.indexOf(block);
+  if (idx >= 0) {
+    blocks.splice(idx, 1);
+  }
+  if (block.tool !== null) {
+    toolBlocksById.delete(block.tool.id);
+  }
+}
+
+// 取/建 CodexAgent 卡（name 恒 'CodexAgent'），登记 blocksByCardId。input 为 start 的 spawn 入参（update/trace 传 null）。
+function ensureAgentRunCard(
+  arState: AgentRunReducerState, blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>,
+  cardId: string, createdAt: number, input: Object | null
+): ChatBlock {
+  const existing: ChatBlock | undefined = arState.blocksByCardId.get(cardId);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const block: ChatBlock = ensureToolBlock(blocks, toolBlocksById, cardId, createdAt, 'CodexAgent', input, '', null);
+  arState.blocksByCardId.set(cardId, block);
+  return block;
+}
+
+// fallback↔named re-key 迁移：把 fromId 块身份改成 toId（块对象与 timeline 位置不变，仅重键各 Map + block.id/tool.id）。
+//   不建块、不 splice——保持卡在原 start 到达位置的稳定排序（对照上游 merge 保留首位）。traceMessages 随迁。
+function migrateAgentRunCard(
+  arState: AgentRunReducerState, toolBlocksById: Map<string, ChatBlock>,
+  fromId: string, toId: string, agentId: string
+): void {
+  const block: ChatBlock | undefined = arState.blocksByCardId.get(fromId);
+  if (block !== undefined) {
+    if (block.tool !== null) {
+      toolBlocksById.delete(fromId);
+      toolBlocksById.set(toId, block);
+      block.tool.id = toId;
+    }
+    block.id = toId;
+    arState.blocksByCardId.delete(fromId);
+    arState.blocksByCardId.set(toId, block);
+    const traces: ChatMessage[] | undefined = arState.traceMessagesByCardId.get(fromId);
+    if (traces !== undefined) {
+      arState.traceMessagesByCardId.set(toId, traces);
+      arState.traceMessagesByCardId.delete(fromId);
+    }
+  }
+  arState.cardByAgentId.set(agentId, toId);
+}
+
+// 规范 cardId：agentId 已登记 named → 用 named（若 raw 是已建 fallback → re-key 进 named）；登记的是 fallback
+//   而 raw 是 named → 升级到 named；首次/无 agentId → 原 rawCardId。无 agentId 恒原样（各自 msg.id 互不干扰）。
+function canonicalAgentRunCardId(
+  arState: AgentRunReducerState, agentId: string, rawCardId: string,
+  toolBlocksById: Map<string, ChatBlock>
+): string {
+  if (agentId === '') {
+    return rawCardId;
+  }
+  const known: string | undefined = arState.cardByAgentId.get(agentId);
+  if (known === undefined || known === rawCardId) {
+    return rawCardId;
+  }
+  const knownFallback: boolean = isFallbackAgentRunCardId(known, agentId);
+  const rawFallback: boolean = isFallbackAgentRunCardId(rawCardId, agentId);
+  if (!knownFallback) {
+    if (rawFallback) {
+      migrateAgentRunCard(arState, toolBlocksById, rawCardId, known, agentId);
+    }
+    return known;
+  }
+  if (!rawFallback) {
+    migrateAgentRunCard(arState, toolBlocksById, known, rawCardId, agentId);
+    return rawCardId;
+  }
+  return known;   // 皆 fallback（同 agentId 必同串，理论不可达）
+}
+
+// 把 event 显示字段浅合并进 tool.input（供 CodexAgent 卡副标题/状态/活动读取）：agentId/agentStatus/statusText
+//   + summary/activity/activityKind（getAgentRunDisplayPatch）。input 为 null 时建 {}。
+function patchAgentRunInput(block: ChatBlock, event: Record<string, Object>, agentId: string): void {
+  if (block.tool === null) {
+    return;
+  }
+  let input: Record<string, Object> | null = block.tool.input;
+  if (input === null) {
+    input = {};
+    block.tool.input = input;
+  }
+  if (agentId !== '') {
+    input['agentId'] = agentId;
+  }
+  const status: string = evStr(event, 'status', 'status');
+  if (status !== '') {
+    input['agentStatus'] = status;
+  }
+  const statusText: string = evStr(event, 'statusText', 'status_text');
+  if (statusText !== '') {
+    input['statusText'] = statusText;
+  }
+  const patch: Record<string, Object> = getAgentRunDisplayPatch(event);
+  const keys: string[] = Object.keys(patch);
+  for (let i = 0; i < keys.length; i++) {
+    input[keys[i]] = patch[keys[i]];
+  }
+}
+
+// 设最早 startedAt（ts>0 且（未设 or 更早））。
+function setEarliestStartedAt(tool: ChatToolCall, ts: number): void {
+  if (ts <= 0) {
+    return;
+  }
+  if (tool.startedAt === 0 || ts < tool.startedAt) {
+    tool.startedAt = ts;
+  }
+}
+
+// update 结果优先序：result/error/spawnResult/spawn_result（present 即取，含 null）。
+function pickAgentRunResult(event: Record<string, Object>): Object | null {
+  const keys: string[] = ['result', 'error', 'spawnResult', 'spawn_result'];
+  for (let i = 0; i < keys.length; i++) {
+    const v: Object = event[keys[i]];
+    if (typeof v !== 'undefined') {
+      return v;
+    }
+  }
+  return null;
+}
+
+// trace 累积 → 递归 reduceTimelineCore 成 children（对照 reducerTimeline.ts:597-617 refreshAgentRunChildren）。
+//   递归传新 toolBlocksById/reasoningByStreamId（trace 内工具卡/reasoning 不与父层合并），共享 ctx（子代理权限）。
+function refreshAgentRunChildren(arState: AgentRunReducerState, cardId: string, ctx: ReduceContext): void {
+  const block: ChatBlock | undefined = arState.blocksByCardId.get(cardId);
+  if (block === undefined) {
+    return;
+  }
+  const traces: ChatMessage[] | undefined = arState.traceMessagesByCardId.get(cardId);
+  const msgs: ChatMessage[] = traces !== undefined ? traces : [];
+  const childTB: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  const childRS: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  block.children = reduceTimelineCore(msgs, ctx, childTB, childRS).blocks;
+}
+
+// agent-run-start：指纹去重（无 agentId 无 cardId 的纯 fallback start）+ 建卡 + 状态 + spawn input + 显示 patch。
+function handleAgentRunStart(
+  msg: ChatMessage, event: Record<string, Object>, cardId: string, agentId: string,
+  arState: AgentRunReducerState, blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>
+): void {
+  // 纯 fallback start（无 agentId、cardId=msg.id）→ 指纹去重（防 spawn 重放产重复卡）
+  if (agentId === '' && cardId === msg.id) {
+    const fp: string = getAgentRunFingerprint(event);
+    if (fp !== '') {
+      const prev: string | undefined = arState.pendingCardByFingerprint.get(fp);
+      if (prev !== undefined) {
+        return;
+      }
+      arState.pendingCardByFingerprint.set(fp, cardId);
+    }
+  }
+  const block: ChatBlock = ensureAgentRunCard(arState, blocks, toolBlocksById, cardId, msg.createdAt, event['input']);
+  const status: string = evStr(event, 'status', 'status');
+  const nextState: ToolState = mapAgentRunStatusToToolState(status);
+  if (block.tool !== null) {
+    if (!isTerminalAgentRunState(block.tool.state)) {
+      block.tool.state = nextState;
+    }
+    patchAgentRunInput(block, event, agentId);
+    const s: number = getAgentRunStartedAt(event);
+    setEarliestStartedAt(block.tool, s > 0 ? s : msg.createdAt);
+  }
+}
+
+// agent-run-update：工具型噪声早丢弃 + 终态后噪声过滤 + 状态/result/时间回填。
+function handleAgentRunUpdate(
+  msg: ChatMessage, event: Record<string, Object>, cardId: string, agentId: string,
+  arState: AgentRunReducerState, blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>
+): void {
+  // 无 agentId 的工具型 update（wait_agent/send_input/resume_agent/close_agent/notFound）→ 无对应 start，丢弃
+  if (agentId === '' && isAgentToolOnlyUpdate(event)) {
+    return;
+  }
+  const block: ChatBlock = ensureAgentRunCard(arState, blocks, toolBlocksById, cardId, msg.createdAt, null);
+  const status: string = evStr(event, 'status', 'status');
+  const nextState: ToolState = mapAgentRunStatusToToolState(status);
+  if (shouldIgnoreAgentRunNonTerminalUpdateAfterTerminal(block, nextState, event)) {
+    return;
+  }
+  if (shouldIgnoreAgentRunCloseCleanupAfterTerminal(block, status, event)) {
+    return;
+  }
+  if (block.tool !== null) {
+    block.tool.state = nextState;
+    patchAgentRunInput(block, event, agentId);
+    const s: number = getAgentRunStartedAt(event);
+    setEarliestStartedAt(block.tool, s > 0 ? s : msg.createdAt);
+    if (isTerminalAgentRunState(nextState)) {
+      const c: number = getAgentRunCompletedAt(event);
+      block.tool.completedAt = c > 0 ? c : msg.createdAt;
+      const result: Object | null = pickAgentRunResult(event);
+      if (result !== null) {
+        block.tool.result = result;
+      }
+    }
+  }
+}
+
+// agent-run-trace：normalizeTraceMessage 展开 → 累积 → 建卡（trace 可先于 start）→ refresh children。
+function handleAgentRunTrace(
+  msg: ChatMessage, event: Record<string, Object>, cardId: string, agentId: string,
+  arState: AgentRunReducerState, blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>, ctx: ReduceContext
+): void {
+  const expanded: ChatMessage[] = normalizeTraceMessage(agentId, event['message'], msg.id, msg.createdAt);
+  if (expanded.length === 0) {
+    return;
+  }
+  let traces: ChatMessage[] | undefined = arState.traceMessagesByCardId.get(cardId);
+  if (traces === undefined) {
+    traces = [];
+    arState.traceMessagesByCardId.set(cardId, traces);
+  }
+  for (let i = 0; i < expanded.length; i++) {
+    traces.push(expanded[i]);
+  }
+  ensureAgentRunCard(arState, blocks, toolBlocksById, cardId, msg.createdAt, null);
+  refreshAgentRunChildren(arState, cardId, ctx);
+}
+
+// agent-run 事件分发（event 分支调用）：解析 type/agentId → 规范 cardId → 登记 agentId → 分派 start/update/trace。
+function handleAgentRunMessage(
+  msg: ChatMessage, event: Record<string, Object>, arState: AgentRunReducerState,
+  blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>, ctx: ReduceContext
+): void {
+  const type: string = evStr(event, 'type', 'type');
+  const agentId: string = evStr(event, 'agentId', 'agent_id');
+  const fallback: string = agentId !== '' ? 'codex-agent:' + agentId : msg.id;
+  const cardId: string = canonicalAgentRunCardId(arState, agentId, getAgentRunCardId(event, fallback), toolBlocksById);
+  if (agentId !== '') {
+    const cur: string | undefined = arState.cardByAgentId.get(agentId);
+    if (cur === undefined) {
+      arState.cardByAgentId.set(agentId, cardId);
+    }
+  }
+  if (type === 'agent-run-start') {
+    handleAgentRunStart(msg, event, cardId, agentId, arState, blocks, toolBlocksById);
+  } else if (type === 'agent-run-update') {
+    handleAgentRunUpdate(msg, event, cardId, agentId, arState, blocks, toolBlocksById);
+  } else if (type === 'agent-run-trace') {
+    handleAgentRunTrace(msg, event, cardId, agentId, arState, blocks, toolBlocksById, ctx);
+  }
+}
+
+// 末段孤儿清理（对照 reducerTimeline.ts isOrphanAgentRunBlock/removeAgentRunBlock）：无 children/result/终态/
+//   input.agentId 的 start 卡 → 移出 timeline。两趟（先收集再删，免遍历中改 Map）。
+function sweepOrphanAgentRunBlocks(
+  arState: AgentRunReducerState, blocks: ChatBlock[], toolBlocksById: Map<string, ChatBlock>
+): void {
+  const orphans: string[] = [];
+  arState.blocksByCardId.forEach((block: ChatBlock, cardId: string) => {
+    if (isOrphanAgentRunBlock(block)) {
+      orphans.push(cardId);
+    }
+  });
+  for (let i = 0; i < orphans.length; i++) {
+    const block: ChatBlock | undefined = arState.blocksByCardId.get(orphans[i]);
+    if (block !== undefined) {
+      removeBlockFromTimeline(blocks, toolBlocksById, block);
+      arState.blocksByCardId.delete(orphans[i]);
+    }
+  }
 }

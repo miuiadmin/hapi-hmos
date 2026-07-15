@@ -58,6 +58,7 @@ import groupedPresentationTest from './GroupedPresentation.test';
 import jwtUtilsTest from './JwtUtils.test';
 import tracerTest from './Tracer.test';
 import subagentToolTest from './SubagentTool.test';
+import agentRunTraceTest from './AgentRunTrace.test';
 
 export default function testsuite() {
   diffTest();
@@ -117,4 +118,5 @@ export default function testsuite() {
   jwtUtilsTest();
   tracerTest();
   subagentToolTest();
+  agentRunTraceTest();
 }

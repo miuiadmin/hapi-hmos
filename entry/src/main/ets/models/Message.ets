@@ -78,6 +78,14 @@ export class ChatMessage {
   parentUuid: string = '';
   sidechainPrompt: string = '';
 
+  // Codex agent-run 事件透传（对齐 web reducerTimeline.ts 的 agent-run-start/update/trace 处理）。
+  //   线上 role='agent'、content={type:'codex', data:{type:'agent-run-*', ...}}；parseMessage 在 agent 分支
+  //   最前拦截这三类（仅 agent-run-*），把 data 整体存此字段并改 role='event'（不走正常 agent 提取）。
+  //   其余 codex 内容（message/reasoning/tool-call/summary/plan_update）仍走 extractAgentBlocks，现有 Codex 流不变。
+  //   Reducer 据 m.agentRunEvent !== null 在 reduceTimelineCore 内建/更新 CodexAgent 工具卡 + 递归 reduce
+  //   trace 伪消息成 block.children（Flow B）。仅 agent-run 消息；user/event/普通 agent 为 null。
+  agentRunEvent: Record<string, Object> | null = null;
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -117,6 +125,11 @@ export function cloneMessage(m: ChatMessage): ChatMessage {
   c.event = m.event;                // 浅拷贝引用：AgentEvent 解析后不可变，无需深拷
   c.turnDurationMs = m.turnDurationMs;
   c.turnDurationTargetId = m.turnDurationTargetId;
+  c.isSidechain = m.isSidechain;          // sidechain 链路（浅值拷贝；cloneMessage 仅用于乐观 user 消息改态，
+  c.uuid = m.uuid;                        //   sidechain/agent-run 为服务端消息不会被 clone，补全字段保正确性）
+  c.parentUuid = m.parentUuid;
+  c.sidechainPrompt = m.sidechainPrompt;
+  c.agentRunEvent = m.agentRunEvent;      // Codex agent-run data（浅拷贝引用：data 解析后不可变，无需深拷）
   return c;
 }
 
@@ -689,6 +702,22 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     m.attachments = inner !== null ? parseAttachmentsFromContent(inner['attachments']) : [];
     m.status = m.invokedAt === 0 ? 'queued' : 'sent';
   } else if (normalizedRole === 'agent') {
+    // Codex agent-run 拦截（对照 normalizeAgent.ts:538-556）：agent 报文 content={type:'codex', data:{...}}。
+    //   仅 data.type 为 agent-run-start/update/trace 三类被拦为 event（data 整体透传 m.agentRunEvent，跳过正常
+    //   agent 提取）；其余 codex 内容（message/reasoning/tool-call/summary/plan_update 等）仍走 extractAgentBlocks，
+    //   现有 Codex 聊天流不变。Reducer 据 m.agentRunEvent !== null 在 reduceTimelineCore 内建/更新 CodexAgent 卡。
+    if (pickStr(inner, 'type') === 'codex') {
+      const arData: Record<string, Object> | null = pickObj(inner, 'data');
+      if (arData !== null) {
+        const arType: string = pickStr(arData, 'type');
+        if (arType === 'agent-run-start' || arType === 'agent-run-update' || arType === 'agent-run-trace') {
+          m.role = 'event';
+          m.agentRunEvent = arData;
+          m.status = 'sent';
+          return m;
+        }
+      }
+    }
     // sidechain 三字段（data 顶层，对照 normalizeAgent.ts:226-228）：uuid/parentUuid 串链，isSidechain 标记。
     const sidechainData: Record<string, Object> | null = pickObj(inner, 'data');
     if (sidechainData !== null) {

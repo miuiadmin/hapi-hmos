@@ -48,6 +48,17 @@ function eventMsg(id: string, createdAt: number): ChatMessage {
   return m;
 }
 
+// Codex agent-run 事件消息（role='event' + agentRunEvent；对照 parseMessage codex 拦截）。
+function agentRunMsg(id: string, createdAt: number, data: Record<string, Object>): ChatMessage {
+  const m: ChatMessage = new ChatMessage();
+  m.id = id;
+  m.role = 'event';
+  m.createdAt = createdAt;
+  m.status = 'sent';
+  m.agentRunEvent = data;
+  return m;
+}
+
 // turn-duration event（role='event' + 携带耗时/目标 id；对照 normalizeAgent.ts:473 system/turn_duration）。
 function turnDurationEvent(id: string, createdAt: number, targetId: string, durationMs: number): ChatMessage {
   const m: ChatMessage = new ChatMessage();
@@ -696,6 +707,123 @@ export default function reducerTest(): void {
         [agentMsg('a1', 100, [toolCall('t1', 'Bash')])], null);
       expect(blocks.length).assertEqual(1);
       expect(blocks[0].children.length).assertEqual(0);
+    });
+  });
+
+  // —— Flow B：Codex agent-run children（CodexAgent 卡 + trace 递归 reduce）——
+  describe('reduceChatBlocks — Codex agent-run children（Flow B）', () => {
+    it('start + trace(message) + update(completed) → CodexAgent 卡 completed + children 含 text', 0, () => {
+      const start: Record<string, Object> = {
+        'type': 'agent-run-start', 'agentId': 'A', 'cardId': 'C1', 'status': 'running',
+        'input': { 'message': 'do x' } as Record<string, Object>
+      } as Record<string, Object>;
+      const trace1: Record<string, Object> = {
+        'type': 'agent-run-trace', 'agentId': 'A', 'cardId': 'C1',
+        'message': { 'type': 'message', 'id': 'tr1', 'message': 'working on x' } as Record<string, Object>
+      } as Record<string, Object>;
+      const update: Record<string, Object> = {
+        'type': 'agent-run-update', 'agentId': 'A', 'cardId': 'C1', 'status': 'completed', 'result': 'done'
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentRunMsg('s1', 100, start),
+        agentRunMsg('s2', 200, trace1),
+        agentRunMsg('s3', 300, update)
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('tool-call');
+      const tool: ChatToolCall = toolOf(blocks[0]);
+      expect(tool.name).assertEqual('CodexAgent');
+      expect(tool.state).assertEqual('completed');
+      expect(tool.result).assertEqual('done');
+      expect(tool.input !== null).assertTrue();
+      if (tool.input !== null) {
+        expect(tool.input['agentId']).assertEqual('A');
+      }
+      expect(blocks[0].children.length).assertEqual(1);
+      expect(blocks[0].children[0].kind).assertEqual('agent-text');
+      expect(blocks[0].children[0].text).assertEqual('working on x');
+    });
+
+    it('fallback↔named 合并：start 无 cardId + trace 有 named cardId → 仅 1 卡，children 保留', 0, () => {
+      const start: Record<string, Object> = {
+        'type': 'agent-run-start', 'agentId': 'A', 'status': 'running',
+        'input': { 'message': 'do y' } as Record<string, Object>
+      } as Record<string, Object>;
+      const trace1: Record<string, Object> = {
+        'type': 'agent-run-trace', 'agentId': 'A', 'cardId': 'named-1',
+        'message': { 'type': 'message', 'id': 'tr1', 'message': 'hi' } as Record<string, Object>
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentRunMsg('s1', 100, start),
+        agentRunMsg('s2', 200, trace1)
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('tool-call');
+      expect(toolOf(blocks[0]).name).assertEqual('CodexAgent');
+      expect(blocks[0].children.length).assertEqual(1);
+      expect(blocks[0].children[0].text).assertEqual('hi');
+    });
+
+    it('孤儿清理：无 agentId/cardId 的纯 fallback start 无后续 → 移除', 0, () => {
+      const start: Record<string, Object> = {
+        'type': 'agent-run-start', 'status': 'running',
+        'input': { 'message': 'lonely' } as Record<string, Object>
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([agentRunMsg('s1', 100, start)], null);
+      expect(blocks.length).assertEqual(0);
+    });
+
+    it('工具型 update 无 agentId → 丢弃（无幽灵卡）', 0, () => {
+      const upd: Record<string, Object> = {
+        'type': 'agent-run-update', 'activityKind': 'wait_agent'
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([agentRunMsg('s1', 100, upd)], null);
+      expect(blocks.length).assertEqual(0);
+    });
+
+    it('update 带 agentId → 建 running 卡（非孤儿，input 带 agentId）', 0, () => {
+      const upd: Record<string, Object> = {
+        'type': 'agent-run-update', 'agentId': 'A', 'cardId': 'C1', 'status': 'running'
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([agentRunMsg('s1', 100, upd)], null);
+      expect(blocks.length).assertEqual(1);
+      const tool: ChatToolCall = toolOf(blocks[0]);
+      expect(tool.name).assertEqual('CodexAgent');
+      expect(tool.state).assertEqual('running');
+      expect(tool.input !== null).assertTrue();
+      if (tool.input !== null) {
+        expect(tool.input['agentId']).assertEqual('A');
+      }
+    });
+
+    it('trace tool-call + tool-call-result 同 callId → children 内配对为 completed 工具卡', 0, () => {
+      const start: Record<string, Object> = {
+        'type': 'agent-run-start', 'agentId': 'A', 'cardId': 'C1', 'status': 'running',
+        'input': { 'message': 'do z' } as Record<string, Object>
+      } as Record<string, Object>;
+      const tc: Record<string, Object> = {
+        'type': 'agent-run-trace', 'agentId': 'A', 'cardId': 'C1',
+        'message': { 'type': 'tool-call', 'id': 'tr1', 'callId': 'c1', 'name': 'shell',
+          'input': { 'command': 'ls' } as Record<string, Object> } as Record<string, Object>
+      } as Record<string, Object>;
+      const tr: Record<string, Object> = {
+        'type': 'agent-run-trace', 'agentId': 'A', 'cardId': 'C1',
+        'message': { 'type': 'tool-call-result', 'id': 'tr2', 'callId': 'c1',
+          'output': 'file.txt', 'is_error': false } as Record<string, Object>
+      } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentRunMsg('s1', 100, start),
+        agentRunMsg('s2', 200, tc),
+        agentRunMsg('s3', 300, tr)
+      ], null);
+      expect(blocks.length).assertEqual(1);             // 仅 CodexAgent 卡
+      expect(blocks[0].children.length).assertEqual(1);  // children 内 1 个配对工具卡
+      const child: ChatBlock = blocks[0].children[0];
+      expect(child.kind).assertEqual('tool-call');
+      const ct: ChatToolCall = toolOf(child);
+      expect(ct.name).assertEqual('shell');
+      expect(ct.state).assertEqual('completed');
+      expect(ct.result).assertEqual('file.txt');
     });
   });
 }
