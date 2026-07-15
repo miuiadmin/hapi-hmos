@@ -345,6 +345,9 @@ export const zhCN: Record<string, string> = {
   'tool.output': '输出',
   'tool.fileContent': '文件内容',
   'tool.completed': '完成',
+  'tool.skillLoadedShort': '技能已加载',
+  'tool.skillLoaded': '已加载「{name}」',
+  'tool.skillFailed': '技能加载失败',
 
   // —— agent 提问（AskUserQuestion）——
   'askUser.selectOptionRequired': '请选择一个选项',
@@ -522,6 +525,9 @@ export const zhCN: Record<string, string> = {
   'pres.startAgent': '启动 Agent',
   'pres.skill': '技能: {name}',
   'pres.skillLabel': '技能',
+  'pres.team': '团队：{name}',
+  'pres.createTeam': '创建团队',
+  'pres.deleteTeam': '删除团队',
   'pres.exitPlan': '计划方案',
   'pres.questionCount': '{n} 个问题',
   'pres.question': '问题',

@@ -341,6 +341,31 @@ export default function presentationTest(): void {
     });
   });
 
+  describe('getToolPresentation — TeamCreate / TeamDelete', () => {
+    it('TeamCreate 有 team_name + description → 👥 + 团队：{name} + description subtitle + minimal false', 0, () => {
+      const input = rec('{"team_name":"alpha","description":"一个团队"}');
+      const p = getToolPresentation(mk('TeamCreate', input, null, ''));
+      expect(p.icon).assertEqual('👥');
+      expect(p.title).assertEqual('团队：alpha');
+      expect(p.subtitle).assertEqual('一个团队');
+      expect(p.minimal).assertFalse();
+    });
+    it('TeamCreate 无 team_name → 👥 + 创建团队 + minimal false', 0, () => {
+      const input = rec('{"description":"d"}');
+      const p = getToolPresentation(mk('TeamCreate', input, null, ''));
+      expect(p.icon).assertEqual('👥');
+      expect(p.title).assertEqual('创建团队');
+      expect(p.subtitle).assertEqual('d');
+      expect(p.minimal).assertFalse();
+    });
+    it('TeamDelete → 👥 + 删除团队 + minimal true', 0, () => {
+      const p = getToolPresentation(mk('TeamDelete', rec('{}'), null, ''));
+      expect(p.icon).assertEqual('👥');
+      expect(p.title).assertEqual('删除团队');
+      expect(p.minimal).assertTrue();
+    });
+  });
+
   describe('getToolPresentation — 回归（既有分支不变）', () => {
     it('Bash → ⌨️ + 终端 + command subtitle', 0, () => {
       const input = rec('{"command":"pwd"}');

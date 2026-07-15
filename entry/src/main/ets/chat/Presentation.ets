@@ -236,6 +236,23 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.minimal = true;
       return p;
     }
+    case 'TeamCreate': {
+      // 对照上游 knownTools.tsx:87-95：icon 👥(UsersIcon)、title 'Team: ${team_name}'（fallback 'Create Team'）、
+      //   subtitle=description、minimal=false（卡片体展示）。
+      p.icon = '👥';
+      const teamName: string = getInputStrAny(input, ['team_name']);
+      p.title = teamName !== '' ? t('pres.team', { name: teamName }) : t('pres.createTeam');
+      p.subtitle = getInputStrAny(input, ['description']);
+      p.minimal = false;
+      return p;
+    }
+    case 'TeamDelete': {
+      // 对照上游 knownTools.tsx:96-100：icon 👥、title 'Delete Team'、minimal=true（仅头）。
+      p.icon = '👥';
+      p.title = t('pres.deleteTeam');
+      p.minimal = true;
+      return p;
+    }
     case 'ExitPlanMode':
     case 'exit_plan_mode':
       p.icon = '📋';

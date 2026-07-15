@@ -344,6 +344,9 @@ export const en: Record<string, string> = {
   'tool.output': 'Output',
   'tool.fileContent': 'File content',
   'tool.completed': 'Done',
+  'tool.skillLoadedShort': 'Skill loaded',
+  'tool.skillLoaded': 'Skill "{name}" loaded',
+  'tool.skillFailed': 'Failed to load skill',
 
   // —— Ask user (AskUserQuestion) ——
   'askUser.selectOptionRequired': 'Please select an option',
@@ -521,6 +524,9 @@ export const en: Record<string, string> = {
   'pres.startAgent': 'Launch Agent',
   'pres.skill': 'Skill: {name}',
   'pres.skillLabel': 'Skill',
+  'pres.team': 'Team: {name}',
+  'pres.createTeam': 'Create Team',
+  'pres.deleteTeam': 'Delete Team',
   'pres.exitPlan': 'Plan proposal',
   'pres.questionCount': '{n} questions',
   'pres.question': 'Question',

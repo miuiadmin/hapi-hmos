@@ -7,7 +7,7 @@
 // 降级：无 Shiki 语法高亮（CodeBlock 等宽纯文本）；Markdown 复用 MarkdownText。
 
 import { ChatToolCall } from '../chat/ChatBlock';
-import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath, extractNotebookEditFields, NotebookEditFields, formatNotebookCellMeta } from '../chat/ToolInputUtils';
+import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, extractCodexBashDisplay, parseCodexBashOutput, CodexBashDisplay, CodexBashParsedOutput, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath, extractNotebookEditFields, NotebookEditFields, formatNotebookCellMeta } from '../chat/ToolInputUtils';
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
 import { getCodexAgentFieldRows, getCodexAgentPrompt, getCodexAgentActivity, getCodexAgentTargets, parseCodexSpawnAgentResult, parseCodexWaitAgentResult, parseCodexCloseAgentResult, CodexSpawnAgentResult, CodexWaitAgentResult, CodexAgentStatus, AgentFieldRow } from '../chat/CodexAgents';
@@ -434,6 +434,75 @@ struct ToolResultView {
     return stdio !== null ? stdio.stderr : '';
   }
 
+  // —— CodexBash 对象结果（extractCodexBashDisplay）——
+  private codexBashDisplay(): CodexBashDisplay | null {
+    return extractCodexBashDisplay(this.tool.result);
+  }
+  private codexBashExitLabel(): string {
+    const d: CodexBashDisplay | null = this.codexBashDisplay();
+    if (d === null) {
+      return '';
+    }
+    if (d.hasExitCode) {
+      return `exit ${d.exitCode.toString()}`;
+    }
+    return d.status !== '' ? d.status : t('tool.completed');
+  }
+  private codexBashStdout(): string {
+    const d: CodexBashDisplay | null = this.codexBashDisplay();
+    return d === null ? '' : d.stdout.trimEnd();
+  }
+  private codexBashStderr(): string {
+    const d: CodexBashDisplay | null = this.codexBashDisplay();
+    return d === null ? '' : d.stderr.trimEnd();
+  }
+  private codexBashDisplayEmptyLabel(): string {
+    const d: CodexBashDisplay | null = this.codexBashDisplay();
+    if (d === null) {
+      return t('tool.noOutput');
+    }
+    return (d.hasExitCode && d.exitCode === 0) || d.status === 'completed' ? t('tool.completed') : t('tool.noOutput');
+  }
+
+  // —— CodexBash 字符串结果（parseCodexBashOutput；仅对字符串 result）——
+  private codexBashParsed(): CodexBashParsedOutput | null {
+    const r: Object | null = this.tool.result;
+    if (r === null || typeof r !== 'string') {
+      return null;
+    }
+    return parseCodexBashOutput(r as string);
+  }
+  private codexBashParsedExitLabel(): string {
+    const p: CodexBashParsedOutput | null = this.codexBashParsed();
+    if (p === null || !p.hasExitCode) {
+      return '';
+    }
+    return `exit ${p.exitCode.toString()}`;
+  }
+  private codexBashWallTime(): string {
+    const p: CodexBashParsedOutput | null = this.codexBashParsed();
+    return p === null ? '' : p.wallTime;
+  }
+  private codexBashParsedOutputText(): string {
+    const p: CodexBashParsedOutput | null = this.codexBashParsed();
+    return p === null ? '' : p.output.trim();
+  }
+
+  // —— Skill 结果（@Builder 内禁局部变量 → 前置纯 getter）——
+  private skillErrorText(): string {
+    const txt: string = this.resultText().trim();
+    return txt !== '' ? txt : t('tool.skillFailed');
+  }
+  private skillLoadedLabel(): string {
+    const skill: string = getInputStrAny(this.tool.input, ['skill']);
+    return skill !== '' ? t('tool.skillLoaded', { name: skill }) : t('tool.skillLoadedShort');
+  }
+
+  // —— CodexDiff 结果解析（parseUnifiedDiff 恒返回非空；old/new 均空 = 非 diff 文本 → 回退 CodeBlock）——
+  private codexDiffParsed(): CodexDiffParsed {
+    return parseUnifiedDiff(this.resultText());
+  }
+
   private placeholderForState(): string {
     if (this.tool.state === 'pending') {
       return t('tool.statePending');
@@ -535,6 +604,10 @@ struct ToolResultView {
         this.MarkdownResult()
       } else if (this.tool.name === 'Glob' || this.tool.name === 'Grep' || this.tool.name === 'LS') {
         this.LineListResult()
+      } else if (this.tool.name === 'Skill') {
+        this.SkillResult()
+      } else if (this.tool.name === 'CodexDiff') {
+        this.CodexDiffResult()
       } else if (isCodexAgentToolName(this.tool.name)) {
         this.AgentResult()
       } else {
@@ -559,6 +632,10 @@ struct ToolResultView {
   BashResult() {
     if (this.tool.result === null) {
       this.Pill(this.placeholderForState())
+    } else if (this.tool.name === 'CodexBash' && this.codexBashDisplay() !== null) {
+      this.CodexBashObjectResult()
+    } else if (this.tool.name === 'CodexBash' && this.codexBashParsed() !== null) {
+      this.CodexBashStringResult()
     } else if (this.bashStdout() !== '' || this.bashStderr() !== '') {
       Column({ space: 6 }) {
         if (this.bashStdout() !== '') {
@@ -577,6 +654,49 @@ struct ToolResultView {
     }
   }
 
+  // CodexBash 对象结果（对照上游 CodexBashResultView + extractCodexBashDisplay）：
+  //   exit/status meta pill + stdout/stderr CodeBlock；空输出 → Done/no-output pill。
+  @Builder
+  CodexBashObjectResult() {
+    Column({ space: 6 }) {
+      this.Pill(this.codexBashExitLabel())
+      if (this.codexBashStdout() !== '') {
+        CodeBlock({ code: this.codexBashStdout(), language: 'text', title: 'stdout', collapseLongContent: this.isInline })
+      }
+      if (this.codexBashStderr() !== '') {
+        CodeBlock({ code: this.codexBashStderr(), language: 'text', title: 'stderr', collapseLongContent: this.isInline })
+      }
+      if (this.codexBashStdout() === '' && this.codexBashStderr() === '') {
+        this.Pill(this.codexBashDisplayEmptyLabel())
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  // CodexBash 字符串结果（对照上游 GenericResultView 字符串分支 + parseCodexBashOutput）：
+  //   exit pill + wallTime pill + output CodeBlock。
+  @Builder
+  CodexBashStringResult() {
+    Column({ space: 6 }) {
+      Row({ space: 6 }) {
+        if (this.codexBashParsedExitLabel() !== '') {
+          this.Pill(this.codexBashParsedExitLabel())
+        }
+        if (this.codexBashWallTime() !== '') {
+          this.Pill(this.codexBashWallTime())
+        }
+      }
+      if (this.codexBashParsedOutputText() !== '') {
+        CodeBlock({ code: this.codexBashParsedOutputText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
+      } else {
+        this.Pill(t('tool.noOutput'))
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
   @Builder
   ReadResult() {
     if (this.tool.result === null) {
@@ -593,9 +713,56 @@ struct ToolResultView {
     if (this.tool.result === null) {
       this.Pill(this.tool.state === 'completed' ? t('tool.completed') : this.placeholderForState())
     } else if (this.resultText().trim() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.result'), collapseLongContent: this.isInline })
+      if (this.tool.state === 'error') {
+        // error：红字 + 近似等宽（对照上游 MutationResultView error：text-red-600 + code 模式；
+        //   CodeBlock 不支持自定义字色 → 用 Text + Courier New 近似 mono）
+        Text(this.resultText())
+          .fontSize(fs(13))
+          .fontColor(this.c.error)
+          .fontFamily('Courier New')
+          .width('100%')
+      } else {
+        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.result'), collapseLongContent: this.isInline })
+      }
     } else {
       this.Pill(this.tool.state === 'completed' ? t('tool.completed') : t('tool.noOutput'))
+    }
+  }
+
+  // Skill 结果（对照上游 SkillResultView）：null+completed→「技能已加载」；error→红字（空则「技能加载失败」）；
+  //   成功→「已加载「{name}」」/「技能已加载」pill。
+  @Builder
+  SkillResult() {
+    if (this.tool.result === null) {
+      this.Pill(this.tool.state === 'completed' ? t('tool.skillLoadedShort') : this.placeholderForState())
+    } else if (this.tool.state === 'error') {
+      Text(this.skillErrorText())
+        .fontSize(fs(13))
+        .fontColor(this.c.error)
+        .width('100%')
+    } else {
+      this.Pill(this.skillLoadedLabel())
+    }
+  }
+
+  // CodexDiff 结果（对照上游 CodexDiffResultView）。端口无 Shiki diff 语法高亮 → 路径 A：parseUnifiedDiff
+  //   成功（解析出 +/- 行内容）则 DiffView 行级染色（复用 input 侧已验证管线），否则回退 CodeBlock 纯文本。
+  @Builder
+  CodexDiffResult() {
+    if (this.tool.result === null) {
+      this.Pill(this.tool.state === 'completed' ? t('tool.completed') : this.placeholderForState())
+    } else if (this.resultText() !== '') {
+      if (this.codexDiffParsed().oldText !== '' || this.codexDiffParsed().newText !== '') {
+        DiffView({
+          oldString: this.codexDiffParsed().oldText,
+          newString: this.codexDiffParsed().newText,
+          filePath: this.codexDiffParsed().fileName
+        })
+      } else {
+        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
+      }
+    } else {
+      this.Pill(t('tool.completed'))
     }
   }
 

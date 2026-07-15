@@ -213,6 +213,115 @@ export function extractStdoutStderr(result: Object | null): { stdout: string; st
   return null;
 }
 
+// CodexBash 对象结果展示（对照上游 extractCodexBashDisplay）：从对象取 stdout(回退 output)/stderr/
+//   exit_code(回退 exitCode,number)/status(string)；四皆缺 → null。hasExitCode 区分「exit 0」与「无 exit
+//   code」——0 是合法退出码，不可用 falsy 判定（上游 exitCode: number | null）。
+export class CodexBashDisplay {
+  stdout: string = '';
+  stderr: string = '';
+  exitCode: number = 0;
+  hasExitCode: boolean = false;
+  status: string = '';
+}
+
+export function extractCodexBashDisplay(result: Object | null): CodexBashDisplay | null {
+  if (result === null || result === undefined || typeof result !== 'object' || Array.isArray(result)) {
+    return null;
+  }
+  const rec: Record<string, Object> = result as Record<string, Object>;
+  // stdout 取 stdout，回退 output（对照上游 result.stdout ?? result.output）
+  let stdout: string = '';
+  const stdoutRaw: Object = rec['stdout'];
+  if (typeof stdoutRaw === 'string') {
+    stdout = stdoutRaw;
+  } else {
+    const outputRaw: Object = rec['output'];
+    if (typeof outputRaw === 'string') {
+      stdout = outputRaw;
+    }
+  }
+  const stderrRaw: Object = rec['stderr'];
+  const stderr: string = typeof stderrRaw === 'string' ? stderrRaw : '';
+  // exit_code 或 exitCode（number）
+  let exitCode: number = 0;
+  let hasExitCode: boolean = false;
+  const ecRaw: Object = rec['exit_code'];
+  if (typeof ecRaw === 'number') {
+    exitCode = ecRaw;
+    hasExitCode = true;
+  } else {
+    const ec2Raw: Object = rec['exitCode'];
+    if (typeof ec2Raw === 'number') {
+      exitCode = ec2Raw;
+      hasExitCode = true;
+    }
+  }
+  const statusRaw: Object = rec['status'];
+  const status: string = typeof statusRaw === 'string' ? statusRaw : '';
+  // 四皆缺 → null（对照上游 stdout/stderr/exitCode/status 全 null）
+  if (stdout === '' && stderr === '' && !hasExitCode && status === '') {
+    return null;
+  }
+  const d: CodexBashDisplay = new CodexBashDisplay();
+  d.stdout = stdout;
+  d.stderr = stderr;
+  d.exitCode = exitCode;
+  d.hasExitCode = hasExitCode;
+  d.status = status;
+  return d;
+}
+
+// CodexBash 字符串结果解析（对照上游 parseCodexBashOutput 三正则 /m）：手写扫描器替正则（ArkTS 禁）。
+//   逐行：行首 'Exit code:' → 取余 trimStart parseInt（NaN 不置 hasExitCode）；
+//         行首 'Wall time:' → 取余 trim（空串不置）；
+//         行 === 'Output:'（精确）→ 该行之后所有行 join('\n') 为 output（替 ^Output:\n([\s\S]*)$）；
+//   三皆不命中 → null；无 Output 段 → output=原全文。Exit/Wall 可在 Output 段后命中（三正则各扫全文）。
+export class CodexBashParsedOutput {
+  exitCode: number = 0;
+  hasExitCode: boolean = false;
+  wallTime: string = '';
+  output: string = '';
+}
+
+export function parseCodexBashOutput(text: string): CodexBashParsedOutput | null {
+  if (text === '') {
+    return null;
+  }
+  const lines: string[] = text.split('\n');
+  let exitCode: number = 0;
+  let hasExitCode: boolean = false;
+  let wallTime: string = '';
+  let outputIdx: number = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line: string = lines[i];
+    if (outputIdx === -1 && line === 'Output:') {
+      outputIdx = i + 1;
+      continue;
+    }
+    if (!hasExitCode && line.indexOf('Exit code:') === 0) {
+      const n: number = parseInt(line.substring(10).trimStart(), 10);
+      if (!Number.isNaN(n)) {
+        exitCode = n;
+        hasExitCode = true;
+      }
+    } else if (wallTime === '' && line.indexOf('Wall time:') === 0) {
+      const w: string = line.substring(10).trim();
+      if (w !== '') {
+        wallTime = w;
+      }
+    }
+  }
+  if (!hasExitCode && wallTime === '' && outputIdx === -1) {
+    return null;
+  }
+  const out: CodexBashParsedOutput = new CodexBashParsedOutput();
+  out.exitCode = exitCode;
+  out.hasExitCode = hasExitCode;
+  out.wallTime = wallTime;
+  out.output = outputIdx === -1 ? text : lines.slice(outputIdx).join('\n');
+  return out;
+}
+
 // 文本是否多行（决定结果用 CodeBlock 还是普通 Text，对照上游 getMutationResultRenderMode）
 export function isMultilineText(text: string): boolean {
   return text.split('\n').length > 3;

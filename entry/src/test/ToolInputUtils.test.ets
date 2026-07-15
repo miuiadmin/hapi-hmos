@@ -12,6 +12,8 @@ import {
   parseToolUseError,
   extractResultText,
   extractStdoutStderr,
+  extractCodexBashDisplay,
+  parseCodexBashOutput,
   isMultilineText,
   looksLikeJson,
   looksLikeHtml,
@@ -323,6 +325,115 @@ export default function toolInputUtilsTest(): void {
     it('truncates a long cellId to 12 chars + ellipsis', 0, () => {
       const long: string = 'cell-aaaaaaaaaaaaaaaaaa';
       expect(formatNotebookCellMeta('code', long)).assertEqual('code · #' + long.substring(0, 12) + '…');
+    });
+  });
+
+  describe('extractCodexBashDisplay', () => {
+    it('returns null for null', 0, () => {
+      expect(extractCodexBashDisplay(null) === null).assertTrue();
+    });
+    it('returns null for a non-object (string)', 0, () => {
+      expect(extractCodexBashDisplay('str') === null).assertTrue();
+    });
+    it('returns null for an array', 0, () => {
+      const arr: Object = JSON.parse('[1,2]');
+      expect(extractCodexBashDisplay(arr) === null).assertTrue();
+    });
+    it('returns null when all four fields are absent', 0, () => {
+      expect(extractCodexBashDisplay(rec('{"foo":"bar"}')) === null).assertTrue();
+    });
+    it('extracts exit_code + stdout + stderr', 0, () => {
+      const d = extractCodexBashDisplay(rec('{"exit_code":1,"stdout":"out","stderr":"err"}'));
+      expect(d !== null).assertTrue();
+      if (d !== null) {
+        expect(d.hasExitCode).assertTrue();
+        expect(d.exitCode).assertEqual(1);
+        expect(d.stdout).assertEqual('out');
+        expect(d.stderr).assertEqual('err');
+        expect(d.status).assertEqual('');
+      }
+    });
+    it('exit_code 0 sets hasExitCode true with exitCode 0 (falsy-safe)', 0, () => {
+      const d = extractCodexBashDisplay(rec('{"exit_code":0,"stdout":"x"}'));
+      expect(d !== null).assertTrue();
+      if (d !== null) {
+        expect(d.hasExitCode).assertTrue();
+        expect(d.exitCode).assertEqual(0);
+      }
+    });
+    it('accepts camelCase exitCode as a fallback', 0, () => {
+      const d = extractCodexBashDisplay(rec('{"exitCode":42}'));
+      expect(d !== null).assertTrue();
+      if (d !== null) {
+        expect(d.hasExitCode).assertTrue();
+        expect(d.exitCode).assertEqual(42);
+      }
+    });
+    it('falls back to output for stdout when stdout is absent', 0, () => {
+      const d = extractCodexBashDisplay(rec('{"output":"oo"}'));
+      expect(d !== null).assertTrue();
+      if (d !== null) {
+        expect(d.stdout).assertEqual('oo');
+        expect(d.hasExitCode).assertFalse();
+      }
+    });
+    it('reads status (string) alone', 0, () => {
+      const d = extractCodexBashDisplay(rec('{"status":"completed"}'));
+      expect(d !== null).assertTrue();
+      if (d !== null) {
+        expect(d.status).assertEqual('completed');
+        expect(d.hasExitCode).assertFalse();
+      }
+    });
+  });
+
+  describe('parseCodexBashOutput', () => {
+    it('returns null for empty string', 0, () => {
+      expect(parseCodexBashOutput('') === null).assertTrue();
+    });
+    it('returns null when no section is present', 0, () => {
+      expect(parseCodexBashOutput('just plain output\nno headers here') === null).assertTrue();
+    });
+    it('parses the standard three sections', 0, () => {
+      const p = parseCodexBashOutput('Exit code: 1\nWall time: 0.5s\nOutput:\nhello\nworld');
+      expect(p !== null).assertTrue();
+      if (p !== null) {
+        expect(p.hasExitCode).assertTrue();
+        expect(p.exitCode).assertEqual(1);
+        expect(p.wallTime).assertEqual('0.5s');
+        expect(p.output).assertEqual('hello\nworld');
+      }
+    });
+    it('defaults output to the full text when no Output: section', 0, () => {
+      const p = parseCodexBashOutput('Exit code: 0');
+      expect(p !== null).assertTrue();
+      if (p !== null) {
+        expect(p.exitCode).assertEqual(0);
+        expect(p.output).assertEqual('Exit code: 0');
+        expect(p.wallTime).assertEqual('');
+      }
+    });
+    it('tolerates whitespace after "Exit code:" before the number', 0, () => {
+      const p = parseCodexBashOutput('Exit code:   42');
+      expect(p !== null).assertTrue();
+      if (p !== null) {
+        expect(p.exitCode).assertEqual(42);
+      }
+    });
+    it('non-numeric exit code does not set hasExitCode (and alone → null)', 0, () => {
+      expect(parseCodexBashOutput('Exit code: abc') === null).assertTrue();
+    });
+    it('non-numeric exit code still lets Wall time win', 0, () => {
+      const p = parseCodexBashOutput('Exit code: abc\nWall time: 1s');
+      expect(p !== null).assertTrue();
+      if (p !== null) {
+        expect(p.hasExitCode).assertFalse();
+        expect(p.wallTime).assertEqual('1s');
+      }
+    });
+    it('does not treat "Output: x" (no newline) as the output section', 0, () => {
+      // 行须精确等于 'Output:'；'Output: hello' 非 output 段头，且非 Exit/Wall → null
+      expect(parseCodexBashOutput('Output: hello') === null).assertTrue();
     });
   });
 }
