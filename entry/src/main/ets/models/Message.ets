@@ -65,6 +65,19 @@ export class ChatMessage {
   turnDurationMs: number = -1;
   turnDurationTargetId: string = '';
 
+  // sidechain 子代理链路（对齐 web tracer.ts + normalizeAgent.ts:226-228/299-344）。
+  //   isSidechain=true：本消息属于某子代理（Task/Agent）的 sidechain 流，须被 Tracer 归组到发起它的
+  //     工具卡下作 children 嵌套渲染，而非进 root 时间线。三字段均在 agent 报文的 data 顶层。
+  //   uuid/parentUuid：sidechain 消息的链路 id（Tracer 据此把后续 sidechain 串到同一 sidechainId）。
+  //   sidechainPrompt：仅 sidechain「根」消息（被注入的子代理 prompt，data.message.role==='user'）非空，
+  //     = data.message.content 原文；Tracer 用它与 Task/Agent 工具入参 input.prompt 精确匹配，定位发起卡。
+  //     根消息 blocks 置空（仅作 tracer 标记，不产可见块）。非根 sidechain（子代理 assistant 输出）走正常
+  //     extractAgentBlocks，保留 isSidechain=true 供 Tracer 串链。
+  isSidechain: boolean = false;
+  uuid: string = '';
+  parentUuid: string = '';
+  sidechainPrompt: string = '';
+
   // 是否排队中（user 消息 invokedAt 为空且未失败，对照 isQueuedForInvocation）
   get isQueued(): boolean {
     return this.role === 'user' && this.invokedAt === 0 && this.status !== 'failed';
@@ -607,6 +620,25 @@ function extractAgentModel(inner: Record<string, Object> | null): string {
   if (data === null) { return ''; }
   return pickStr(data, 'model');
 }
+
+// 把 message.content 数组里的 text 块用 '\n\n' 拼接（对照 normalizeAgent.ts:334-344 textParts.join）。
+//   用于 sidechain 根 prompt 的数组 content 形态（子代理 prompt 被序列化为 [{type:'text',text}]）。
+//   手写遍历（ArkTS 禁 filter/map 回调）；非 text 块或 text 非字符串跳过。
+function joinAgentTextBlocks(content: Object): string {
+  const arr: Object[] = content as Object[];
+  let out: string = '';
+  for (let i = 0; i < arr.length; i++) {
+    const item: Object = arr[i];
+    if (typeof item !== 'object' || item === null) { continue; }
+    const blk = item as Record<string, Object>;
+    if (blk['type'] !== 'text') { continue; }
+    const txt: Object = blk['text'];
+    if (typeof txt !== 'string') { continue; }
+    if (out !== '') { out += '\n\n'; }
+    out += txt;
+  }
+  return out;
+}
 export function parseMessage(raw: Record<string, Object>): ChatMessage {
   const m = new ChatMessage();
   m.id = pickStr(raw, 'id');
@@ -657,6 +689,30 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     m.attachments = inner !== null ? parseAttachmentsFromContent(inner['attachments']) : [];
     m.status = m.invokedAt === 0 ? 'queued' : 'sent';
   } else if (normalizedRole === 'agent') {
+    // sidechain 三字段（data 顶层，对照 normalizeAgent.ts:226-228）：uuid/parentUuid 串链，isSidechain 标记。
+    const sidechainData: Record<string, Object> | null = pickObj(inner, 'data');
+    if (sidechainData !== null) {
+      m.uuid = pickStr(sidechainData, 'uuid');
+      m.parentUuid = pickStr(sidechainData, 'parentUuid');
+      m.isSidechain = sidechainData['isSidechain'] === true;
+    }
+    // sidechain「根」消息（被注入的子代理 prompt，data.message.role==='user'）：存 prompt 原文供 Tracer
+    //   匹配发起卡，blocks 置空（仅 tracer 标记，不产可见块）。对照 normalizeAgent.ts:299-347。
+    if (m.isSidechain && sidechainData !== null) {
+      const injectedMsg: Record<string, Object> | null = pickObj(sidechainData, 'message');
+      if (injectedMsg !== null && pickStr(injectedMsg, 'role') === 'user') {
+        const contentObj: Object = injectedMsg['content'];
+        if (typeof contentObj === 'string') {
+          m.sidechainPrompt = contentObj as string;
+        } else if (Array.isArray(contentObj)) {
+          m.sidechainPrompt = joinAgentTextBlocks(contentObj);
+        }
+        m.text = '';
+        m.blocks = [];
+        m.status = 'sent';
+        return m;
+      }
+    }
     m.text = extractAgentText(inner);
     m.blocks = extractAgentBlocks(inner);
     m.usage = extractAgentUsage(inner);   // Token 用量（data.message.usage；缺必填字段则 null）

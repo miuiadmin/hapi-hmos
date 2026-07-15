@@ -21,6 +21,8 @@ import {
   PermissionStatus
 } from './ChatBlock';
 import { isCliOutputText, mergeCliOutputBlocks } from './CliOutput';
+import { isSubagentToolName } from './SubagentTool';
+import { traceAndGroup, TracedResult } from './Tracer';
 
 // ===== getPermissions：agentState → Map<id, PermissionEntry>（completed 先、pending 后，completed 优先）=====
 function getPermissions(agentState: AgentState | null): Map<string, PermissionEntry> {
@@ -178,15 +180,34 @@ function oldestCreatedAt(messages: ChatMessage[]): number {
   return min;
 }
 
-// ===== 主入口：reduceChatBlocks =====
-export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState | null): ChatBlock[] {
-  const permissionsById: Map<string, PermissionEntry> = getPermissions(agentState);
-  const blocks: ChatBlock[] = [];
-  const toolBlocksById: Map<string, ChatBlock> = new Map<string, ChatBlock>();
-  // reasoning 流式合并（对照 reducerTimeline.ts:276/756-785）：Codex 发同一 streamId 的多条 reasoning
-  //   快照，须合并成单个气泡（快照替换语义）。跨消息存活 → 声明在消息循环之外。
-  const reasoningByStreamId: Map<string, ChatBlock> = new Map<string, ChatBlock>();
-  const toolIdsInMessages: Set<string> = new Set<string>();
+// ===== reduceTimelineCore（可递归时间线核心）=====
+// 递归 reduce 的共享上下文（对照上游 reduceTimeline 的 reducerContext）：
+//   permissionsById 跨 root/children 共享（子代理权限也在此）；groups/consumedGroupIds 为 Flow A sidechain
+//   归组服务（children 内的子代理消息 id 不在 root groups → children 内无二次分组，但共享 consumedGroupIds 防重复）。
+class ReduceContext {
+  permissionsById: Map<string, PermissionEntry> = new Map<string, PermissionEntry>();
+  groups: Map<string, ChatMessage[]> = new Map<string, ChatMessage[]>();
+  consumedGroupIds: Set<string> = new Set<string>();
+}
+
+// reduceTimelineCore 返回：blocks（本层产出，push 进 result.blocks）+ toolIdsInMessages（本层见过 tool id）。
+class ReduceTimelineResult {
+  blocks: ChatBlock[] = [];
+  toolIdsInMessages: Set<string> = new Set<string>();
+}
+
+// 现 reduceChatBlocks 的消息循环抽出为可递归函数：参数化 toolBlocksById/reasoningByStreamId（递归各传新 Map，
+//   child 工具卡/reasoning 不与父层合并）；permissionsById/groups/consumedGroupIds 经 ctx 跨层共享。
+//   blocks/toolIdsInMessages 写入并返回 result（孤儿权限卡判定用 toolIdsInMessages；toolBlocksById 由调用方持有）。
+function reduceTimelineCore(
+  messages: ChatMessage[],
+  ctx: ReduceContext,
+  toolBlocksById: Map<string, ChatBlock>,
+  reasoningByStreamId: Map<string, ChatBlock>
+): ReduceTimelineResult {
+  const result: ReduceTimelineResult = new ReduceTimelineResult();
+  const blocks: ChatBlock[] = result.blocks;
+  const toolIdsInMessages: Set<string> = result.toolIdsInMessages;
 
   // 按消息顺序、每条 blocks 顺序遍历（插入序，不排序）
   for (let mi = 0; mi < messages.length; mi++) {
@@ -279,7 +300,7 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
         }
       } else if (c.type === 'tool-call') {
         toolIdsInMessages.add(c.id);
-        const entry: PermissionEntry | undefined = permissionsById.get(c.id);
+        const entry: PermissionEntry | undefined = ctx.permissionsById.get(c.id);
         const permission: ToolPermission | null = entry !== undefined ? entry.permission : null;
         const block: ChatBlock = ensureToolBlock(blocks, toolBlocksById, c.id,
           msg.createdAt, c.name, c.input, c.description, permission);
@@ -288,9 +309,21 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
           block.tool.state = 'running';
           block.tool.startedAt = msg.createdAt;
         }
+        // Flow A 子代理 children（对照 reducerTimeline.ts:853-861）：Task/Agent 工具卡 + 本消息 id 有 sidechain
+        //   归组 → 递归 reduce 该组为 block.children。consumedGroupIds 防同组多次 reduce；递归传新 toolBlocksById/
+        //   reasoningByStreamId（child 卡不与父层合并），共享 ctx（子代理权限 + 防重复归组）。
+        if (isSubagentToolName(c.name) && !ctx.consumedGroupIds.has(msg.id)) {
+          const group: ChatMessage[] | undefined = ctx.groups.get(msg.id);
+          if (group !== undefined && group.length > 0) {
+            ctx.consumedGroupIds.add(msg.id);
+            const childTB: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+            const childRS: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+            block.children = reduceTimelineCore(group, ctx, childTB, childRS).blocks;
+          }
+        }
       } else if (c.type === 'tool-result') {
         toolIdsInMessages.add(c.id);
-        const entry: PermissionEntry | undefined = permissionsById.get(c.id);
+        const entry: PermissionEntry | undefined = ctx.permissionsById.get(c.id);
         const toolName: string = entry !== undefined && entry.toolName !== '' ? entry.toolName : 'Tool';
         const inputObj: Object | null = entry !== undefined ? entry.input : null;
         const permission: ToolPermission | null = entry !== undefined ? entry.permission : null;
@@ -305,6 +338,25 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
       }
     }
   }
+
+  return result;
+}
+
+// ===== 主入口：reduceChatBlocks =====
+// trace+group（Flow A sidechain 归组）→ reduceTimelineCore(root) → 孤儿权限卡 → 后处理。
+//   oldestCreatedAt 仍用原 messages（含 sidechain，保现有语义）。reducer 仍纯层零 @kit。
+export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState | null): ChatBlock[] {
+  const permissionsById: Map<string, PermissionEntry> = getPermissions(agentState);
+  const traced: TracedResult = traceAndGroup(messages);
+  const ctx: ReduceContext = new ReduceContext();
+  ctx.permissionsById = permissionsById;
+  ctx.groups = traced.groups;
+  ctx.consumedGroupIds = new Set<string>();
+  const toolBlocksById: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  const reasoningByStreamId: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  const core: ReduceTimelineResult = reduceTimelineCore(traced.root, ctx, toolBlocksById, reasoningByStreamId);
+  const blocks: ChatBlock[] = core.blocks;
+  const toolIdsInMessages: Set<string> = core.toolIdsInMessages;
 
   // 孤儿权限卡：permissionsById 中未出现在任何消息 tool id 的（且不早于最旧消息），末尾补卡
   const oldest: number = oldestCreatedAt(messages);

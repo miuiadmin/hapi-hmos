@@ -347,6 +347,12 @@ export const en: Record<string, string> = {
   'tool.skillLoadedShort': 'Skill loaded',
   'tool.skillLoaded': 'Skill "{name}" loaded',
   'tool.skillFailed': 'Failed to load skill',
+  // —— Sub-agent trace (TraceSection：子代理 children 嵌套渲染) ——
+  'tool.trace': 'Trace',
+  'tool.traceCalls': '{n} calls',
+  'tool.traceTokens': '{n}k tok',
+  'tool.traceDuration': '{n}s',
+  'tool.traceEmpty': 'No trace',
 
   // —— Ask user (AskUserQuestion) ——
   'askUser.selectOptionRequired': 'Please select an option',

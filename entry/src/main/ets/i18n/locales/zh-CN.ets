@@ -348,6 +348,12 @@ export const zhCN: Record<string, string> = {
   'tool.skillLoadedShort': '技能已加载',
   'tool.skillLoaded': '已加载「{name}」',
   'tool.skillFailed': '技能加载失败',
+  // —— 子代理追踪（TraceSection：子代理 children 嵌套渲染）——
+  'tool.trace': '追踪',
+  'tool.traceCalls': '{n} 次调用',
+  'tool.traceTokens': '{n}k tok',
+  'tool.traceDuration': '{n}s',
+  'tool.traceEmpty': '无追踪',
 
   // —— agent 提问（AskUserQuestion）——
   'askUser.selectOptionRequired': '请选择一个选项',

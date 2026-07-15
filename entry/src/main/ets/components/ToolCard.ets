@@ -6,6 +6,7 @@ import { isRequestUserInputToolName } from '../chat/RequestUserInput';
 import { isCodexSessionByFlavor } from '../chat/AgentFlavor';
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
+import { TraceSection } from './TraceSection';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
 import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
@@ -64,6 +65,11 @@ struct ToolCard {
 
   private get toolName(): string {
     return this.tool !== null ? this.tool.name : '';
+  }
+
+  // TraceSection 的 mode：CodexAgent 发起（Flow B）→ 'session'（默认展 + 固定高）；其余（Task/Agent，Flow A）→ 'trace'。
+  private get childrenMode(): string {
+    return this.tool !== null && this.tool.name === 'CodexAgent' ? 'session' : 'trace';
   }
 
   // pending 权限（等用户决定）
@@ -567,6 +573,12 @@ struct ToolCard {
           .width('100%')
           .margin({ bottom: 6 })
         ToolInputView({ tool: this.toolNotNull, surface: 'dialog' })
+
+        // 子代理 children 嵌套追踪（Flow A：Claude Task/Agent sidechain；Flow B：Codex CodexAgent agent-run）。
+        //   block.children 由 Reducer 递归 reduce 产；空则不挂。mode 由发起工具名定（CodexAgent→session）。
+        if (this.block.children.length > 0) {
+          TraceSection({ children: this.block.children, mode: this.childrenMode })
+        }
 
         Text(t('tool.result'))
           .fontSize(fs(11))

@@ -133,6 +133,12 @@ export class ChatBlock {
   groupLastToolId: string = '';
   groupNeedsOlderHistory: boolean = false;
 
+  // 仅 tool-call（子代理发起卡）：嵌套子代理的 block 时间线（对照上游 ChatBlock.children）。
+  //   Flow A（Claude Task/Agent）：Reducer 把 sidechain 消息递归 reduce 成 children（发起卡 = Task 工具块）。
+  //   Flow B（Codex CodexAgent）：Reducer 把 agent-run-trace 伪消息递归 reduce 成 children。
+  //   TraceSection 组件在卡片详情 sheet 递归渲染（text/reasoning/tool-call 可再嵌套）。空 = 无子代理内容。
+  children: ChatBlock[] = [];
+
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
     model: string = '', usage: UsageData | null = null): ChatBlock {

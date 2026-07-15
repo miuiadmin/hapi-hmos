@@ -661,4 +661,41 @@ export default function reducerTest(): void {
       expect(dedupeAgentEvents(blocks).length).assertEqual(3);
     });
   });
+
+  // —— Flow A：sidechain 子代理 children（Reducer 重构 + 递归 reduce 回归）——
+  describe('reduceChatBlocks — sidechain 子代理 children（Flow A）', () => {
+    it('Task 工具卡 children 含子代理 text（sidechain 归组 → 递归 reduce）', 0, () => {
+      // Task 发起（input.prompt）+ sidechain 根（prompt 匹配）+ 子代理 text 块
+      const tc: NormalizedAgentContent = toolCall('t1', 'Task');
+      const input: Record<string, Object> = {};
+      input['prompt'] = 'sub task';
+      tc.input = input;
+      const root: ChatMessage = new ChatMessage();
+      root.id = 's-root'; root.role = 'agent'; root.createdAt = 200; root.status = 'sent';
+      root.isSidechain = true; root.uuid = 'su1'; root.sidechainPrompt = 'sub task'; root.blocks = [];
+      const child: ChatMessage = new ChatMessage();
+      child.id = 's-child'; child.role = 'agent'; child.createdAt = 300; child.status = 'sent';
+      child.isSidechain = true; child.uuid = 'su2'; child.parentUuid = 'su1';
+      child.blocks = [textBlock('subagent result')];
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('m-task', 100, [tc]),
+        root,
+        child
+      ], null);
+      // 主时间线仅 Task 工具卡（sidechain 已归组进 children，不漏入主时间线）
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('tool-call');
+      // Task 卡 children：根 marker 无 block，子的 text → 1 个 agent-text
+      expect(blocks[0].children.length).assertEqual(1);
+      expect(blocks[0].children[0].kind).assertEqual('agent-text');
+      expect(blocks[0].children[0].text).assertEqual('subagent result');
+    });
+
+    it('无 sidechain → 普通 tool-call 卡 children 为空（重构回归）', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks(
+        [agentMsg('a1', 100, [toolCall('t1', 'Bash')])], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].children.length).assertEqual(0);
+    });
+  });
 }

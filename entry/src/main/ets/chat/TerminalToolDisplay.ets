@@ -3,13 +3,17 @@
 // 对照上游：
 //   - web/src/hooks/useTerminalToolDisplayMode.ts（类型 + 默认 + parse + options）
 //   - web/src/components/ToolCard/ToolCard.tsx:28-45（TERMINAL_RELATED_TOOL_NAMES + 两个 should 判定）
-//   - web/src/chat/subagentTool.ts（isSubagentToolName 原样移植）
+//   - web/src/chat/subagentTool.ts（isSubagentToolName，已抽到本层 SubagentTool.ets 共用）
 //
 // 语义（协议/行为对齐 web 端）：
 //   - 'compact'（默认）：Bash 等终端类工具仅渲染 header（命令在副标题单行截断）；卡片体不内联。
 //   - 'detailed'：终端类工具额外内联卡片体（命令预览），点 header 仍可进详情 sheet 看完整输入/输出。
 //   - 非终端类工具不受影响：仍由 presentation.minimal 决定（minimal=true→仅 header；false→内联体）。
 //   - 子代理工具（Task/Agent）恒不内联（其嵌套 children 单独渲染，上游 shouldShowInlineToolCardBody 首判）。
+
+import { isSubagentToolName } from './SubagentTool';
+// re-export 供既有 import 自 TerminalToolDisplay 的调用方（ToolGroups.ets / 测试）继续可用。
+export { isSubagentToolName };
 
 export type TerminalToolDisplayMode = 'compact' | 'detailed';
 
@@ -28,12 +32,6 @@ const TERMINAL_RELATED_TOOL_NAMES: Set<string> = new Set<string>([
 // 是否终端类工具
 export function isTerminalRelatedToolName(toolName: string): boolean {
   return TERMINAL_RELATED_TOOL_NAMES.has(toolName);
-}
-
-// 是否子代理调用工具（原样移植上游 chat/subagentTool.ts）：
-//   Task=早期 SDK；Agent=后期 SDK（OPUS 4.7+）；另容错 'Agent:'/'Task:' 带前缀变体。
-export function isSubagentToolName(name: string): boolean {
-  return name === 'Task' || name === 'Agent' || name.startsWith('Agent:') || name.startsWith('Task:');
 }
 
 // compact 模式下终端类卡片是否走紧凑样式（对照上游 shouldUseCompactTerminalToolCard）：

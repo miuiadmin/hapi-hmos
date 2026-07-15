@@ -56,6 +56,8 @@ import askUserQuestionTest from './AskUserQuestion.test';
 import toolGroupsTest from './ToolGroups.test';
 import groupedPresentationTest from './GroupedPresentation.test';
 import jwtUtilsTest from './JwtUtils.test';
+import tracerTest from './Tracer.test';
+import subagentToolTest from './SubagentTool.test';
 
 export default function testsuite() {
   diffTest();
@@ -113,4 +115,6 @@ export default function testsuite() {
   toolGroupsTest();
   groupedPresentationTest();
   jwtUtilsTest();
+  tracerTest();
+  subagentToolTest();
 }
