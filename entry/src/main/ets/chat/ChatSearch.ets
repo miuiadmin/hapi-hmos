@@ -28,6 +28,14 @@ export function blockSearchText(b: ChatBlock): string {
   if (b.kind === 'user-text' || b.kind === 'agent-text' || b.kind === 'reasoning') {
     return b.text;
   }
+  // tool-group：拼接组内各工具的搜索文本（任一子工具命中 → 组命中；filteredBlocks 原样透传组块）
+  if (b.kind === 'tool-group') {
+    const parts: string[] = [];
+    for (let i = 0; i < b.groupTools.length; i++) {
+      parts.push(blockSearchText(b.groupTools[i]));
+    }
+    return parts.join(' ');
+  }
   // tool-call：扁平化工具名 / 描述 / 入参 / 结果
   if (b.tool === null) {
     return '';

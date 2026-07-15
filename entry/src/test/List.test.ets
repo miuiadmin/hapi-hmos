@@ -53,6 +53,8 @@ import presentationTest from './Presentation.test';
 import requestUserInputTest from './RequestUserInput.test';
 import codexAgentsTest from './CodexAgents.test';
 import askUserQuestionTest from './AskUserQuestion.test';
+import toolGroupsTest from './ToolGroups.test';
+import groupedPresentationTest from './GroupedPresentation.test';
 
 export default function testsuite() {
   diffTest();
@@ -107,4 +109,6 @@ export default function testsuite() {
   requestUserInputTest();
   codexAgentsTest();
   askUserQuestionTest();
+  toolGroupsTest();
+  groupedPresentationTest();
 }

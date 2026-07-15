@@ -4,6 +4,7 @@ import { ChatMessage, MessageStatus, parseMessage, mergeMessage, cloneMessage, U
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { MarkdownText } from '../components/MarkdownText';
 import { ToolCard } from '../components/ToolCard';
+import { ToolGroupCard } from '../components/ToolGroupCard';
 import { ReasoningBubble } from '../components/ReasoningBubble';
 import { GeneratedImageCard } from '../components/GeneratedImageCard';
 import { ImagePreviewSheet } from '../components/ImagePreviewSheet';
@@ -20,6 +21,7 @@ import { SyncStateService, getSyncState, SyncState } from '../services/SyncState
 import { DateDivider } from '../components/DateDivider';
 import { ChatBlock } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
+import { buildVisibleChatBlocks } from '../chat/ToolGroups';
 import { buildConversationOutline, ConversationOutlineItem } from '../chat/Outline';
 import { blockMatchesQuery } from '../chat/ChatSearch';
 import { buildMessageMetadataLabels } from '../chat/MessageMetadata';
@@ -257,31 +259,35 @@ struct ChatPage {
     //   isQueuedForInvocation 行，仅由 QueuedMessagesBar 承载。thread 仅留已生效消息 + 失败行（可重发）。
     const visible: ChatMessage[] = this.messages.filter((m: ChatMessage): boolean => !m.isQueued);
     const reduced: ChatBlock[] = reduceChatBlocks(visible, this.agentState);
+    // 工具卡分组（对照 web buildVisibleChatBlocks）：把连续同质工具调用折叠成 tool-group 块。
+    //   在 reducer 之后、分隔线盖戳之前派生——组块 createdAt=首工具，日期/未读分隔据此盖戳仍保序。
+    //   不入 reducer（保 reducer 纯净/不影响其单测）；hasMoreMessages 仅影响边界组的 id 锚点（跨页回灌留观察）。
+    const grouped: ChatBlock[] = buildVisibleChatBlocks(reduced, this.hasMoreMessages);
     // 盖「日期分隔」渲染标记：首条或与前一块不同日 → dividerBefore（纯序列判定，无 now 依赖）。
     //   盖在 block 自身字段（同 userOptimistic/userStatus 渲染提示），避免在 ForEach 闭包里依赖捕获的
     //   index/prev——后者在「加载更旧」prepend 重排后可能因 key 复用而不刷新（对齐 ArkUI ForEach 文档：
     //   「修改数据项若键值不变，则组件不更新」）。DateDivider 文本（今天/昨天/日期）在渲染时取。
-    for (let i = 0; i < reduced.length; i++) {
-      const prevTs: number = i > 0 ? reduced[i - 1].createdAt : 0;
-      reduced[i].dividerBefore = shouldShowDateDivider(reduced[i].createdAt, prevTs);
+    for (let i = 0; i < grouped.length; i++) {
+      const prevTs: number = i > 0 ? grouped[i - 1].createdAt : 0;
+      grouped[i].dividerBefore = shouldShowDateDivider(grouped[i].createdAt, prevTs);
     }
     // 盖「未读分隔」标记：entryLastSeenAt > 0 时，首条 createdAt>entryLastSeenAt 的块前置 unreadDividerBefore。
     //   其余块一律 false（含上次无未读 / 首次进入 entryLastSeenAt=0 → 全 false，不显分隔）。
     //   新消息到达不改变「首条未读」位置（新块 createdAt 更晚，首条 >entryLastSeenAt 仍是原块）；load-older 拉的是更早块，亦不跨阈值。
-    for (let i = 0; i < reduced.length; i++) {
-      reduced[i].unreadDividerBefore = false;
+    for (let i = 0; i < grouped.length; i++) {
+      grouped[i].unreadDividerBefore = false;
     }
     if (this.entryLastSeenAt > 0) {
-      for (let i = 0; i < reduced.length; i++) {
-        if (reduced[i].createdAt > this.entryLastSeenAt) {
-          reduced[i].unreadDividerBefore = true;
+      for (let i = 0; i < grouped.length; i++) {
+        if (grouped[i].createdAt > this.entryLastSeenAt) {
+          grouped[i].unreadDividerBefore = true;
           break;
         }
       }
     }
-    this.blocks = reduced;
+    this.blocks = grouped;
     // 大纲项随 blocks 一起重算（只索引 user-text 块；大纲抽屉直接读 outlineItems）
-    this.outlineItems = buildConversationOutline(reduced);
+    this.outlineItems = buildConversationOutline(grouped);
   }
 
   // 对话内搜索过滤视图（对照 Index.filteredSessions）：searchMode 关 或 空查询 → 全量；
@@ -2216,6 +2222,10 @@ struct ChatPage {
                       })
                     } else if (b.kind === 'agent-event' && b.event !== null) {
                       this.EventMessageBar(b)
+                    } else if (b.kind === 'tool-group') {
+                      // 连发同质工具折叠卡（对照 web ToolGroupBlock）：头部 + 展开行 + 行详情 sheet。
+                      //   纯展示（分组内工具恒非待批），无需 sessionId/flavor/nowTick/onDecided。
+                      ToolGroupCard({ block: b })
                     } else {
                       ToolCard({
                         block: b,

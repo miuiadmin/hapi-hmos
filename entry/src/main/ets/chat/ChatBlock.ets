@@ -7,7 +7,7 @@ import { UsageData } from '../models/Message';
 import { AttachmentMetadata, AgentEvent } from '../models/Types';
 import { CodexReview } from './CodexReview';
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review' | 'agent-event';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review' | 'agent-event' | 'tool-group';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -36,6 +36,31 @@ export class ChatToolCall {
   description: string = '';
   result: Object | null = null;             // tool-result 内容；null = 尚无结果
   permission: ToolPermission | null = null;
+}
+
+// 工具分组动作计数（对照 web Record<ToolGroupActionKind, number>；ArkTS 无 union-key Record → 六显式字段）。
+//   放模型层（非 ToolGroups.ets）：ChatBlock.groupSummary 需引用其类型，避免 ChatBlock↔ToolGroups 循环依赖。
+export class ToolGroupCounts {
+  read: number = 0;
+  search: number = 0;
+  command: number = 0;
+  mutation: number = 0;
+  web: number = 0;
+  other: number = 0;
+}
+
+// 工具分组摘要（对照 web ToolGroupSummary）：总数 + 各 kind 计数 + 状态计数 + 各 target 桶（头徽标/副标题用）。
+export class ToolGroupSummary {
+  totalTools: number = 0;
+  counts: ToolGroupCounts = new ToolGroupCounts();
+  errorCount: number = 0;
+  runningCount: number = 0;
+  pendingCount: number = 0;
+  fileTargets: string[] = [];
+  commandTargets: string[] = [];
+  searchTargets: string[] = [];
+  urlTargets: string[] = [];
+  otherTargets: string[] = [];
 }
 
 // 渲染单元（reducer 产出，ForEach 按 id 作 key）
@@ -96,6 +121,17 @@ export class ChatBlock {
   //   microcompact/compact）或 agent-text 限额文本嗅探（limit-warning/reached）映射；null = 非事件块。
   //   EventPresentation 据 event 产 icon+text，渲染为居中灰条（#1 系统消息条 / #4 限额提示）。
   event: AgentEvent | null = null;
+
+  // 仅 tool-group：连发同质工具调用折叠卡（对照 web ToolGroupBlock）。由 ChatPage.recomputeBlocks 在
+  //   reduceChatBlocks 产出后派生（不入 reducer，保 reducer 纯）。groupTools=被折叠的连续 tool-call 块（行渲染
+  //   复用 getToolPresentation）；groupSummary=counts + 状态计数 + target 桶（头徽标/副标题用）；
+  //   groupFirstToolId/groupLastToolId=稳定 id 策略锚点（保 ForEach key 跨重算稳定 → 展开态不丢）；
+  //   groupNeedsOlderHistory=组是否跨已加载最旧边界（v1 恒 false，跨页回灌留观察）。
+  groupTools: ChatBlock[] = [];
+  groupSummary: ToolGroupSummary = new ToolGroupSummary();
+  groupFirstToolId: string = '';
+  groupLastToolId: string = '';
+  groupNeedsOlderHistory: boolean = false;
 
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
@@ -171,6 +207,23 @@ export class ChatBlock {
     b.id = id;
     b.createdAt = createdAt;
     b.event = event;
+    return b;
+  }
+
+  // 工具分组块（对照上游 ToolGroupBlock；tools=被折叠的连续 tool-call 块，summary=summarizeToolGroup 产出）。
+  //   id 策略（上游 createToolGroupId）：needsOlderHistory 时锚 lastToolId（边界组翻页后仍稳），否则锚 firstToolId。
+  static makeToolGroupBlock(tools: ChatBlock[], summary: ToolGroupSummary, needsOlderHistory: boolean): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'tool-group';
+    const firstId: string = tools.length > 0 ? tools[0].id : '';
+    const lastId: string = tools.length > 0 ? tools[tools.length - 1].id : firstId;
+    b.id = needsOlderHistory ? 'tool-group:' + lastId : 'tool-group:' + firstId;
+    b.createdAt = tools.length > 0 ? tools[0].createdAt : 0;
+    b.groupTools = tools;
+    b.groupSummary = summary;
+    b.groupFirstToolId = firstId;
+    b.groupLastToolId = lastId;
+    b.groupNeedsOlderHistory = needsOlderHistory;
     return b;
   }
 }
