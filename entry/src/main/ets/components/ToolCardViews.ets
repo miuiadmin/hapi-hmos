@@ -7,7 +7,7 @@
 // 降级：无 Shiki 语法高亮（CodeBlock 等宽纯文本）；Markdown 复用 MarkdownText。
 
 import { ChatToolCall } from '../chat/ChatBlock';
-import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath } from '../chat/ToolInputUtils';
+import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, looksLikeJson, looksLikeHtml, commandStr, codexPatchFiles, basenameOfPath, extractNotebookEditFields, NotebookEditFields, formatNotebookCellMeta } from '../chat/ToolInputUtils';
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
 import { CodeBlock } from './CodeBlock';
@@ -108,6 +108,15 @@ struct ToolInputView {
     return codexPatchFiles(this.input);
   }
 
+  private notebookEditFields(): NotebookEditFields {
+    return extractNotebookEditFields(this.input);
+  }
+
+  private notebookEditMeta(): string {
+    const f: NotebookEditFields = this.notebookEditFields();
+    return formatNotebookCellMeta(f.cellType, f.cellId);
+  }
+
   private planText(): string {
     return getInputStrAny(this.input, ['plan']);
   }
@@ -150,6 +159,8 @@ struct ToolInputView {
         this.CodexDiffInput()
       } else if (this.tool.name === 'CodexPatch') {
         this.CodexPatchInput()
+      } else if (this.tool.name === 'NotebookEdit') {
+        this.NotebookEditInput()
       } else {
         CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
@@ -243,6 +254,41 @@ struct ToolInputView {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+    } else {
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+    }
+  }
+
+  // NotebookEdit（Claude Jupyter）：cell 编辑 body（端口增强——上游无 body view，仅 JSON dump）。
+  //   cell 元信息行（cellType · #cellId）+ new_source：markdown cell→MarkdownText 渲染预览，code cell→CodeBlock 显源。
+  //   delete（无 new_source）仅显元信息行；全空 → 回退 JSON。
+  @Builder
+  NotebookEditInput() {
+    if (this.notebookEditFields().newSource !== '') {
+      Column({ space: 6 }) {
+        if (this.notebookEditMeta() !== '') {
+          Text(this.notebookEditMeta())
+            .fontSize(fs(11))
+            .fontColor(this.c.textSecondary)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+        }
+        if (this.notebookEditFields().cellType === 'markdown') {
+          MarkdownText({ content: this.notebookEditFields().newSource })
+        } else {
+          CodeBlock({ code: this.notebookEditFields().newSource, language: 'text', title: t('tool.source'), collapseLongContent: this.isInline })
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else if (this.notebookEditMeta() !== '') {
+      Text(this.notebookEditMeta())
+        .fontSize(fs(12))
+        .fontColor(this.c.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
     } else {
       CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
     }

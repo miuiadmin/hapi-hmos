@@ -353,13 +353,14 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     }
     case 'NotebookEdit': {
       // 对照上游 knownTools.tsx:288-299：icon 📝、title notebook_path ?? 'Edit notebook'、subtitle `mode: ${edit_mode}`。
-      // minimal 取 true（上游 false 但无 body view，端口 false 会落 JSON dump；cell body 留 follow-up）。
+      // minimal=false（同上游）：经 shouldShowInlineToolCardBody !minimal→true 触发 NotebookEditInput cell body
+      //   （端口增强：上游无 body view 仅 JSON dump；端口显 cell 元信息 + new_source）。
       p.icon = '📝';
       const nbPath: string = getInputStrAny(input, ['notebook_path']);
       p.title = nbPath !== '' ? nbPath : t('pres.editNotebook');
       const editMode: string = getInputStrAny(input, ['edit_mode']);
       p.subtitle = editMode !== '' ? t('pres.editMode', { mode: editMode }) : '';
-      p.minimal = true;
+      p.minimal = false;
       return p;
     }
     default: {

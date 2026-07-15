@@ -303,6 +303,7 @@ export const zhCN: Record<string, string> = {
   'tool.rejected': '已拒绝',
   'tool.canceled': '已取消',
   'tool.input': '输入',
+  'tool.source': '源码',
   'tool.result': '结果',
   'tool.inputEmpty': '(无)',
   'tool.cannotSerialize': '(无法序列化)',

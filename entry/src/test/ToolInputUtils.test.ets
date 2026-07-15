@@ -14,7 +14,10 @@ import {
   extractStdoutStderr,
   isMultilineText,
   looksLikeJson,
-  looksLikeHtml
+  looksLikeHtml,
+  extractNotebookEditFields,
+  formatNotebookCellMeta,
+  NotebookEditFields
 } from '../main/ets/chat/ToolInputUtils';
 
 function rec(json: string): Record<string, Object> {
@@ -267,6 +270,59 @@ export default function toolInputUtilsTest(): void {
     it('rejects plain text and non-listed tags', 0, () => {
       expect(looksLikeHtml('plain')).assertFalse();
       expect(looksLikeHtml('<p>')).assertFalse(); // <p> 不在识别列表
+    });
+  });
+
+  describe('extractNotebookEditFields', () => {
+    it('parses all four cell fields', 0, () => {
+      const f: NotebookEditFields = extractNotebookEditFields(rec('{"cell_id":"c1","cell_type":"code","edit_mode":"replace","new_source":"print(1)"}'));
+      expect(f.cellId).assertEqual('c1');
+      expect(f.cellType).assertEqual('code');
+      expect(f.editMode).assertEqual('replace');
+      expect(f.newSource).assertEqual('print(1)');
+    });
+    it('insert mode (no cell_id) leaves cellId empty', 0, () => {
+      const f: NotebookEditFields = extractNotebookEditFields(rec('{"cell_type":"markdown","edit_mode":"insert","new_source":"# hi"}'));
+      expect(f.cellId).assertEqual('');
+      expect(f.cellType).assertEqual('markdown');
+      expect(f.newSource).assertEqual('# hi');
+    });
+    it('delete mode (no new_source) leaves newSource empty', 0, () => {
+      const f: NotebookEditFields = extractNotebookEditFields(rec('{"cell_id":"c2","edit_mode":"delete"}'));
+      expect(f.newSource).assertEqual('');
+      expect(f.cellId).assertEqual('c2');
+      expect(f.editMode).assertEqual('delete');
+    });
+    it('returns all-empty for null input', 0, () => {
+      const f: NotebookEditFields = extractNotebookEditFields(null);
+      expect(f.cellId).assertEqual('');
+      expect(f.cellType).assertEqual('');
+      expect(f.editMode).assertEqual('');
+      expect(f.newSource).assertEqual('');
+    });
+    it('coerces non-string values to empty', 0, () => {
+      const f: NotebookEditFields = extractNotebookEditFields(rec('{"cell_id":42,"cell_type":true}'));
+      expect(f.cellId).assertEqual('');
+      expect(f.cellType).assertEqual('');
+    });
+  });
+
+  describe('formatNotebookCellMeta', () => {
+    it('joins cellType and #cellId', 0, () => {
+      expect(formatNotebookCellMeta('code', 'abc123')).assertEqual('code · #abc123');
+    });
+    it('uses only cellType when cellId is empty (insert)', 0, () => {
+      expect(formatNotebookCellMeta('markdown', '')).assertEqual('markdown');
+    });
+    it('uses only #cellId when cellType is empty', 0, () => {
+      expect(formatNotebookCellMeta('', 'c9')).assertEqual('#c9');
+    });
+    it('returns empty when both are empty', 0, () => {
+      expect(formatNotebookCellMeta('', '')).assertEqual('');
+    });
+    it('truncates a long cellId to 12 chars + ellipsis', 0, () => {
+      const long: string = 'cell-aaaaaaaaaaaaaaaaaa';
+      expect(formatNotebookCellMeta('code', long)).assertEqual('code · #' + long.substring(0, 12) + '…');
     });
   });
 }

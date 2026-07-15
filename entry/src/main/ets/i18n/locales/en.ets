@@ -302,6 +302,7 @@ export const en: Record<string, string> = {
   'tool.rejected': 'Rejected',
   'tool.canceled': 'Canceled',
   'tool.input': 'Input',
+  'tool.source': 'Source',
   'tool.result': 'Result',
   'tool.inputEmpty': '(None)',
   'tool.cannotSerialize': '(Cannot serialize)',

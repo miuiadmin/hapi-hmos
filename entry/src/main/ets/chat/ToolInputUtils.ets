@@ -271,3 +271,37 @@ export function codexPatchFiles(input: Record<string, Object> | null): string[] 
   }
   return Object.keys(changes as Record<string, Object>);
 }
+
+// NotebookEdit（Claude Jupyter）cell 编辑字段：cell_id / cell_type / edit_mode / new_source。
+//   上游 input: unknown 且从不命名这些字段（仅 notebook_path/edit_mode 进头）；端口增强：结构化 cell body。
+//   全 string，缺失/非串 → ''（与 getInputStrAny 哨兵一致）。
+export class NotebookEditFields {
+  cellId: string = '';
+  cellType: string = '';   // 'markdown' | 'code' | ''
+  editMode: string = '';   // 'insert' | 'replace' | 'delete' | ''（与头 subtitle 同源，body 不强依赖）
+  newSource: string = '';
+}
+
+export function extractNotebookEditFields(input: Record<string, Object> | null): NotebookEditFields {
+  const f: NotebookEditFields = new NotebookEditFields();
+  if (input === null) {
+    return f;
+  }
+  f.cellId = getInputStrAny(input, ['cell_id']);
+  f.cellType = getInputStrAny(input, ['cell_type']);
+  f.editMode = getInputStrAny(input, ['edit_mode']);
+  f.newSource = getInputStrAny(input, ['new_source']);
+  return f;
+}
+
+// cell 元信息行：`cellType · #cellId`（cellId 截断 12 防溢出）。手写循环拼（不用 spread/replace）。双空 → ''。
+export function formatNotebookCellMeta(cellType: string, cellId: string): string {
+  const parts: string[] = [];
+  if (cellType !== '') {
+    parts.push(cellType);
+  }
+  if (cellId !== '') {
+    parts.push('#' + truncateStr(cellId, 12));
+  }
+  return parts.join(' · ');
+}

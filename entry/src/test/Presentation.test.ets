@@ -219,18 +219,20 @@ export default function presentationTest(): void {
       const p = getToolPresentation(mk('NotebookRead', input, null, ''));
       expect(p.title).assertEqual('读取笔记本');
     });
-    it('NotebookEdit 有 path + mode → 📝 + path + 模式 subtitle', 0, () => {
+    it('NotebookEdit 有 path + mode → 📝 + path + 模式 subtitle + minimal false（cell body 开）', 0, () => {
       const input = rec('{"notebook_path":"nb.ipynb","edit_mode":"insert"}');
       const p = getToolPresentation(mk('NotebookEdit', input, null, ''));
       expect(p.icon).assertEqual('📝');
       expect(p.title).assertEqual('nb.ipynb');
       expect(p.subtitle).assertEqual('模式：insert');
+      expect(p.minimal).assertFalse();
     });
-    it('NotebookEdit 无 path 无 mode → 📝 + 编辑笔记本 + 空 subtitle', 0, () => {
+    it('NotebookEdit 无 path 无 mode → 📝 + 编辑笔记本 + 空 subtitle + minimal false', 0, () => {
       const input = rec('{}');
       const p = getToolPresentation(mk('NotebookEdit', input, null, ''));
       expect(p.title).assertEqual('编辑笔记本');
       expect(p.subtitle).assertEqual('');
+      expect(p.minimal).assertFalse();
     });
   });
 
