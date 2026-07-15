@@ -60,3 +60,22 @@ export function flavorLabel(flavor: string): string {
 export function flavorColorHex(flavor: string): string {
   return flavorBadge(flavor).bgHex;
 }
+
+// 是否 Codex 系 flavor（对照上游 shared/src/flavors.ts + isCodexFamilyFlavor）。
+//   codex / gemini / kimi / opencode 共享 Codex 风格的权限页变体（Yes/Yes-for-session/Abort）。
+export function isCodexFamilyFlavor(flavor: string): boolean {
+  const f: string = normalizeFlavor(flavor);
+  return f === 'codex' || f === 'gemini' || f === 'kimi' || f === 'opencode';
+}
+
+// 是否 Codex 系会话（对照上游 PermissionFooter isCodexSession = isCodexFamilyFlavor(flavor)
+//   || toolName 前缀 Codex/Gemini/OpenCode）。flavor 命中即视为 Codex 系；否则看工具名前缀。
+//   端口惯例用 indexOf===0 替上游 startsWith。
+export function isCodexSessionByFlavor(flavor: string, toolName: string): boolean {
+  if (isCodexFamilyFlavor(flavor)) {
+    return true;
+  }
+  return toolName.indexOf('Codex') === 0
+    || toolName.indexOf('Gemini') === 0
+    || toolName.indexOf('OpenCode') === 0;
+}

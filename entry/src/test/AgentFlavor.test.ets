@@ -8,7 +8,9 @@ import {
   normalizeFlavor,
   flavorBadge,
   flavorLabel,
-  flavorColorHex
+  flavorColorHex,
+  isCodexFamilyFlavor,
+  isCodexSessionByFlavor
 } from '../main/ets/chat/AgentFlavor';
 
 export default function agentFlavorTest(): void {
@@ -100,6 +102,60 @@ export default function agentFlavorTest(): void {
     it('flavorColorHex = badge.bgHex', 0, () => {
       expect(flavorColorHex('cursor')).assertEqual('#0f766e');
       expect(flavorColorHex('nope')).assertEqual('#6b7280');
+    });
+  });
+
+  describe('AgentFlavor — isCodexFamilyFlavor（Codex 系权限页变体判定）', () => {
+    it('codex → true', 0, () => {
+      expect(isCodexFamilyFlavor('codex')).assertTrue();
+    });
+    it('gemini → true', 0, () => {
+      expect(isCodexFamilyFlavor('gemini')).assertTrue();
+    });
+    it('kimi → true', 0, () => {
+      expect(isCodexFamilyFlavor('kimi')).assertTrue();
+    });
+    it('opencode → true', 0, () => {
+      expect(isCodexFamilyFlavor('opencode')).assertTrue();
+    });
+    it('claude → false（Claude 系走 Allow/Deny）', 0, () => {
+      expect(isCodexFamilyFlavor('claude')).assertFalse();
+    });
+    it('cursor → false', 0, () => {
+      expect(isCodexFamilyFlavor('cursor')).assertFalse();
+    });
+    it('大写/空白经归一（Codex → codex）', 0, () => {
+      expect(isCodexFamilyFlavor('Codex')).assertTrue();
+      expect(isCodexFamilyFlavor(' GEMINI ')).assertTrue();
+    });
+    it('空串/未知 → false', 0, () => {
+      expect(isCodexFamilyFlavor('')).assertFalse();
+      expect(isCodexFamilyFlavor('foobar')).assertFalse();
+    });
+  });
+
+  describe('AgentFlavor — isCodexSessionByFlavor（flavor 或工具名前缀命中）', () => {
+    it('flavor 命中即 true（无视工具名）', 0, () => {
+      expect(isCodexSessionByFlavor('codex', 'Bash')).assertTrue();
+      expect(isCodexSessionByFlavor('gemini', 'Read')).assertTrue();
+    });
+    it('flavor 未命中 + 工具名 Codex 前缀 → true', 0, () => {
+      expect(isCodexSessionByFlavor('claude', 'CodexBash')).assertTrue();
+      expect(isCodexSessionByFlavor('claude', 'CodexPermission')).assertTrue();
+    });
+    it('flavor 未命中 + 工具名 Gemini/OpenCode 前缀 → true', 0, () => {
+      expect(isCodexSessionByFlavor('', 'GeminiSomething')).assertTrue();
+      expect(isCodexSessionByFlavor('', 'OpenCodeThing')).assertTrue();
+    });
+    it('flavor 与工具名皆未命中 → false', 0, () => {
+      expect(isCodexSessionByFlavor('claude', 'Bash')).assertFalse();
+      expect(isCodexSessionByFlavor('', 'Edit')).assertFalse();
+    });
+    it('空 flavor + 空工具名 → false', 0, () => {
+      expect(isCodexSessionByFlavor('', '')).assertFalse();
+    });
+    it('工具名仅含 Codex 子串但非前缀 → false', 0, () => {
+      expect(isCodexSessionByFlavor('claude', 'MyCodexTool')).assertFalse();
     });
   });
 }

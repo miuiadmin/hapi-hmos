@@ -3,6 +3,7 @@ import { ToolPresentation, getToolPresentation, isEditToolName, isAskToolName } 
 import { getInputStrAny } from '../chat/ToolInputUtils';
 import { isAskUserQuestionToolName } from '../chat/AskUserQuestion';
 import { isRequestUserInputToolName } from '../chat/RequestUserInput';
+import { isCodexSessionByFlavor } from '../chat/AgentFlavor';
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
@@ -30,10 +31,11 @@ function errMsg(e: Object, fallback: string): string {
 struct ToolCard {
   @Param block: ChatBlock = new ChatBlock();
   @Param sessionId: string = '';
+  @Param flavor: string = '';             // 会话 flavor（ChatPage 透传；决定 Codex 系权限页变体）
   @Param nowTick: number = 0;               // running 卡 elapsed 实时驱动（ChatPage 仅对 running 卡传非 0）
   @Event onDecided: () => void = () => {};   // 审批/拒绝成功后通知父页刷新 agentState（防 SSE 漏事件导致卡不翻转）
   @Local isDetailOpen: boolean = false;
-  @Local actionLoading: string = '';     // ''|'allow'|'session'|'alledits'|'deny'
+  @Local actionLoading: string = '';     // ''|'allow'|'session'|'alledits'|'deny'|'abort'
   @Local actionError: string = '';
   @Local decided: boolean = false;       // 任一审批动作成功后置位：防 SSE 翻转前重复点击（对齐答题 footer 的 done）
 
@@ -146,6 +148,17 @@ struct ToolCard {
 
   private get canAllowAllEdits(): boolean {
     return this.isPending && isEditToolName(this.toolName);
+  }
+
+  // Codex 系会话（flavor 命中或工具名 Codex/Gemini/OpenCode 前缀）→ 权限页走 Yes/YesForSession/Abort 变体
+  private get isCodexSession(): boolean {
+    return isCodexSessionByFlavor(this.flavor, this.toolName);
+  }
+
+  // abort 后的决策（permission.decision==='abort'）→ 非待批 banner 显「已中止」（区别于 denied「已拒绝」）
+  private get isAborted(): boolean {
+    const p = this.permission;
+    return p !== null && p.status === 'denied' && p.decision === 'abort';
   }
 
   // 状态符号：🔒 pending / ✓ completed / ✕ error / ● running
@@ -310,6 +323,54 @@ struct ToolCard {
     }
   }
 
+  // Codex 系：Yes（approved，单次）/ Yes-for-session（approved_for_session）。复用 actionLoading 'allow'/'session' 标志。
+  private async doCodexApprove(decision: string): Promise<void> {
+    const p = this.permission;
+    if (p === null || this.actionLoading !== '') {
+      return;
+    }
+    this.actionError = '';
+    this.actionLoading = decision === 'approved' ? 'allow' : 'session';
+    try {
+      const opts: ApproveOptions = new ApproveOptions();
+      opts.decision = decision;
+      const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
+      if (!ok) {
+        this.actionError = t('tool.approveFailed');
+      } else {
+        this.decided = true;
+        this.onDecided();
+      }
+    } catch (e) {
+      this.actionError = errMsg(e, t('tool.approveFailed'));
+    } finally {
+      this.actionLoading = '';
+    }
+  }
+
+  // Codex 系：Abort（deny，decision='abort'）。走 denyPermission 带决策串。
+  private async doCodexAbort(): Promise<void> {
+    const p = this.permission;
+    if (p === null || this.actionLoading !== '') {
+      return;
+    }
+    this.actionError = '';
+    this.actionLoading = 'abort';
+    try {
+      const ok = await getHubClient().denyPermission(this.sessionId, p.id, 'abort');
+      if (!ok) {
+        this.actionError = t('tool.denyFailed');
+      } else {
+        this.decided = true;
+        this.onDecided();
+      }
+    } catch (e) {
+      this.actionError = errMsg(e, t('tool.denyFailed'));
+    } finally {
+      this.actionLoading = '';
+    }
+  }
+
   // ===== Builders =====
   @Builder
   private Header() {
@@ -412,6 +473,12 @@ struct ToolCard {
       this.doAllowAllEdits();
     } else if (key === 'deny') {
       this.doDeny();
+    } else if (key === 'codexYes') {
+      this.doCodexApprove('approved');
+    } else if (key === 'codexSession') {
+      this.doCodexApprove('approved_for_session');
+    } else if (key === 'abort') {
+      this.doCodexAbort();
     }
   }
 
@@ -435,29 +502,36 @@ struct ToolCard {
             .margin({ top: 6 })
         }
 
-        this.ActionRow(t('tool.allow'), this.c.success, this.actionLoading === 'allow', 'allow', this.decided)
+        // Codex 系权限页变体：Yes / Yes-for-session / Abort（三键恒显，无 canAllow 门控；对照上游 PermissionFooter Codex 分支）
+        if (this.isCodexSession) {
+          this.ActionRow(t('tool.yes'), this.c.success, this.actionLoading === 'allow', 'codexYes', this.decided)
+          this.ActionRow(t('tool.yesForSession'), this.c.textSecondary, this.actionLoading === 'session', 'codexSession', this.decided)
+          this.ActionRow(t('tool.abortLabel'), this.c.error, this.actionLoading === 'abort', 'abort', this.decided)
+        } else {
+          this.ActionRow(t('tool.allow'), this.c.success, this.actionLoading === 'allow', 'allow', this.decided)
 
-        if (this.canAllowForSession) {
-          this.ActionRow(t('tool.allowForSession'), this.c.textSecondary, this.actionLoading === 'session', 'session', this.decided)
-        }
-        if (this.canAllowAllEdits) {
-          this.ActionRow(t('tool.allowAll'), this.c.textSecondary, this.actionLoading === 'alledits', 'alledits', this.decided)
-        }
+          if (this.canAllowForSession) {
+            this.ActionRow(t('tool.allowForSession'), this.c.textSecondary, this.actionLoading === 'session', 'session', this.decided)
+          }
+          if (this.canAllowAllEdits) {
+            this.ActionRow(t('tool.allowAll'), this.c.textSecondary, this.actionLoading === 'alledits', 'alledits', this.decided)
+          }
 
-        this.ActionRow(t('tool.deny'), this.c.error, this.actionLoading === 'deny', 'deny', this.decided)
+          this.ActionRow(t('tool.deny'), this.c.error, this.actionLoading === 'deny', 'deny', this.decided)
+        }
       }
       .width('100%')
       .margin({ top: 8 })
       .padding({ top: 8, bottom: 4 })
       .border({ width: { top: 1 }, color: this.c.border })
     } else {
-      // denied/canceled：状态标签（✕ 已拒绝 / ⊘ 已取消）+ 原因（若有）
+      // denied/canceled/aborted：状态标签（✕ 已拒绝 / ⊘ 已中止 / ⊘ 已取消）+ 原因（若有）
       Column({ space: 6 }) {
         Row({ space: 6 }) {
-          Text(this.permission !== null && this.permission.status === 'denied' ? '✕' : '⊘')
+          Text(this.isAborted ? '⊘' : (this.permission !== null && this.permission.status === 'denied' ? '✕' : '⊘'))
             .fontSize(fs(13))
             .fontColor(this.c.error)
-          Text(this.permission !== null && this.permission.status === 'denied' ? t('tool.rejected') : t('tool.canceled'))
+          Text(this.isAborted ? t('tool.aborted') : (this.permission !== null && this.permission.status === 'denied' ? t('tool.rejected') : t('tool.canceled')))
             .fontSize(fs(12))
             .fontColor(this.c.error)
             .fontWeight(FontWeight.Medium)

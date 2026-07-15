@@ -2220,6 +2220,7 @@ struct ChatPage {
                       ToolCard({
                         block: b,
                         sessionId: this.sessionId,
+                        flavor: this.flavor,
                         nowTick: this.isRunningBlock(b) ? this.nowTick : 0,
                         onDecided: () => { this.refreshAfterDecision(); }
                       })
