@@ -23,6 +23,7 @@ export class SessionSummary {
   metadata: SessionSummaryMetadata | null = null;
   pendingRequestsCount: number = 0;
   backgroundTaskCount: number = 0;
+  futureScheduledMessageCount: number = 0;   // 待触发的定时消息数（hub GET /api/sessions 返回；列表 ⏰ 角标）
   pendingRequestKinds: string[] = [];   // 待处理请求类型（'permission'|'input'；attention 指示器分级用）
   model: string = '';          // null → ''
   effort: string = '';
@@ -435,6 +436,7 @@ export function parseSessionSummary(raw: Record<string, Object>): SessionSummary
   s.pendingRequestKinds = pickStrArr(raw, 'pendingRequestKinds');
   s.model = pickStr(raw, 'model');
   s.effort = pickStr(raw, 'effort');
+  s.futureScheduledMessageCount = pickNum(raw, 'futureScheduledMessageCount');
 
   const metaRaw = pickObj(raw, 'metadata');
   if (metaRaw !== null) {

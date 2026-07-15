@@ -481,6 +481,18 @@ struct Index {
             .padding({ left: 6, right: 6, top: 1, bottom: 1 })
             .margin({ left: 6 })
           }
+          // 定时消息角标（futureScheduledMessageCount>0；待触发的排队定时消息数，对照上游 SessionList ⏰）
+          if (session.futureScheduledMessageCount > 0) {
+            Row({ space: 3 }) {
+              Text('⏰').fontSize(fs(10))
+              Text(`${session.futureScheduledMessageCount}`).fontSize(fs(11))
+            }
+            .fontColor(this.c.textSecondary)
+            .backgroundColor(this.c.surface)
+            .borderRadius(8)
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .margin({ left: 6 })
+          }
         }
         .width('100%')
       }

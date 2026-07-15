@@ -82,6 +82,7 @@ struct ChatPage {
   @Local isLoading: boolean = false;
   @Local loadError: string = '';
   @Local isThinking: boolean = false;          // agent 生成中（session-updated.thinking）
+  @Local isAborting: boolean = false;          // 停止生成请求进行中（防重入 + abort 按钮 spinner）
   @Local isSending: boolean = false;           // 发送请求进行中
   @Local sessionId: string = '';
   @Local agentState: AgentState | null = null; // 会话权限态（pending 请求队列等），SESSION_UPDATED 实时更新
@@ -147,6 +148,8 @@ struct ChatPage {
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
   private isPinnedToBottom: boolean = true;
+  private settlingCancelled: boolean = false;          // 初始滚动定锚：用户上滑即放弃后续重试（对照上游 shouldCancelInitialScrollSettling）
+  private settlingTimerIds: number[] = [];             // 初始定锚重试 timer 句柄簇（进会话按延迟数组排多个 scrollEdge）
   private sseListenerId: number = -1;
   private localIdCounter: number = 0;
   private tickerId: number = -1;                // elapsed 每秒 ticker 句柄
@@ -564,7 +567,7 @@ struct ChatPage {
         this.isPinnedToBottom = false;
         this.scrollToFirstUnread();
       } else {
-        this.scrollToBottom();
+        this.settleScrollToBottom();
       }
     } catch (e) {
       this.loadError = e instanceof Error ? e.message : t('chat.loadError');
@@ -855,14 +858,20 @@ struct ChatPage {
     this.setMessages(next);
   }
 
-  // 停止生成：中止会话运行（对照 web abortSession）
+  // 停止生成：中止会话运行（对照 web abortSession）。isAborting 防重入 + 驱动 abort 按钮 spinner；
+  //   thread 停后（await resolve）复位，对照上游 isAborting 在 threadIsRunning 转 false 后清的 effect。
   private async handleStop(): Promise<void> {
+    if (this.isAborting) { return; }
+    this.isAborting = true;
+    HapticService.tap('error');
     try {
       await getHubClient().abortSession(this.sessionId);
     } catch (e) {
       // 忽略
+    } finally {
+      this.isThinking = false;
+      this.isAborting = false;
     }
-    this.isThinking = false;
   }
 
   // —— 排队消息：编辑 / 取消（对照 web QueuedMessagesBar edit + useCancelQueuedMessage）——
@@ -1362,6 +1371,29 @@ struct ChatPage {
     }, 120);
   }
 
+  // 初始滚动定锚：进会话按延迟数组排多次 scrollEdge（对照上游 HappyThread INITIAL_SCROLL_SETTLE_DELAYS_MS），
+  //   抵消流式布局/图片加载导致的首帧高度抖动，确保真的贴底。用户上滑 → cancelSettling 放弃后续重试。
+  private settleScrollToBottom(): void {
+    this.cancelSettling();
+    this.settlingCancelled = false;
+    const delays: number[] = [0, 16, 50, 120, 250, 500, 900, 1400, 1800];
+    for (let i = 0; i < delays.length; i++) {
+      const id: number = setTimeout(() => {
+        if (this.settlingCancelled) { return; }
+        this.scroller.scrollEdge(Edge.Bottom);
+      }, delays[i]);
+      this.settlingTimerIds.push(id);
+    }
+  }
+
+  private cancelSettling(): void {
+    this.settlingCancelled = true;
+    for (let i = 0; i < this.settlingTimerIds.length; i++) {
+      clearTimeout(this.settlingTimerIds[i]);
+    }
+    this.settlingTimerIds = [];
+  }
+
   private maybeScrollToBottom(): void {
     if (this.isPinnedToBottom) {
       this.scrollToBottom();
@@ -1706,6 +1738,21 @@ struct ChatPage {
     .justifyContent(FlexAlign.Center)
   }
 
+  // 加载骨架屏：首屏拉消息中（isLoading 且尚无块）显形——对照上游 HappyThread MessageSkeleton
+  @Builder
+  private MessageSkeleton() {
+    Column({ space: 10 }) {
+      Row().width('60%').height(36).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
+      Row().width('75%').height(44).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
+      Row().width('45%').height(32).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
+      Row().width('83%').height(52).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .padding({ left: 20, right: 20 })
+  }
+
   // 生成中指示器（贴底，靠左）
   @Builder
   private TypingIndicator() {
@@ -1829,20 +1876,33 @@ struct ChatPage {
             this.recomputeSkill();
           })
 
-        Button(this.isThinking ? t('chat.stop') : t('chat.send'))
+        // 生成中：独立 abort 按钮（左，对照上游 ComposerButtons abort 独立键）；isAborting 时显 spinner
+        if (this.isThinking) {
+          Button() {
+            if (this.isAborting) {
+              LoadingProgress().width(fs(16)).height(fs(16)).color(this.c.error)
+            } else {
+              Text(t('chat.stop'))
+                .fontSize(fs(14))
+                .fontColor(this.c.error)
+            }
+          }
+          .height(40)
+          .padding({ left: 14, right: 14 })
+          .backgroundColor(this.c.surface)
+          .borderRadius(20)
+          .enabled(!this.isAborting)
+          .onClick(() => this.handleStop())
+        }
+        // 发送按钮（恒显；生成中亦可排队发送——对照上游 canSend 不含 threadIsRunning）
+        Button(t('chat.send'))
           .fontSize(fs(15))
           .height(40)
-          .backgroundColor(this.isThinking ? this.c.surface : this.c.primary)
-          .fontColor(this.isThinking ? this.c.error : this.c.bubbleUserText)
+          .backgroundColor(this.c.primary)
+          .fontColor(this.c.bubbleUserText)
           .borderRadius(20)
-          .enabled(!this.isSending && (this.isThinking || this.inputText.trim() !== '' || this.pendingAttachments.length > 0))
-          .onClick(() => {
-            if (this.isThinking) {
-              this.handleStop();
-            } else {
-              this.handleSend();
-            }
-          })
+          .enabled(!this.isSending && (this.inputText.trim() !== '' || this.pendingAttachments.length > 0))
+          .onClick(() => this.handleSend())
       }
       .width('100%')
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
@@ -2165,6 +2225,8 @@ struct ChatPage {
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
+        } else if (this.isLoading && this.blocks.length === 0) {
+          this.MessageSkeleton()
         } else if (this.blocks.length === 0 && !this.isThinking) {
           this.EmptyState()
         } else {
@@ -2262,6 +2324,9 @@ struct ChatPage {
               // 用户手动滚到底 → 清新消息浮标计数
               if (this.isPinnedToBottom) {
                 this.newMessagesCount = 0;
+              } else if (!this.settlingCancelled) {
+                // 用户上滑读历史 → 放弃初始滚动定锚重试（对照上游 shouldCancelInitialScrollSettling）
+                this.cancelSettling();
               }
             })
 
