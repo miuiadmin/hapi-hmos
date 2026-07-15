@@ -98,7 +98,7 @@ struct AskUserQuestionView {
         // 无题目但有作答（fallback 路径）：直接列出自定义回答
         if (this.hasAnswers) {
           ForEach(this.questionAnswers(0), (answer: string, idx: number) => {
-            this.AnswerRow(answer, true)
+            this.AnswerRow(answer, true, false, '')
           }, (answer: string, idx: number) => `free-${idx}`)
         }
       } else {
@@ -114,14 +114,14 @@ struct AskUserQuestionView {
             }
             if (q.options.length > 0) {
               ForEach(q.options, (opt: AskUserQuestionOption, optIdx: number) => {
-                this.AnswerRow(opt.label, this.isOptionSelected(qIdx, opt.label))
+                this.AnswerRow(opt.label, this.isOptionSelected(qIdx, opt.label), q.multiSelect, opt.description)
               }, (opt: AskUserQuestionOption, optIdx: number) => `q${qIdx}:opt${optIdx}`)
             }
             // Other 自定义回答
             if (this.hasAnswers) {
               ForEach(this.otherAnswers(q, qIdx), (answer: string, oi: number) => {
                 Column({ space: 2 }) {
-                  this.AnswerRow(answer, true)
+                  this.AnswerRow(answer, true, false, '')
                   Text(t('askUser.customAnswerLabel'))
                     .fontSize(fs(10))
                     .fontColor(this.c.textSecondary)
@@ -141,15 +141,24 @@ struct AskUserQuestionView {
   }
 
   @Builder
-  AnswerRow(label: string, selected: boolean) {
+  AnswerRow(label: string, selected: boolean, isMulti: boolean, description: string) {
     Row({ space: 8 }) {
-      Text(selected ? '☑' : '☐')
+      Text(isMulti ? (selected ? '☑' : '☐') : (selected ? '●' : '○'))
         .fontSize(fs(15))
         .fontColor(selected ? this.c.success : this.c.textSecondary)
-      Text(label)
-        .fontSize(fs(13))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
+      Column() {
+        Text(label)
+          .fontSize(fs(13))
+          .fontColor(this.c.textPrimary)
+        if (description !== '') {
+          Text(description)
+            .fontSize(fs(11))
+            .fontColor(this.c.textSecondary)
+            .margin({ top: 2 })
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })

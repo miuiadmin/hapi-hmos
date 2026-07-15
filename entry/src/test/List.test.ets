@@ -52,6 +52,7 @@ import userDirectivesTest from './UserDirectives.test';
 import presentationTest from './Presentation.test';
 import requestUserInputTest from './RequestUserInput.test';
 import codexAgentsTest from './CodexAgents.test';
+import askUserQuestionTest from './AskUserQuestion.test';
 
 export default function testsuite() {
   diffTest();
@@ -105,4 +106,5 @@ export default function testsuite() {
   presentationTest();
   requestUserInputTest();
   codexAgentsTest();
+  askUserQuestionTest();
 }

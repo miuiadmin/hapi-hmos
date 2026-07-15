@@ -11,10 +11,12 @@ import { getInputStrAny, hasInputStr, extractResultText, extractStdoutStderr, lo
 import { extractTodoChecklist, extractUpdatePlanChecklist } from '../chat/Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from '../chat/CodexDiff';
 import { getCodexAgentFieldRows, getCodexAgentPrompt, getCodexAgentActivity, getCodexAgentTargets, parseCodexSpawnAgentResult, parseCodexWaitAgentResult, parseCodexCloseAgentResult, CodexSpawnAgentResult, CodexWaitAgentResult, CodexAgentStatus, AgentFieldRow } from '../chat/CodexAgents';
+import { isAskUserQuestionToolName, hasStructuredAnswers } from '../chat/AskUserQuestion';
 import { CodeBlock } from './CodeBlock';
 import { DiffView } from './DiffView';
 import { ChecklistList } from './ChecklistList';
 import { MarkdownText } from './MarkdownText';
+import { AskUserQuestionView } from './AskUserQuestionView';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -217,6 +219,8 @@ struct ToolInputView {
         this.NotebookEditInput()
       } else if (isCodexAgentToolName(this.tool.name)) {
         this.CodexAgentInput()
+      } else if (isAskUserQuestionToolName(this.tool.name)) {
+        AskUserQuestionView({ tool: this.tool })
       } else {
         CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
       }
@@ -513,7 +517,12 @@ struct ToolResultView {
 
   build() {
     Column() {
-      if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command' || this.tool.name === 'CodexBash') {
+      if (isAskUserQuestionToolName(this.tool.name)) {
+        // answers 已结构化作答 → 结果段不渲（避与已答输入视图双显）；无作答 → 回退 Markdown 结果
+        if (!hasStructuredAnswers(this.tool)) {
+          this.MarkdownResult()
+        }
+      } else if (this.tool.name === 'Bash' || this.tool.name === 'shell_command' || this.tool.name === 'run_shell_command' || this.tool.name === 'CodexBash') {
         this.BashResult()
       } else if (this.tool.name === 'Read' || this.tool.name === 'NotebookRead') {
         this.ReadResult()

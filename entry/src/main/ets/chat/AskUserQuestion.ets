@@ -5,6 +5,8 @@
 // answers 提交格式（扁平）：Record<题下标字符串, string[]> —— 值是选中 option 的 label（trim），
 //   AskUserQuestion 的 Other 自填文本原样进数组末尾。回显高亮也按 trim label 比较。
 
+import { ChatToolCall } from './ChatBlock';
+
 export class AskUserQuestionOption {
   label: string = '';
   description: string = '';        // '' = null
@@ -20,6 +22,14 @@ export class AskUserQuestionQuestion {
 // 工具名判别（footer/已答视图据此挂载）
 export function isAskUserQuestionToolName(toolName: string): boolean {
   return toolName === 'AskUserQuestion' || toolName === 'ask_user_question';
+}
+
+// 是否已有结构化作答（permission.answers 非空对象）—— 对照上游 AskUserQuestionResultView：
+//   answers 有键 → 结果视图返回 null（避免与已答输入视图双显）；否则走 Markdown 结果。
+//   dual-format（flat / nested）不影响——只看键数。
+export function hasStructuredAnswers(tool: ChatToolCall): boolean {
+  const p = tool.permission;
+  return p !== null && p.answers !== null && Object.keys(p.answers).length > 0;
 }
 
 // 非数组对象判定（对照上游 isObject：排除 null/数组/基本类型）
