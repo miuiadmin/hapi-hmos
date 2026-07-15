@@ -108,6 +108,21 @@ export default function eventPresentationTest(): void {
     });
   });
 
+  describe('getEventPresentation — message（summary 灰条文本）', () => {
+    it('type message + 非空 message → 原文 + 无图标', 0, () => {
+      const e: AgentEvent = ev('message'); e.message = '对话已压缩摘要';
+      const p = getEventPresentation(e);
+      expect(p.icon).assertEqual('');
+      expect(p.text).assertEqual('对话已压缩摘要');
+    });
+    it('type message + 空 message → 字面 Message 回退', 0, () => {
+      const e: AgentEvent = ev('message');
+      const p = getEventPresentation(e);
+      expect(p.icon).assertEqual('');
+      expect(p.text).assertEqual('Message');
+    });
+  });
+
   describe('getEventPresentation — 通用回退', () => {
     it('未知 type → JSON 串含 type + 无图标', 0, () => {
       const e: AgentEvent = ev('switch');

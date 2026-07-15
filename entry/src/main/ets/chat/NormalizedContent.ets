@@ -10,13 +10,22 @@
 
 import { CodexReview } from './CodexReview';
 
-export type NormalizedBlockType = 'text' | 'reasoning' | 'tool-call' | 'tool-result' | 'generated-image' | 'codex-review';
+export type NormalizedBlockType = 'text' | 'reasoning' | 'tool-call' | 'tool-result' | 'generated-image' | 'codex-review' | 'summary';
 
 export class NormalizedAgentContent {
   type: NormalizedBlockType = 'text';
 
   // text / reasoning 块正文
   text: string = '';
+
+  // reasoning 块流式合并键（Codex data.id；对照上游 normalizeAgent.ts:605 streamId）。
+  //   Codex 发同一 id 的多条 reasoning 快照，reducer 据此合并成单个会刷新的气泡（快照替换语义）。
+  //   '' = 无（Claude thinking 块无 streamId，每块独立；Codex 缺 data.id 亦不跨消息合并）。
+  streamId: string = '';
+
+  // summary 块正文（Codex data.type==='summary'，data.summary 字符串；对照 normalizeAgent.ts:446-456）。
+  //   reducer 映射为 agent-event 灰条（{type:'message', message:summary}），复用 #1 系统消息条。
+  summary: string = '';
 
   // tool-call 块
   id: string = '';                                    // tool_use.id

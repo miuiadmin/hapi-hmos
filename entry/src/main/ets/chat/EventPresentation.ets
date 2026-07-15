@@ -137,6 +137,13 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     return p;
   }
 
+  if (event.type === 'message') {
+    // summary 灰条文本（对照 presentation.ts:185-186）：message 非空即原文，否则 'Message'。
+    p.icon = '';
+    p.text = event.message !== '' ? event.message : 'Message';
+    return p;
+  }
+
   // 通用回退（对照 presentation.ts:209-213）：未知 type → JSON 串；不可序列化 → type 串。
   try {
     p.text = JSON.stringify(event);

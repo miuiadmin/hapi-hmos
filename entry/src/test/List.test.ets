@@ -44,6 +44,7 @@ import statusBarStatusTest from './StatusBarStatus.test';
 import codexReviewTest from './CodexReview.test';
 import attachmentFormatTest from './AttachmentFormat.test';
 import codexDiffTest from './CodexDiff.test';
+import codexPlanTest from './CodexPlan.test';
 import statusBarChipsTest from './StatusBarChips.test';
 import threadGoalTest from './ThreadGoal.test';
 import eventPresentationTest from './EventPresentation.test';
@@ -93,6 +94,7 @@ export default function testsuite() {
   codexReviewTest();
   attachmentFormatTest();
   codexDiffTest();
+  codexPlanTest();
   statusBarChipsTest();
   threadGoalTest();
   eventPresentationTest();

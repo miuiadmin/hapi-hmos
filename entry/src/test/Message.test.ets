@@ -174,6 +174,73 @@ export default function messageTest(): void {
     });
   });
 
+  describe('parseMessage — Codex envelopes (reasoning/summary/plan_update)', () => {
+    it('parses a reasoning envelope into a reasoning block with streamId', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"type":"reasoning","message":"thinking hard","id":"rs1"}'));
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].type).assertEqual('reasoning');
+      expect(m.blocks[0].text).assertEqual('thinking hard');
+      expect(m.blocks[0].streamId).assertEqual('rs1');
+    });
+    it('reasoning without id → streamId empty', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1', '{"type":"reasoning","message":"m"}'));
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].streamId).assertEqual('');
+    });
+    it('reasoning with empty message → no block', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1', '{"type":"reasoning","message":""}'));
+      expect(m.blocks.length).assertEqual(0);
+    });
+    it('parses a summary envelope into a summary block', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"type":"summary","summary":"compacted context"}'));
+      expect(m.blocks.length).assertEqual(1);
+      expect(m.blocks[0].type).assertEqual('summary');
+      expect(m.blocks[0].summary).assertEqual('compacted context');
+    });
+    it('summary with empty text → no block', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1', '{"type":"summary","summary":""}'));
+      expect(m.blocks.length).assertEqual(0);
+    });
+    it('parses a plan_update envelope into update_plan tool-call + tool-result', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"type":"plan_update","plan":[{"step":"A","status":"completed"},{"step":"B"}]}'));
+      expect(m.blocks.length).assertEqual(2);
+      // tool-call：id/name/input.plan
+      expect(m.blocks[0].type).assertEqual('tool-call');
+      expect(m.blocks[0].id).assertEqual('codex-plan-state');
+      expect(m.blocks[0].name).assertEqual('update_plan');
+      expect(m.blocks[0].input !== null).assertTrue();
+      if (m.blocks[0].input !== null) {
+        const planArr: Object = m.blocks[0].input['plan'];
+        expect(Array.isArray(planArr)).assertTrue();
+        if (Array.isArray(planArr)) {
+          expect((planArr as Object[]).length).assertEqual(2);
+        }
+      }
+      // tool-result：同 id、非 error、content.status='updated'
+      expect(m.blocks[1].type).assertEqual('tool-result');
+      expect(m.blocks[1].id).assertEqual('codex-plan-state');
+      expect(m.blocks[1].isError).assertEqual(false);
+      const ct: Object | null = m.blocks[1].content;
+      expect(ct !== null).assertTrue();
+      if (ct !== null) {
+        expect((ct as Record<string, Object>)['status']).assertEqual('updated');
+      }
+    });
+    it('plan_update with empty plan → no blocks', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1', '{"type":"plan_update","plan":[]}'));
+      expect(m.blocks.length).assertEqual(0);
+    });
+    it('plan_update resolves items fallback source', 0, () => {
+      const m: ChatMessage = parse(agentEnv('a1',
+        '{"type":"plan_update","items":[{"step":"only"}]}'));
+      expect(m.blocks.length).assertEqual(2);
+      expect(m.blocks[0].type).assertEqual('tool-call');
+    });
+  });
+
   describe('parseMessage — role normalization & edge cases', () => {
     it('normalizes an unknown role to agent and still parses blocks', 0, () => {
       const m: ChatMessage = parse('{"id":"x","createdAt":1,' +

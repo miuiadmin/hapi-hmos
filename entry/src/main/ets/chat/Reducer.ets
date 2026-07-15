@@ -183,6 +183,9 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
   const permissionsById: Map<string, PermissionEntry> = getPermissions(agentState);
   const blocks: ChatBlock[] = [];
   const toolBlocksById: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+  // reasoning 流式合并（对照 reducerTimeline.ts:276/756-785）：Codex 发同一 streamId 的多条 reasoning
+  //   快照，须合并成单个气泡（快照替换语义）。跨消息存活 → 声明在消息循环之外。
+  const reasoningByStreamId: Map<string, ChatBlock> = new Map<string, ChatBlock>();
   const toolIdsInMessages: Set<string> = new Set<string>();
 
   // 按消息顺序、每条 blocks 顺序遍历（插入序，不排序）
@@ -236,9 +239,31 @@ export function reduceChatBlocks(messages: ChatMessage[], agentState: AgentState
           }
         }
       } else if (c.type === 'reasoning') {
-        // 思考过程块（对照上游 reasoning.tsx）：非空才产出（空 thinking 不渲染，同 text 块处理）
+        // 思考过程块（对照上游 reasoning.tsx）：非空才产出（空 thinking 不渲染，同 text 块处理）。
+        //   streamId 流式合并（对照 reducerTimeline.ts:756-785）：同 streamId 的后续快照替换既有块的
+        //   text（snapshot-replace，非 append）→ 单个会刷新的气泡；无 streamId（Claude thinking）每块独立。
         if (c.text !== '') {
-          blocks.push(ChatBlock.reasoning(`${msg.id}:${bi}`, msg.createdAt, c.text));
+          if (c.streamId !== '' && reasoningByStreamId.has(c.streamId)) {
+            const existing: ChatBlock | undefined = reasoningByStreamId.get(c.streamId);
+            if (existing !== undefined) {
+              existing.text = c.text;   // 快照替换
+            }
+          } else {
+            const rb: ChatBlock = ChatBlock.reasoning(`${msg.id}:${bi}`, msg.createdAt, c.text);
+            blocks.push(rb);
+            if (c.streamId !== '') {
+              reasoningByStreamId.set(c.streamId, rb);
+            }
+          }
+        }
+      } else if (c.type === 'summary') {
+        // Codex summary 压缩摘要 → 居中灰条系统消息（对照 reducerTimeline.ts:803-814：映射为
+        //   agent-event {type:'message', message}）。复用 #1 灰条基础设施 + 既有 dedupe 通用键去重。
+        if (c.summary !== '') {
+          const ev: AgentEvent = new AgentEvent();
+          ev.type = 'message';
+          ev.message = c.summary;
+          blocks.push(ChatBlock.agentEvent(`${msg.id}:${bi}`, msg.createdAt, ev));
         }
       } else if (c.type === 'generated-image') {
         // 生成图片块（对照上游 reducerTimeline.ts:741-753）：id 同 agent-text 方案 `${msg.id}:${idx}`；

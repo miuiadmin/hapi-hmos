@@ -2,6 +2,7 @@ import { pickStr, pickNum, pickObj, AttachmentMetadata, ThreadGoal, parseThreadG
 import { NormalizedAgentContent } from '../chat/NormalizedContent';
 import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
 import { parseAttachmentsFromContent } from '../chat/AttachmentFormat';
+import { PlanEntry, normalizePlanEntries } from '../chat/CodexPlan';
 import { t } from '../i18n/Translate';
 
 // Hapi 对话消息（对齐 shared/src/schemas.ts DecryptedMessage + web/src/chat 归一化）
@@ -397,6 +398,83 @@ function extractAgentBlocks(inner: Record<string, Object> | null): NormalizedAge
       b.mimeType = pickStrFallback(data, 'mimeType', 'mime_type');
       blocks.push(b);
     }
+    return blocks;
+  }
+
+  // Codex reasoning 思考流（对照 normalizeAgent.ts:604-615）：data.type==='reasoning' 且 data.message 为
+  //   字符串 → reasoning 块，正文 = data.message，streamId = data.id（reducer 据此快照替换合并同 id 多条）。
+  //   须在 message 判空前拦截——否则 Codex 思考流被整条丢弃（Claude 的 reasoning 走 content[].thinking，不在此）。
+  if (pickStr(data, 'type') === 'reasoning') {
+    const dm: Object = data['message'];
+    if (typeof dm === 'string' && (dm as string) !== '') {
+      const b: NormalizedAgentContent = new NormalizedAgentContent();
+      b.type = 'reasoning';
+      b.text = dm as string;
+      b.streamId = pickStr(data, 'id');
+      blocks.push(b);
+    }
+    return blocks;
+  }
+
+  // Codex summary 压缩摘要（对照 normalizeAgent.ts:446-456）：data.type==='summary' 且 data.summary 为
+  //   字符串 → summary 块。reducer 映射为居中灰条系统消息（复用 #1 agent-event 灰条）。
+  if (pickStr(data, 'type') === 'summary') {
+    const ds: Object = data['summary'];
+    if (typeof ds === 'string' && (ds as string) !== '') {
+      const b: NormalizedAgentContent = new NormalizedAgentContent();
+      b.type = 'summary';
+      b.summary = ds as string;
+      blocks.push(b);
+    }
+    return blocks;
+  }
+
+  // Codex plan_update（对照 normalizeAgent.ts:725-763）：data.type==='plan_update' → 合成 update_plan
+  //   工具卡（tool-call + tool-result，同 id 'codex-plan-state'）。计划项来自 data.plan ?? data.update ??
+  //   data.items ?? data.steps ?? data，经 normalizePlanEntries 归一；空计划不产块。reducer 经既有 tool
+  //   分支合并成 completed 卡，extractUpdatePlanChecklist 读 input.plan 渲染清单。
+  if (pickStr(data, 'type') === 'plan_update') {
+    let cand: Object = data;
+    if (data['plan'] !== undefined && data['plan'] !== null) {
+      cand = data['plan'];
+    } else if (data['update'] !== undefined && data['update'] !== null) {
+      cand = data['update'];
+    } else if (data['items'] !== undefined && data['items'] !== null) {
+      cand = data['items'];
+    } else if (data['steps'] !== undefined && data['steps'] !== null) {
+      cand = data['steps'];
+    }
+    const plan: PlanEntry[] = normalizePlanEntries(cand);
+    if (plan.length === 0) {
+      return blocks;
+    }
+    const planArr: Object[] = [];
+    for (let i = 0; i < plan.length; i++) {
+      planArr.push(plan[i]);
+    }
+    // tool-call：update_plan，入参 {plan, source:'codex'}
+    const tc: NormalizedAgentContent = new NormalizedAgentContent();
+    tc.type = 'tool-call';
+    tc.id = 'codex-plan-state';
+    tc.name = 'update_plan';
+    const input: Record<string, Object> = {
+      'plan': planArr,
+      'source': 'codex'
+    };
+    tc.input = input;
+    blocks.push(tc);
+    // tool-result：{plan, source:'codex', status:'updated'}，非 error
+    const tr: NormalizedAgentContent = new NormalizedAgentContent();
+    tr.type = 'tool-result';
+    tr.id = 'codex-plan-state';
+    tr.isError = false;
+    const result: Record<string, Object> = {
+      'plan': planArr,
+      'source': 'codex',
+      'status': 'updated'
+    };
+    tr.content = result;
+    blocks.push(tr);
     return blocks;
   }
 

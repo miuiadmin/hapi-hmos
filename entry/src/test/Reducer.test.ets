@@ -74,6 +74,21 @@ function reasoningBlock(text: string): NormalizedAgentContent {
   return b;
 }
 
+function reasoningStreamBlock(text: string, streamId: string): NormalizedAgentContent {
+  const b: NormalizedAgentContent = new NormalizedAgentContent();
+  b.type = 'reasoning';
+  b.text = text;
+  b.streamId = streamId;
+  return b;
+}
+
+function summaryBlock(summary: string): NormalizedAgentContent {
+  const b: NormalizedAgentContent = new NormalizedAgentContent();
+  b.type = 'summary';
+  b.summary = summary;
+  return b;
+}
+
 function toolCall(id: string, name: string): NormalizedAgentContent {
   const b: NormalizedAgentContent = new NormalizedAgentContent();
   b.type = 'tool-call';
@@ -260,6 +275,61 @@ export default function reducerTest(): void {
       const tool: ChatToolCall = toolOf(blocks[0]);
       expect(tool.state).assertEqual('running');
       expect(tool.startedAt).assertEqual(100);
+    });
+  });
+
+  describe('reduceChatBlocks — Codex reasoning streamId merge + summary + plan_update', () => {
+    it('merges reasoning deltas sharing a streamId into one block (snapshot-replace)', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 100, [reasoningStreamBlock('part-1', 'rs1')]),
+        agentMsg('a2', 200, [reasoningStreamBlock('part-1 part-2', 'rs1')])
+      ], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('reasoning');
+      expect(blocks[0].text).assertEqual('part-1 part-2');
+    });
+
+    it('reasoning without streamId stays separate blocks', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks([
+        agentMsg('a1', 100, [reasoningBlock('p1')]),
+        agentMsg('a2', 200, [reasoningBlock('p2')])
+      ], null);
+      expect(blocks.length).assertEqual(2);
+      expect(blocks[0].text).assertEqual('p1');
+      expect(blocks[1].text).assertEqual('p2');
+    });
+
+    it('maps a summary block to an agent-event message gray bar', 0, () => {
+      const blocks: ChatBlock[] = reduceChatBlocks(
+        [agentMsg('a1', 100, [summaryBlock('compacted summary')])], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('agent-event');
+      expect(blocks[0].event !== null).assertTrue();
+      if (blocks[0].event !== null) {
+        expect(blocks[0].event.type).assertEqual('message');
+        expect(blocks[0].event.message).assertEqual('compacted summary');
+      }
+    });
+
+    it('merges a synthesized update_plan tool-call + tool-result into one completed block', 0, () => {
+      // 模拟 extractAgentBlocks 对 plan_update 的合成产物（同 id codex-plan-state，一条消息内两块）
+      const planArr: Object[] = [
+        { 'step': 'A', 'status': 'completed' } as Record<string, Object>,
+        { 'step': 'B', 'status': 'pending' } as Record<string, Object>
+      ];
+      const tc: NormalizedAgentContent = new NormalizedAgentContent();
+      tc.type = 'tool-call'; tc.id = 'codex-plan-state'; tc.name = 'update_plan';
+      tc.input = { 'plan': planArr, 'source': 'codex' } as Record<string, Object>;
+      const tr: NormalizedAgentContent = new NormalizedAgentContent();
+      tr.type = 'tool-result'; tr.id = 'codex-plan-state'; tr.isError = false;
+      tr.content = { 'plan': planArr, 'source': 'codex', 'status': 'updated' } as Record<string, Object>;
+      const blocks: ChatBlock[] = reduceChatBlocks([agentMsg('a1', 100, [tc, tr])], null);
+      expect(blocks.length).assertEqual(1);
+      expect(blocks[0].kind).assertEqual('tool-call');
+      const tool: ChatToolCall = toolOf(blocks[0]);
+      expect(tool.id).assertEqual('codex-plan-state');
+      expect(tool.name).assertEqual('update_plan');
+      expect(tool.state).assertEqual('completed');
     });
   });
 
