@@ -180,5 +180,14 @@ export default function hubClientUtilsTest(): void {
       const body = buildSpawnBody('/p', 'codex', 'auto', 'auto', true, 'simple', '');
       expect(body['yolo']).assertEqual(true);
     });
+    it('omits modelReasoningEffort when empty (default)', 0, () => {
+      const body = buildSpawnBody('/p', 'codex', 'auto', 'auto', true, 'simple', '');
+      expect(keys(body)).assertEqual('agent,directory,sessionType,yolo');
+    });
+    it('includes modelReasoningEffort when non-empty', 0, () => {
+      const body = buildSpawnBody('/p', 'codex', 'auto', 'auto', true, 'simple', '', 'high');
+      expect(body['modelReasoningEffort']).assertEqual('high');
+      expect(keys(body)).assertEqual('agent,directory,modelReasoningEffort,sessionType,yolo');
+    });
   });
 }

@@ -19,6 +19,8 @@ import { SessionListStatusModeService } from '../services/SessionListStatusModeS
 import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
 import { DeviceNetworkService } from '../services/DeviceNetworkService';
+import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
+import { decodeJwtExpMs } from '../utils/JwtUtils';
 import { shouldResync } from '../chat/SyncResync';
 
 const DOMAIN: number = 0x0000;
@@ -54,6 +56,13 @@ export default class EntryAbility extends UIAbility {
     // 初始化必须在 loadContent 之前完成，否则 isLoggedIn 读不到已存配置
     await getPreferencesService().initialize(this.context);
     await getConnectionService().initialize();
+    // JWT 主动预刷（对照上游 web useAuth 的 scheduler + focus/visibility 续期）：
+    //   注入 onFire 回调 → arm（按 jwt 的 exp 排一次预刷定时器）。
+    //   onFire 经 refreshAndArm 调 getHubClient().refreshJwt()（Scheduler 不 import HubClient，避 import 环）。
+    //   未登录时 jwt='' → arm 内部 cancel（无操作）；登录后 LoginPage.doLogin 再 arm 一次。
+    const jwtSched = getJwtRefreshScheduler();
+    jwtSched.onFire = (): void => { this.refreshAndArm(); };
+    jwtSched.arm();
     // 主题须在 loadContent 前应用，避免首屏默认色→切换闪烁（chatcube 教训）
     await ThemeService.init(this.context);
     // 气泡配色须在 loadContent 前从持久化读回 + 按当前 isDark resolve（ToolCard/ChatPage 首帧即用，避默认色闪一下）
@@ -105,6 +114,13 @@ export default class EntryAbility extends UIAbility {
     if (shouldResync(Date.now(), this.lastHideAt)) {
       SyncStateService.beginSync();
     }
+    // JWT 回前台续期（对照上游 web focus/visibility minTtlMs:60_000）：距过期 <60s 主动刷新，
+    //   避免回前台后首个请求撞过期 401。后台期间可能错过定时器，故回前台补检一次。
+    const jwt: string = getConnectionService().jwt;
+    const expMs: number = decodeJwtExpMs(jwt);
+    if (jwt !== '' && expMs > 0 && expMs - Date.now() < 60_000) {
+      this.refreshAndArm();
+    }
     this.reportVisibility('visible');
   }
 
@@ -123,5 +139,21 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     getHubClient().setVisibility(sid, visibility).catch((): void => {});
+  }
+
+  // JWT 预刷定时器到期回调（由 JwtRefreshScheduler.onFire 触发）：
+  //   刷新成功 → arm 下一轮预刷；刷新失败但 token 尚未过期 → 15s 后重试；已过期则停（下次请求 401 被动刷新）。
+  //   refreshJwt() 单飞：与 SSEClient 的 401 被动刷新 / onForeground 续期并发调用共享同一次在途刷新。
+  private async refreshAndArm(): Promise<void> {
+    try {
+      const ok = await getHubClient().refreshJwt();
+      if (ok) {
+        getJwtRefreshScheduler().arm();
+      } else {
+        getJwtRefreshScheduler().retryIfStillValid();
+      }
+    } catch (e) {
+      getJwtRefreshScheduler().retryIfStillValid();
+    }
   }
 }

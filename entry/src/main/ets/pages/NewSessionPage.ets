@@ -1,6 +1,6 @@
 import { getHubClient } from '../api/HubClient';
 import { t } from '../i18n/I18nService';
-import { Machine, DirEntry, SessionSummary, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName } from '../models/Types';
+import { Machine, DirEntry, SessionSummary, AGENT_FLAVORS, agentDisplayName, modelOptionsForAgent, modelDisplayName, ModelOption, MODEL_AUTO, EFFORT_OPTIONS, effortDisplayName, SESSION_TYPES, sessionTypeDisplayName, reasoningEffortsForFlavor, reasoningEffortDisplayName } from '../models/Types';
 import { formatMachineSpawnError } from '../chat/SpawnError';
 import { buildDirectorySuggestions } from '../chat/DirectorySuggestions';
 import { ChatPageRouteParams } from './ChatPage';
@@ -49,6 +49,7 @@ struct NewSessionPage {
   @Local yolo: boolean = false;                    // --yolo（持久化 preferred_yolo）
   @Local selectedSessionType: string = 'simple';   // 'simple' | 'worktree'
   @Local worktreeName: string = '';                // sessionType==='worktree' 时填
+  @Local selectedReasoningEffort: string = '';     // codex/opencode 推理努力；''=默认（省略，对照上游 spawn optional）
 
   @Local isSpawning: boolean = false;
   @Local spawnError: string = '';
@@ -149,9 +150,10 @@ struct NewSessionPage {
   private onAgentSelected(index: number): void {
     if (index < 0 || index >= AGENT_FLAVORS.length) { return; }
     this.selectedAgent = AGENT_FLAVORS[index];
-    // 切 agent 重置 model/effort（对照上游 index.tsx:73-77，不同 agent 的模型/努力域不同）
+    // 切 agent 重置 model/effort/reasoning（对照上游 index.tsx:73-77，不同 agent 的模型/努力域不同）
     this.selectedModel = 'auto';
     this.selectedEffort = 'auto';
+    this.selectedReasoningEffort = '';
     this.refreshModels();       // agent 变 → 按 新 agent 决定拉 codex/cursor/opencode 还是清空（claude/gemini/kimi）
   }
 
@@ -315,6 +317,35 @@ struct NewSessionPage {
     if (index >= 0 && index < EFFORT_OPTIONS.length) { this.selectedEffort = EFFORT_OPTIONS[index]; }
   }
 
+  // —— 推理努力下拉（仅 codex/opencode；''=默认省略，对照上游 spawn modelReasoningEffort optional）——
+  //   首项 ''（默认）+ reasoningEffortsForFlavor(agent)；agent 决定 codex(low..xhigh) 或 opencode(low..max)。
+  private reasoningEffortValues(): string[] {
+    const base: string[] = reasoningEffortsForFlavor(this.selectedAgent);
+    const out: string[] = [''];
+    for (let i = 0; i < base.length; i++) { out.push(base[i]); }
+    return out;
+  }
+  private reasoningEffortIndex(): number {
+    const vals: string[] = this.reasoningEffortValues();
+    for (let i = 0; i < vals.length; i++) {
+      if (vals[i] === this.selectedReasoningEffort) { return i; }
+    }
+    return 0;
+  }
+  private reasoningEffortOptions(): SelectOption[] {
+    const vals: string[] = this.reasoningEffortValues();
+    const opts: SelectOption[] = [];
+    opts.push({ value: t('newSession.model.default') });
+    for (let i = 1; i < vals.length; i++) {
+      opts.push({ value: reasoningEffortDisplayName(vals[i]) });
+    }
+    return opts;
+  }
+  private onReasoningEffortSelected(index: number): void {
+    const vals: string[] = this.reasoningEffortValues();
+    if (index >= 0 && index < vals.length) { this.selectedReasoningEffort = vals[index]; }
+  }
+
   // —— SessionType 下拉（simple 普通 / worktree 工作树）——
   private sessionTypeIndex(): number {
     for (let i = 0; i < SESSION_TYPES.length; i++) {
@@ -418,7 +449,7 @@ struct NewSessionPage {
       const wt: string = this.selectedSessionType === 'worktree' ? this.worktreeName.trim() : '';
       const sid: string = await getHubClient().spawnSession(
         this.selectedMachineId, dir, this.selectedAgent,
-        this.selectedModel, this.selectedEffort, this.yolo, this.selectedSessionType, wt
+        this.selectedModel, this.selectedEffort, this.yolo, this.selectedSessionType, wt, this.selectedReasoningEffort
       );
       // 持久化（last_machine_id / preferred_agent / preferred_yolo / 最近路径）
       await getPreferencesService().putString(KEY_LAST_MACHINE, this.selectedMachineId);
@@ -727,6 +758,22 @@ struct NewSessionPage {
                     .selected(this.effortIndex())
                     .value(effortDisplayName(this.selectedEffort))
                     .onSelect((index: number, text: string) => { this.onEffortSelected(index); })
+                    .width('100%')
+                    .height(50)
+                }
+                .width('100%')
+                .padding({ left: 16, right: 16 })
+                .backgroundColor(this.c.bg)
+              }
+
+              // 推理努力（仅 codex/opencode；对照 web ReasoningEffort，''=默认省略）
+              if (this.selectedAgent === 'codex' || this.selectedAgent === 'opencode') {
+                this.FieldLabel(t('sessionConfig.reasoningEffort'))
+                Column() {
+                  Select(this.reasoningEffortOptions())
+                    .selected(this.reasoningEffortIndex())
+                    .value(this.selectedReasoningEffort === '' ? t('newSession.model.default') : reasoningEffortDisplayName(this.selectedReasoningEffort))
+                    .onSelect((index: number, text: string) => { this.onReasoningEffortSelected(index); })
                     .width('100%')
                     .height(50)
                 }

@@ -323,9 +323,10 @@ export class HubClient {
     effort: string = 'auto',
     yolo: boolean = false,
     sessionType: string = 'simple',
-    worktreeName: string = ''
+    worktreeName: string = '',
+    modelReasoningEffort: string = ''
   ): Promise<string> {
-    const body: Record<string, Object> = buildSpawnBody(directory, agent, model, effort, yolo, sessionType, worktreeName);
+    const body: Record<string, Object> = buildSpawnBody(directory, agent, model, effort, yolo, sessionType, worktreeName, modelReasoningEffort);
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/spawn`, body, 'jwt');
     if (!resp.success) {

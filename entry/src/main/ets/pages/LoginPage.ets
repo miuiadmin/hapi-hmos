@@ -1,4 +1,5 @@
 import { getConnectionService } from '../services/ConnectionService';
+import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
 import { t } from '../i18n/I18nService';
@@ -75,6 +76,8 @@ struct LoginPage {
       // 持久化配置 + JWT，然后切到会话列表页
       await getConnectionService().saveConnection(this.hubUrl.trim(), this.apiToken.trim());
       await getConnectionService().saveJwt(result.jwt);
+      // 启动 JWT 主动预刷定时器（按新 jwt 的 exp 排期，到期前 60s 自动续期）
+      getJwtRefreshScheduler().arm();
       this.switchToMainContent();
     } catch (e) {
       this.lastError = t('login.error.failedWithReason', { reason: e instanceof Error ? e.message : t('login.error.unknown') });

@@ -1,4 +1,5 @@
 import { getConnectionService } from '../services/ConnectionService';
+import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getSSEClient } from '../api/SSEClient';
 import { getPreferencesService } from '../services/PreferencesService';
 import { AppStorageKeys, PreferenceKeys } from '../config/Keys';
@@ -272,6 +273,8 @@ struct SettingsPage {
     try {
       getSSEClient().disconnect();
       await getConnectionService().clear();
+      // 取消 JWT 主动预刷定时器（已登出，无 jwt 可续）
+      getJwtRefreshScheduler().cancel();
       this.switchToLogin();
     } catch (e) {
       this.isLoggingOut = false;

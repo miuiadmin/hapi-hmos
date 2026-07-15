@@ -48,10 +48,11 @@ export function buildDenyBody(decision?: string): Record<string, string> {
   return body;
 }
 
-// spawn 请求体：对照上游 web NewSession 提交解析（index.tsx:341-358）条件化字段。
+// spawn 请求体：对照上游 web client.ts:463-478 条件化字段。
 //   directory 恒发；agent 非空发；model/effort 仅非 'auto' 发（agent 用自身默认）；yolo 恒发；
-//   sessionType 恒发（默认 'simple'）；worktreeName 仅 sessionType==='worktree' 且 trim 非空发。
-//   上游 SpawnSessionRequestSchema 全 optional 无 default，省略 = 用 undefined（服务端按 agent 默认）。
+//   sessionType 恒发（默认 'simple'）；worktreeName 仅 sessionType==='worktree' 且 trim 非空发；
+//   modelReasoningEffort 仅非空发（上游第 5 位 optional，undefined 省略；区别于 session 侧
+//   setModelReasoningEffort 的 nullable 复位——spawn 侧新建无「清空」语义，空串即省略）。
 export function buildSpawnBody(
   directory: string,
   agent: string,
@@ -59,7 +60,8 @@ export function buildSpawnBody(
   effort: string,
   yolo: boolean,
   sessionType: string,
-  worktreeName: string
+  worktreeName: string,
+  modelReasoningEffort: string = ''
 ): Record<string, Object> {
   const body: Record<string, Object> = {};
   body['directory'] = directory;
@@ -72,6 +74,7 @@ export function buildSpawnBody(
     const wt: string = worktreeName.trim();
     if (wt !== '') { body['worktreeName'] = wt; }
   }
+  if (modelReasoningEffort !== '') { body['modelReasoningEffort'] = modelReasoningEffort; }
   return body;
 }
 
