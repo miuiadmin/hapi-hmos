@@ -8,6 +8,7 @@ import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
 import { RequestUserInputFooter } from './RequestUserInputFooter';
 import { AskUserQuestionView } from './AskUserQuestionView';
+import { RequestUserInputView } from './RequestUserInputView';
 import { shouldShowInlineToolCardBody, shouldUseCompactTerminalToolCard, TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
 import { getTerminalToolDisplayState } from '../services/TerminalToolDisplayService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
@@ -117,6 +118,15 @@ struct ToolCard {
   // 非 pending（approved/denied/canceled）的 AskUserQuestion → 内联已答视图高亮回显
   private get isAnsweredAskUserQuestion(): boolean {
     if (!this.isAskUserQuestion) {
+      return false;
+    }
+    const p = this.permission;
+    return p !== null && p.status !== 'pending';
+  }
+
+  // 非 pending（approved/denied/canceled）的 request_user_input → 内联已答视图回显（●/○ + 备注）
+  private get isAnsweredRequestUserInput(): boolean {
+    if (!this.isRequestUserInputTool) {
       return false;
     }
     const p = this.permission;
@@ -519,6 +529,13 @@ struct ToolCard {
         // 已答 AskUserQuestion：只读高亮回显（approved 后 footer 卸载，改此视图）
         Column() {
           AskUserQuestionView({ tool: this.toolNotNull })
+        }
+        .width('100%')
+        .margin({ top: 8 })
+      } else if (this.isAnsweredRequestUserInput) {
+        // 已答 request_user_input：只读回显（approved 后 footer 卸载，改此视图）
+        Column() {
+          RequestUserInputView({ tool: this.toolNotNull })
         }
         .width('100%')
         .margin({ top: 8 })

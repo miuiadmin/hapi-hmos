@@ -143,6 +143,97 @@ export default function presentationTest(): void {
     });
   });
 
+  describe('getToolPresentation — CodexReasoning', () => {
+    it('有 title → 💡 + title + minimal true', 0, () => {
+      const input = rec('{"title":"为什么选 A 方案"}');
+      const p = getToolPresentation(mk('CodexReasoning', input, null, ''));
+      expect(p.icon).assertEqual('💡');
+      expect(p.title).assertEqual('为什么选 A 方案');
+      expect(p.minimal).assertTrue();
+    });
+    it('无 title → 💡 + 思考', 0, () => {
+      const input = rec('{}');
+      const p = getToolPresentation(mk('CodexReasoning', input, null, ''));
+      expect(p.icon).assertEqual('💡');
+      expect(p.title).assertEqual('思考');
+    });
+  });
+
+  describe('getToolPresentation — SendMessage', () => {
+    it('broadcast → 💬 + 广播 + summary subtitle', 0, () => {
+      const input = rec('{"type":"broadcast","summary":"全员注意"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.icon).assertEqual('💬');
+      expect(p.title).assertEqual('广播');
+      expect(p.subtitle).assertEqual('全员注意');
+      expect(p.minimal).assertTrue();
+    });
+    it('shutdown_request 有 recipient → 关停：{recipient}', 0, () => {
+      const input = rec('{"type":"shutdown_request","recipient":"researcher"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.title).assertEqual('关停：researcher');
+    });
+    it('shutdown_request 无 recipient → 关停：Agent 兜底', 0, () => {
+      const input = rec('{"type":"shutdown_request"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.title).assertEqual('关停：Agent');
+    });
+    it('shutdown_response → 关停响应', 0, () => {
+      const input = rec('{"type":"shutdown_response"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.title).assertEqual('关停响应');
+    });
+    it('普通消息有 recipient → 消息：{recipient}', 0, () => {
+      const input = rec('{"recipient":"coder","summary":"hi"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.title).assertEqual('消息：coder');
+      expect(p.subtitle).assertEqual('hi');
+    });
+    it('无 type 无 recipient → 发送消息', 0, () => {
+      const input = rec('{}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.title).assertEqual('发送消息');
+      expect(p.subtitle).assertEqual('');
+    });
+    it('summary 超 120 字符 → 截断为 120 + …', 0, () => {
+      let long: string = '';
+      for (let i = 0; i < 150; i++) {
+        long += 'a';
+      }
+      const input = rec('{"summary":"' + long + '"}');
+      const p = getToolPresentation(mk('SendMessage', input, null, ''));
+      expect(p.subtitle.length).assertEqual(121);
+    });
+  });
+
+  describe('getToolPresentation — NotebookRead / NotebookEdit', () => {
+    it('NotebookRead 有 path → 👁️ + path', 0, () => {
+      const input = rec('{"notebook_path":"analysis.ipynb"}');
+      const p = getToolPresentation(mk('NotebookRead', input, null, ''));
+      expect(p.icon).assertEqual('👁️');
+      expect(p.title).assertEqual('analysis.ipynb');
+      expect(p.minimal).assertTrue();
+    });
+    it('NotebookRead 无 path → 👁️ + 读取笔记本', 0, () => {
+      const input = rec('{}');
+      const p = getToolPresentation(mk('NotebookRead', input, null, ''));
+      expect(p.title).assertEqual('读取笔记本');
+    });
+    it('NotebookEdit 有 path + mode → 📝 + path + 模式 subtitle', 0, () => {
+      const input = rec('{"notebook_path":"nb.ipynb","edit_mode":"insert"}');
+      const p = getToolPresentation(mk('NotebookEdit', input, null, ''));
+      expect(p.icon).assertEqual('📝');
+      expect(p.title).assertEqual('nb.ipynb');
+      expect(p.subtitle).assertEqual('模式：insert');
+    });
+    it('NotebookEdit 无 path 无 mode → 📝 + 编辑笔记本 + 空 subtitle', 0, () => {
+      const input = rec('{}');
+      const p = getToolPresentation(mk('NotebookEdit', input, null, ''));
+      expect(p.title).assertEqual('编辑笔记本');
+      expect(p.subtitle).assertEqual('');
+    });
+  });
+
   describe('getToolPresentation — 回归（既有分支不变）', () => {
     it('Bash → ⌨️ + 终端 + command subtitle', 0, () => {
       const input = rec('{"command":"pwd"}');

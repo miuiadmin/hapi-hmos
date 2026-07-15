@@ -347,6 +347,7 @@ export const zhCN: Record<string, string> = {
   'requestInput.placeholder': '请输入…',
   'requestInput.noteLabel': '备注',
   'requestInput.notePlaceholder': '可选：补充说明…',
+  'requestInput.answeredNote': '备注：',
 
   // —— 会话动作菜单（重命名/归档/删除/切换远程）——
   'sessionMenu.archive': '归档',
@@ -506,6 +507,16 @@ export const zhCN: Record<string, string> = {
   'pres.patchFiles': '{name}（+{n}）',
   'pres.permission': '权限：{tool}',
   'pres.permissionRequest': '权限请求',
+  'pres.reasoning': '思考',
+  'pres.broadcast': '广播',
+  'pres.shutdown': '关停：{recipient}',
+  'pres.shutdownResponse': '关停响应',
+  'pres.message': '消息：{recipient}',
+  'pres.sendMessage': '发送消息',
+  'pres.agent': 'Agent',
+  'pres.readNotebook': '读取笔记本',
+  'pres.editNotebook': '编辑笔记本',
+  'pres.editMode': '模式：{mode}',
 
   // —— 网络 / 连接 / 登录错误（HubClient/HubClientUtils/ConnectionService）——
   'api.requestFailed': '请求失败: {detail}',

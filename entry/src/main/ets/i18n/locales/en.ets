@@ -346,6 +346,7 @@ export const en: Record<string, string> = {
   'requestInput.placeholder': 'Type your answer…',
   'requestInput.noteLabel': 'Note',
   'requestInput.notePlaceholder': 'Optional: add a note…',
+  'requestInput.answeredNote': 'Note:',
 
   // —— Session action menu ——
   'sessionMenu.archive': 'Archive',
@@ -505,6 +506,16 @@ export const en: Record<string, string> = {
   'pres.patchFiles': '{name} (+{n})',
   'pres.permission': 'Permission: {tool}',
   'pres.permissionRequest': 'Permission request',
+  'pres.reasoning': 'Reasoning',
+  'pres.broadcast': 'Broadcast',
+  'pres.shutdown': 'Shutdown: {recipient}',
+  'pres.shutdownResponse': 'Shutdown Response',
+  'pres.message': 'Message: {recipient}',
+  'pres.sendMessage': 'Send Message',
+  'pres.agent': 'Agent',
+  'pres.readNotebook': 'Read notebook',
+  'pres.editNotebook': 'Edit notebook',
+  'pres.editMode': 'mode: {mode}',
 
   // —— API / connection / login errors ——
   'api.requestFailed': 'Request failed: {detail}',

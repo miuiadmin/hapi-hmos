@@ -106,3 +106,64 @@ export function buildRequestUserInputAnswers(stateByQuestion: Record<string, Req
   }
   return answers;
 }
+
+// 备注前缀（与 buildRequestUserInputAnswers 的 `user_note: <text>` 编码一致）。
+const NOTE_PREFIX: string = 'user_note: ';
+
+// 从 answers 数组里挑出 string（过滤非 string 项）。
+function pickStrings(arr: Object[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    if (typeof arr[i] === 'string') {
+      out.push(arr[i] as string);
+    }
+  }
+  return out;
+}
+
+// 读回解析（对照上游 requestUserInput.ts:111-146 parseRequestUserInputAnswers）。
+//   入参可为外层 { answers: { [id]: { answers: [...] } } }（body 提交格式）或扁平 { [id]: string[] | {answers:[]} }。
+//   逐条：`user_note: ` 前缀 → userNote（剥前缀 trim）；否则首个 → selected（trim）。null → '' 归一（'' = null 哨兵，与类一致）。
+//   非 object 入参 → null。
+export function parseRequestUserInputAnswers(answers: Object): Record<string, RequestUserInputAnswerState> | null {
+  if (!isPlainObject(answers)) {
+    return null;
+  }
+  const outer: Record<string, Object> = answers as Record<string, Object>;
+  const wrapped: Object = outer['answers'];
+  const answersObj: Record<string, Object> = isPlainObject(wrapped) ? wrapped as Record<string, Object> : outer;
+
+  const parsed: Record<string, RequestUserInputAnswerState> = {};
+  const keys: string[] = Object.keys(answersObj);
+  for (let i = 0; i < keys.length; i++) {
+    const id: string = keys[i];
+    const value: Object = answersObj[id];
+
+    let answerArray: string[] = [];
+    if (isPlainObject(value)) {
+      const innerArr: Object = (value as Record<string, Object>)['answers'];
+      if (Array.isArray(innerArr)) {
+        answerArray = pickStrings(innerArr as Object[]);
+      }
+    } else if (Array.isArray(value)) {
+      answerArray = pickStrings(value as Object[]);
+    }
+
+    let selected: string = '';
+    let userNote: string = '';
+    for (let j = 0; j < answerArray.length; j++) {
+      const item: string = answerArray[j];
+      if (item.startsWith(NOTE_PREFIX)) {
+        userNote = item.substring(NOTE_PREFIX.length).trim();
+      } else if (selected === '') {
+        selected = item.trim();
+      }
+    }
+
+    const st: RequestUserInputAnswerState = new RequestUserInputAnswerState();
+    st.selected = selected;
+    st.userNote = userNote;
+    parsed[id] = st;
+  }
+  return parsed;
+}

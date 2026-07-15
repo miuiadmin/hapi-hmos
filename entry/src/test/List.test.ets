@@ -50,6 +50,7 @@ import threadGoalTest from './ThreadGoal.test';
 import eventPresentationTest from './EventPresentation.test';
 import userDirectivesTest from './UserDirectives.test';
 import presentationTest from './Presentation.test';
+import requestUserInputTest from './RequestUserInput.test';
 
 export default function testsuite() {
   diffTest();
@@ -101,4 +102,5 @@ export default function testsuite() {
   eventPresentationTest();
   userDirectivesTest();
   presentationTest();
+  requestUserInputTest();
 }

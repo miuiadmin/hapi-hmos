@@ -314,6 +314,54 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.minimal = true;
       return p;
     }
+    case 'CodexReasoning': {
+      // 对照上游 knownTools.tsx:392-396：icon 💡、title input.title ?? 'Reasoning'，minimal true。
+      p.icon = '💡';
+      const title: string = getInputStrAny(input, ['title']);
+      p.title = title !== '' ? title : t('pres.reasoning');
+      p.minimal = true;
+      return p;
+    }
+    case 'SendMessage': {
+      // 对照上游 knownTools.tsx:101-116：icon 💬、按 type/recipient 取标题、summary 截断 120 subtitle，minimal true。
+      p.icon = '💬';
+      const recipient: string = getInputStrAny(input, ['recipient']);
+      const msgType: string = getInputStrAny(input, ['type']);
+      if (msgType === 'broadcast') {
+        p.title = t('pres.broadcast');
+      } else if (msgType === 'shutdown_request') {
+        p.title = t('pres.shutdown', { recipient: recipient !== '' ? recipient : t('pres.agent') });
+      } else if (msgType === 'shutdown_response') {
+        p.title = t('pres.shutdownResponse');
+      } else if (recipient !== '') {
+        p.title = t('pres.message', { recipient });
+      } else {
+        p.title = t('pres.sendMessage');
+      }
+      const summary: string = getInputStrAny(input, ['summary']);
+      p.subtitle = summary !== '' ? truncateStr(summary, 120) : '';
+      p.minimal = true;
+      return p;
+    }
+    case 'NotebookRead': {
+      // 对照上游 knownTools.tsx:280-287：icon 👁️、title notebook_path ?? 'Read notebook'，minimal true。
+      p.icon = '👁️';
+      const nbPath: string = getInputStrAny(input, ['notebook_path']);
+      p.title = nbPath !== '' ? nbPath : t('pres.readNotebook');
+      p.minimal = true;
+      return p;
+    }
+    case 'NotebookEdit': {
+      // 对照上游 knownTools.tsx:288-299：icon 📝、title notebook_path ?? 'Edit notebook'、subtitle `mode: ${edit_mode}`。
+      // minimal 取 true（上游 false 但无 body view，端口 false 会落 JSON dump；cell body 留 follow-up）。
+      p.icon = '📝';
+      const nbPath: string = getInputStrAny(input, ['notebook_path']);
+      p.title = nbPath !== '' ? nbPath : t('pres.editNotebook');
+      const editMode: string = getInputStrAny(input, ['edit_mode']);
+      p.subtitle = editMode !== '' ? t('pres.editMode', { mode: editMode }) : '';
+      p.minimal = true;
+      return p;
+    }
     default: {
       // 未知工具：字段探测兜底（file_path/command/pattern/url/query/name）
       p.icon = '🔧';
