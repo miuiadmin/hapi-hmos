@@ -60,6 +60,7 @@ import tracerTest from './Tracer.test';
 import subagentToolTest from './SubagentTool.test';
 import agentRunTraceTest from './AgentRunTrace.test';
 import toastLocalizeTest from './ToastLocalize.test';
+import filePathScannerTest from './FilePathScanner.test';
 
 export default function testsuite() {
   diffTest();
@@ -121,4 +122,5 @@ export default function testsuite() {
   subagentToolTest();
   agentRunTraceTest();
   toastLocalizeTest();
+  filePathScannerTest();
 }

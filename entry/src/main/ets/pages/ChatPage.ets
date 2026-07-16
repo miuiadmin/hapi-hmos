@@ -38,6 +38,7 @@ import { getSessionSeenService } from '../services/SessionAttention';
 import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
 import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
+import { FileViewerRouteParams } from './FileViewerPage';
 import { TerminalRouteParams } from './TerminalPage';
 import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
@@ -454,6 +455,17 @@ struct ChatPage {
     const p: FilesRouteParams = new FilesRouteParams();
     p.sessionId = this.sessionId;
     this.navPathStack.pushPath({ name: 'FilesPage', param: p });
+  }
+
+  // 正文裸文件路径点击 → 进文件查看页（对照上游 hapi-file: 链接 → FileViewer）。
+  //   showDiff=false（只看内容）；不带行号（FileViewerRouteParams 无 line 字段，上游 web 也不传行号）。
+  private openFilePath(path: string): void {
+    if (path === '' || this.sessionId === '' || this.navPathStack === null) { return; }
+    const p: FileViewerRouteParams = new FileViewerRouteParams();
+    p.sessionId = this.sessionId;
+    p.path = path;
+    p.showDiff = false;
+    this.navPathStack.pushPath({ name: 'FileViewerPage', param: p });
   }
 
   // 进终端页（session 工作目录开交互 shell；对照 web /sessions/$id/terminal）
@@ -1633,7 +1645,7 @@ struct ChatPage {
       // 左簇：气泡 + 时间 + 脚注，整体左对齐（时间/脚注贴气泡左下）
       Column() {
         Column() {
-          MarkdownText({ content: b.text })
+          MarkdownText({ content: b.text, linkFilePaths: true, onOpenFilePath: (path: string): void => { this.openFilePath(path); } })
         }
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
         .backgroundColor(this.c.surface)

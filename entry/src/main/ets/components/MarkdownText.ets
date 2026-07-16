@@ -20,6 +20,7 @@ import {
 } from '../utils/ExternalLink';
 import { getPreferencesService } from '../services/PreferencesService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
+import { scanFilePaths, decodeFilePathHref } from '../utils/FilePathScanner';
 
 // 极简 Markdown 渲染组件：封装 @cangjie-tpc/markdown_hybrid（Apache-2.0）的 CJMarkdown
 // 参考 chatcube ChatMarkdownHybridRenderer（MIT），裁掉其 AppUiState 主题系统 / 排版工具 / 媒体图标依赖：
@@ -37,6 +38,18 @@ export struct MarkdownText {
   @Param content: string = '';
   // hapi 消息均为完整消息，默认已完成（无需流式增量分析）
   @Param isInputEnded: boolean = true;
+
+  // 裸文件路径 → hapi-file: 链接（喂 CJMarkdown 前预处理；对照上游 remarkFilePathLinks MDAST 插件）。
+  //   opt-in：仅当上层接了 onOpenFilePath 并显式 linkFilePaths=true 才扫描——避免工具卡 / reasoning 等无 nav
+  //   上下文的叶子场景出现「点得动却没反应」的死链接（上游能处处链是因 markdown-text 恒有 session 上下文）。
+  //   scanFilePaths 是纯函数、幂等（无命中返回原引用）→ @Computed 仅依赖 @Param 基本类型，无链式追踪。
+  @Param linkFilePaths: boolean = false;
+  @Computed get renderedContent(): string {
+    return this.linkFilePaths ? scanFilePaths(this.content) : this.content;
+  }
+
+  // 路径链接点击 → 委托上层（ChatPage.openFilePath → FileViewer）。叶子组件不持 navStack，范式同 chatcube @Event onOpenLink。
+  @Event onOpenFilePath: (path: string) => void = (path: string): void => {};
 
   // 代码全屏预览（点代码块全屏图标 → bindSheet 大尺寸 sheet 展示完整代码，对照 chatcube CodePreviewSheet）
   @Local showCodePreview: boolean = false;
@@ -152,8 +165,15 @@ export struct MarkdownText {
     theme.setIsDark(isDark);
 
     config.setMarkdownTheme(theme);
-    // 链接点击 → scheme 分类策略（IANA 安全直接开 / deny 阻止 / custom 确认），见 openExternal
-    config.setLinkCallback((url: string): void => { this.openExternal(url); });
+    // 链接点击 → hapi-file: 拦截（裸路径链接）→ scheme 分类策略（IANA 安全直接开 / deny 阻止 / custom 确认）
+    config.setLinkCallback((url: string): void => {
+      // 裸文件路径链接（scanFilePaths 预处理注入）→ 委托上层打开 FileViewer，不落 openExternal（非 IANA/deny，会走 custom 确认→startAbility 失败）
+      if (url.indexOf('hapi-file:') === 0) {
+        const fp: string | null = decodeFilePathHref(url);
+        if (fp !== null) { this.onOpenFilePath(fp); return; }
+      }
+      this.openExternal(url);
+    });
     // 图片点击 → 应用内全屏预览（http(s)/data:，对照 chatcube setImageCallback → onImageClick → handleImagePreview）
     config.setImageCallback((src: string, _sources: Array<string>): void => { this.openImagePreview(src); });
     // 复制回调：正文选中文本 / 代码块复制按钮 → 写系统剪贴板（对照 chatcube setTextCopyCallback/setCodeCopyCallback）
@@ -336,7 +356,7 @@ export struct MarkdownText {
     Column() {
       Column() {
         CJMarkdown({
-          content: this.content,
+          content: this.renderedContent,
           isInputEnded: this.isInputEnded,
           incrementalAnalysis: false,
           useCangjieComponent: true,
