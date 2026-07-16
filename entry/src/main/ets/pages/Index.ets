@@ -20,12 +20,14 @@ import {
 import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SyncingBanner } from '../components/SyncingBanner';
+import { ServerToastOverlay } from '../components/ServerToastOverlay';
 import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
 import { SessionPreviewLimitService, getSessionPreviewLimitState } from '../services/SessionPreviewLimitService';
 import { getSessionListStatusModeState } from '../services/SessionListStatusModeService';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
+import { ToastService } from '../services/ToastService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { showToast } from '../utils/Toast';
+import { localizeToast } from '../chat/ToastLocalize';
 import { t } from '../i18n/I18nService';
 
 // 会话列表页（已登录首屏）
@@ -142,7 +144,8 @@ struct Index {
     }
   }
 
-  // 服务端 Toast（data:{title,body,sessionId,url}）→ 全局提示。showToast 是窗口级，任何页在前都显形。
+  // 服务端 Toast（data:{title,body,sessionId,url}）→ 本地化 + 悬浮卡（ServerToastOverlay，可点击跳会话）。
+  //   对照上游 App.tsx translateIncomingToast：classify/parseReadyBody/localizeToast 在 chat/ToastLocalize（纯层）。
   private showServerToast(event: SyncEvent): void {
     const data = event.getObject('data');
     if (data === null) {
@@ -150,13 +153,15 @@ struct Index {
     }
     const titleVal = data['title'];
     const bodyVal = data['body'];
+    const sessionVal = data['sessionId'];
     const title: string = typeof titleVal === 'string' ? titleVal : '';
     const body: string = typeof bodyVal === 'string' ? bodyVal : '';
-    const message: string = body !== '' ? `${title}：${body}` : title;
-    if (message === '') {
+    const sessionId: string = typeof sessionVal === 'string' ? sessionVal : '';
+    if (title === '' && body === '') {
       return;
     }
-    showToast(message);
+    const loc = localizeToast(title, body);
+    ToastService.show(loc.title, loc.body, sessionId);
   }
 
   // 点击进入对话页（NavPathStack.pushPath，对照 chatcube openChatRoute）
@@ -164,6 +169,17 @@ struct Index {
     const params: ChatPageRouteParams = new ChatPageRouteParams();
     params.sessionId = session.id;
     params.title = session.title;
+    this.navStack.pushPath({ name: 'ChatPage', param: params });
+  }
+
+  // 点击 toast 跳会话（仅 sessionId；title 留空由 ChatPage 自拉）。sessionId 缺→不跳。
+  private openSessionById(sessionId: string): void {
+    if (sessionId === '') {
+      return;
+    }
+    const params: ChatPageRouteParams = new ChatPageRouteParams();
+    params.sessionId = sessionId;
+    params.title = '';
     this.navStack.pushPath({ name: 'ChatPage', param: params });
   }
 
@@ -624,126 +640,137 @@ struct Index {
   }
 
   build() {
-    Navigation(this.navStack) {
-      Column() {
-        // 自绘标题栏（含 SSE 实时状态 + 设置入口）
-        Row() {
+    // Stack 包 Navigation：ServerToastOverlay 悬浮于所有页面之上（TopStart 对齐），跨页可见。
+    Stack() {
+      Navigation(this.navStack) {
+        Column() {
+          // 自绘标题栏（含 SSE 实时状态 + 设置入口）
           Row() {
-            Text(t('sessions.title')).fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
-            if (this.sseBadge() !== '') {
-              Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary).margin({ left: 8 })
+            Row() {
+              Text(t('sessions.title')).fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
+              if (this.sseBadge() !== '') {
+                Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary).margin({ left: 8 })
+              }
             }
-          }
-          .layoutWeight(1)
+            .layoutWeight(1)
 
-          // 新建会话入口
-          Text('+')
-            .fontSize(fs(26))
-            .fontColor(this.c.textSecondary)
-            .width(40)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .onClick(() => this.openNewSession())
-
-          // 设置入口
-          Text('⚙')
-            .fontSize(fs(22))
-            .fontColor(this.c.textSecondary)
-            .width(40)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .onClick(() => this.openSettings())
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-
-        // 搜索框（仅 sessions 非空时显示；纯客户端过滤，对照 web SessionListSearch / chatcube Search 组件）
-        if (this.sessions.length > 0) {
-          Column() {
-            Search({ value: this.searchQuery, placeholder: t('sessions.search.placeholder') })
+            // 新建会话入口
+            Text('+')
+              .fontSize(fs(26))
+              .fontColor(this.c.textSecondary)
+              .width(40)
               .height(40)
-              .backgroundColor(this.c.surface)
-              .placeholderColor(this.c.textTertiary)
-              .onChange((value: string) => { this.searchQuery = value; })
-            this.FilterTabs()
+              .textAlign(TextAlign.Center)
+              .onClick(() => this.openNewSession())
+
+            // 设置入口
+            Text('⚙')
+              .fontSize(fs(22))
+              .fontColor(this.c.textSecondary)
+              .width(40)
+              .height(40)
+              .textAlign(TextAlign.Center)
+              .onClick(() => this.openSettings())
           }
           .width('100%')
-          .padding({ left: 16, right: 16, bottom: 8 })
-        }
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
 
-        // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
-        ConnectionBanner()
-        // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadSessions，完成后 endSync）
-        SyncingBanner()
-
-        if (this.isLoading) {
-          Column() {
-            LoadingProgress().width(40).height(40).color(this.c.primary)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-        } else if (this.errorMessage !== '' && this.sessions.length === 0) {
-          this.ErrorState()
-        } else if (this.sessions.length === 0) {
-          this.EmptyState()
-        } else if (this.filteredSessions.length === 0) {
-          this.SearchEmptyState(this.emptyIcon(), this.emptyMessage())
-        } else {
-          // 下拉刷新（Refresh 包 List；refreshing !! 双向绑定 + onRefreshing 触发拉取）
-          Refresh({ refreshing: this.isRefreshing!! }) {
-            List({ space: 0 }) {
-              ForEach(this.sessionRows, (row: RenderRow) => {
-                ListItem() {
-                  if (row.kind === 'machine') {
-                    this.MachineHeader(row.machineGroup as MachineGroup)
-                  } else if (row.kind === 'directory') {
-                    this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
-                  } else if (row.kind === 'show-more') {
-                    this.ShowMoreRow(row)
-                  } else {
-                    this.SessionItem(row.session as SessionSummary)
-                  }
-                }
-                .onClick(() => {
-                  if (row.kind === 'machine') {
-                    this.toggleMachine(row.machineGroup as MachineGroup);
-                  } else if (row.kind === 'directory') {
-                    this.toggleDirectory(row.directoryGroup as DirectoryGroup);
-                  } else if (row.kind === 'show-more') {
-                    this.expandGroup(row.groupKey);
-                  } else {
-                    this.openSession(row.session as SessionSummary);
-                  }
-                })
-              }, (row: RenderRow) => row.key)
+          // 搜索框（仅 sessions 非空时显示；纯客户端过滤，对照 web SessionListSearch / chatcube Search 组件）
+          if (this.sessions.length > 0) {
+            Column() {
+              Search({ value: this.searchQuery, placeholder: t('sessions.search.placeholder') })
+                .height(40)
+                .backgroundColor(this.c.surface)
+                .placeholderColor(this.c.textTertiary)
+                .onChange((value: string) => { this.searchQuery = value; })
+              this.FilterTabs()
             }
             .width('100%')
-            .height('100%')
-            // 不用 List 级 divider：分组头与会话项混排时分隔线会切到头行底，观感凌乱；
-            //   会话项靠自身 padding 留白，组头靠缩进 + 字重区分（对照上游 SessionList 分组无全局分隔线）。
-            .edgeEffect(EdgeEffect.Spring)
+            .padding({ left: 16, right: 16, bottom: 8 })
           }
-          .width('100%')
-          .layoutWeight(1)
-          .onRefreshing(() => { this.refreshSessions(); })
-        }
 
-        SessionActionMenu({
-          sessionId: this.actionTarget !== null ? this.actionTarget.id : '',
-          title: this.actionTarget !== null ? this.actionTarget.title : '',
-          active: this.actionTarget !== null ? this.actionTarget.active : true,
-          open: this.actionMenuOpen,
-          onClose: () => { this.actionMenuOpen = false; },
-          onRenamed: (_name: string) => { this.loadSessions(); },
-          onArchived: () => { this.loadSessions(); },
-          onDeleted: () => { this.loadSessions(); }
-        })
+          // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
+          ConnectionBanner()
+          // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadSessions，完成后 endSync）
+          SyncingBanner()
+
+          if (this.isLoading) {
+            Column() {
+              LoadingProgress().width(40).height(40).color(this.c.primary)
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+          } else if (this.errorMessage !== '' && this.sessions.length === 0) {
+            this.ErrorState()
+          } else if (this.sessions.length === 0) {
+            this.EmptyState()
+          } else if (this.filteredSessions.length === 0) {
+            this.SearchEmptyState(this.emptyIcon(), this.emptyMessage())
+          } else {
+            // 下拉刷新（Refresh 包 List；refreshing !! 双向绑定 + onRefreshing 触发拉取）
+            Refresh({ refreshing: this.isRefreshing!! }) {
+              List({ space: 0 }) {
+                ForEach(this.sessionRows, (row: RenderRow) => {
+                  ListItem() {
+                    if (row.kind === 'machine') {
+                      this.MachineHeader(row.machineGroup as MachineGroup)
+                    } else if (row.kind === 'directory') {
+                      this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
+                    } else if (row.kind === 'show-more') {
+                      this.ShowMoreRow(row)
+                    } else {
+                      this.SessionItem(row.session as SessionSummary)
+                    }
+                  }
+                  .onClick(() => {
+                    if (row.kind === 'machine') {
+                      this.toggleMachine(row.machineGroup as MachineGroup);
+                    } else if (row.kind === 'directory') {
+                      this.toggleDirectory(row.directoryGroup as DirectoryGroup);
+                    } else if (row.kind === 'show-more') {
+                      this.expandGroup(row.groupKey);
+                    } else {
+                      this.openSession(row.session as SessionSummary);
+                    }
+                  })
+                }, (row: RenderRow) => row.key)
+              }
+              .width('100%')
+              .height('100%')
+              // 不用 List 级 divider：分组头与会话项混排时分隔线会切到头行底，观感凌乱；
+              //   会话项靠自身 padding 留白，组头靠缩进 + 字重区分（对照上游 SessionList 分组无全局分隔线）。
+              .edgeEffect(EdgeEffect.Spring)
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .onRefreshing(() => { this.refreshSessions(); })
+          }
+
+          SessionActionMenu({
+            sessionId: this.actionTarget !== null ? this.actionTarget.id : '',
+            title: this.actionTarget !== null ? this.actionTarget.title : '',
+            active: this.actionTarget !== null ? this.actionTarget.active : true,
+            open: this.actionMenuOpen,
+            onClose: () => { this.actionMenuOpen = false; },
+            onRenamed: (_name: string) => { this.loadSessions(); },
+            onArchived: () => { this.loadSessions(); },
+            onDeleted: () => { this.loadSessions(); }
+          })
+        }
+        .width('100%')
+        .height('100%')
       }
-      .width('100%')
-      .height('100%')
+      .hideTitleBar(true)
+      .mode(NavigationMode.Stack)
+
+      // 服务端 toast 悬浮卡（current 非空才显形；空态 Visibility.None 不占位、不拦截点击）
+      ServerToastOverlay({
+        onTap: (sid: string): void => { this.openSessionById(sid); }
+      })
     }
-    .hideTitleBar(true)
-    .mode(NavigationMode.Stack)
+    .width('100%')
+    .height('100%')
+    .alignContent(TopStart)
   }
 }

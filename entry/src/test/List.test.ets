@@ -59,6 +59,7 @@ import jwtUtilsTest from './JwtUtils.test';
 import tracerTest from './Tracer.test';
 import subagentToolTest from './SubagentTool.test';
 import agentRunTraceTest from './AgentRunTrace.test';
+import toastLocalizeTest from './ToastLocalize.test';
 
 export default function testsuite() {
   diffTest();
@@ -119,4 +120,5 @@ export default function testsuite() {
   tracerTest();
   subagentToolTest();
   agentRunTraceTest();
+  toastLocalizeTest();
 }

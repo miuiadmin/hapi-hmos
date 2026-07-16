@@ -629,5 +629,12 @@ export const zhCN: Record<string, string> = {
   // —— 分享（ShareService）——
   'share.defaultTitle': '分享消息',
   'share.emptyContent': '内容为空',
-  'share.failed': '分享失败: {detail}'
+  'share.failed': '分享失败: {detail}',
+
+  // —— 服务端 toast（App.tsx translateIncomingToast）——
+  'toast.ready.title': '等待输入',
+  'toast.ready.body': '{agent} 正在 {session} 等待你的输入',
+  'toast.permission.title': '权限请求',
+  'toast.task.completed': '任务完成',
+  'toast.task.failed': '任务失败'
 };

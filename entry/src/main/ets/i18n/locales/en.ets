@@ -628,5 +628,12 @@ export const en: Record<string, string> = {
   // —— Share ——
   'share.defaultTitle': 'Share message',
   'share.emptyContent': 'Content is empty',
-  'share.failed': 'Share failed: {detail}'
+  'share.failed': 'Share failed: {detail}',
+
+  // —— Server toast (App.tsx translateIncomingToast) ——
+  'toast.ready.title': 'Ready for input',
+  'toast.ready.body': '{agent} is waiting in {session}',
+  'toast.permission.title': 'Permission Request',
+  'toast.task.completed': 'Task completed',
+  'toast.task.failed': 'Task failed'
 };
