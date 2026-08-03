@@ -71,16 +71,16 @@ hvigorw --mode module -p module=entry@default assembleHap
 
 ## 鸿蒙实现参考
 
-本项目有两套鸿蒙侧参考，**优先级：chatcube 为主，berry3 为辅**。详见 [docs/参考项目.md](docs/参考项目.md)。
+本项目有三类参考：**chatcube 主（业务/UX）、berry3 主（ArkTS 语法 + 避坑文档 + 底层）、hapi 源码主（语义/协议）**。详见 [docs/参考项目.md](docs/参考项目.md)。
 
 | 项目 | 角色 | 参考范围 |
 |---|---|---|
 | **chatcube**（Cube Chat） | 🥇 主要 | 布局、样式、流式对话、对话、会话管理（业务 / 架构 / UX 全方位） |
-| **berry3**（Berry Browser） | 🥈 次要 | 仅底层代码参考（系统能力调用、特定底层实现） |
+| **berry3**（Berry Browser） | 🔧 语法/避坑/底层 | **ArkTS 语法 + 避坑文档库**（遇坑先查）+ 底层代码（系统能力） |
 | `参考源码/hapi` | 语义 | 功能行为、Hub 协议、数据结构 |
 
 - **位置**：chatcube → `参考源码/chatcube`（GitHub: LongLiveY96/chatcube）；berry3 → `~/Documents/harmony/project/berry3`（GitHub: miuiadmin/berry-browser）
-- **规则**：ArkUI 写法 / 页面布局 / 对话 / 会话管理拿不准 → **先看 chatcube**；只有底层 / 系统能力类实现才看 berry3
+- **规则**：布局 / 样式 / 对话 / 会话拿不准 → **先看 chatcube**；**ArkTS / ArkUI 遇坑（build/getter/ForEach/@Trace/JSON.parse/签名/hvigor 等）→ 先查 berry3 避坑文档**（尤其 berry3 `docs/ArkUI-V2严格模式避坑.md`）；底层 / 系统能力 chatcube 没有才看 berry3 代码
 - **License**：chatcube = MIT（搬代码需保留版权，与 AGPL 兼容）；berry3 license 不明，仅参考不搬代码
 - **查询鸿蒙官方文档**用本项目已复制的两个 retriever skill（`.claude/skills/`）：
   - ArkTS 语法 / 库 → `hmos-arkts-knowledge-retriever`
