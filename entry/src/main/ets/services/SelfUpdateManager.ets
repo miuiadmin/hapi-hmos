@@ -70,9 +70,15 @@ const K_LAST_CHECK_TS: string = 'last_check_ts';
 const K_IGNORED_VERSION: string = 'ignored_version';
 /** 上次成功连通的可信主机（prefs 持久化，下次 fetch/download 优先用它，减少首跳失败的重试） */
 const K_WORKING_HOST: string = 'working_host';
+/** 上次「自动弹更新 sheet」时刻（弹窗节流用，与 K_LAST_CHECK_TS 检查节流解耦；AUTO_PROMPT_THROTTLE_MS 据此判断） */
+const K_LAST_PROMPTED_TS: string = 'last_prompted_ts';
 // 自动检查节流（仅热恢复路径 force=false 用）：后台切回前台 ≥2h 才查。
 // 冷启动路径 force=true 不节流（每次启动都查）。last_check_ts 成功 GET 后写入，节流据此判断。
 const THROTTLE_MS: number = 2 * 60 * 60 * 1000;  // 2 小时
+// 自动弹窗节流（仅 silent 自动检查路径用）：上次「自动弹更新 sheet」≥ 此间隔才再自动弹。
+//   与 THROTTLE_MS【解耦】——检查(THROTTLE_MS)可更勤以刷新徽标，弹窗独立限频，避免每次进 app 都弹。
+//   仅对 silent=true 自动检查生效；手动点「检查更新」(silent=false)不受此限、总是弹。
+const AUTO_PROMPT_THROTTLE_MS: number = 2 * 60 * 60 * 1000;  // 2 小时
 /** 自更新进度通知固定 id（单任务无需分配） */
 const NOTIF_ID: number = 0x7001;
 /** 进度通知节流间隔（避免每网络块一次 IPC 风暴） */
@@ -888,6 +894,36 @@ export class SelfUpdateManager {
       return 0;
     }
     return this.prefs.getSync(K_IGNORED_VERSION, 0) as number;
+  }
+
+  /**
+   * 自动弹窗是否已过节流期：距上次「自动弹 sheet」≥ AUTO_PROMPT_THROTTLE_MS（或从未弹过）才允许自动弹。
+   * 仅 OtaController.checkForUpdates 的 silent 自动检查路径调；手动检查(silent=false)不走节流、总是弹。
+   * prefs 读失败 → 返回 true（不因 IO 异常吞掉更新提示）。
+   */
+  shouldAutoPrompt(): boolean {
+    if (this.prefs === null) {
+      return true;
+    }
+    try {
+      const last: number = this.prefs.getSync(K_LAST_PROMPTED_TS, 0) as number;
+      return last <= 0 || (Date.now() - last) >= AUTO_PROMPT_THROTTLE_MS;
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  /** 记录「已弹更新 sheet」时刻，启动 2h 自动弹窗冷却。弹 sheet 时（手动/自动皆然）调。 */
+  markAutoPrompted(): void {
+    if (this.prefs === null) {
+      return;
+    }
+    try {
+      this.prefs.putSync(K_LAST_PROMPTED_TS, Date.now());
+      this.prefs.flush();
+    } catch (_e) {
+      // 写失败不影响本次弹窗（最坏下次重复弹一次，可接受）
+    }
   }
 
   // ========== 通知（downloadTemplate，三方禁实况窗） ==========

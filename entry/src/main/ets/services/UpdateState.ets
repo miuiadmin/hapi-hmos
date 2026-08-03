@@ -90,18 +90,27 @@ export class OtaController {
     }
     state.checking = false;
     switch (result.reason) {
-      case 'update':
-        state.info = result.info ?? null;
-        state.hasUpdate = state.info !== null;
-        if (!silent) {
+      case 'update': {
+        const info: UpdateInfo | null = result.info ?? null;
+        state.info = info;
+        state.hasUpdate = info !== null;
+        // 弹 sheet 判定：
+        //   手动检查(!silent)：总是弹。
+        //   自动检查(silent)：受独立「弹窗节流」(shouldAutoPrompt, 2h)——上次自动弹 <2h 则只亮红点徽标、不弹 sheet。
+        //     节流与 checkUpdate 内的「检查节流」(last_check_ts)解耦：检查可更勤以刷新徽标，弹窗独立 2h 一次。
+        const pop: boolean = !silent || (info !== null && mgr.shouldAutoPrompt());
+        if (pop) {
+          // 弹过就记时刻（手动/自动皆然），启动 2h 自动弹窗冷却：用户刚看过，2h 内不主动再弹
+          mgr.markAutoPrompted();
           state.phase = 'prompting';
           state.error = '';
           state.percent = 0;
           state.received = 0;
-          state.total = state.info !== null ? state.info.size : -1;
+          state.total = info !== null ? info.size : -1;
           state.sheetOpen = true;
         }
         break;
+      }
       case 'latest':
         state.hasUpdate = false;
         if (!silent) {
