@@ -21,6 +21,9 @@ import { getPreferencesService } from '../services/PreferencesService';
 import { PreferenceKeys } from '../config/Keys';
 import { translate, setTranslateLocale } from './Translate';
 
+// 插值参数构造器再导出（UI 侧从本文件 import { t, kv }，与逻辑侧 Translate 一致）。
+export { kv, kv2, kv3, kv4 } from './Translate';
+
 // 语言选择（持久化值；system=跟随系统）
 export type LanguageChoice = 'system' | 'zh-CN' | 'en';
 // 实际生效 locale（t() 查表用）—— 从 Translate 复用类型（再导出供外部按需用）

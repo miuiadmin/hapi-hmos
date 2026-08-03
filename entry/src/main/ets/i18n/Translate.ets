@@ -73,3 +73,35 @@ export function translate(locale: Locale, key: string, params?: Record<string, s
 export function t(key: string, params?: Record<string, string | number>): string {
   return translate(_locale, key, params);
 }
+
+// 插值参数构造器（1/2/3 键）——避免调用处对象字面量触发 arkts-no-untyped-obj-literals。
+//   铁律：带字段对象字面量必须具名 interface 标注；Record<K,V> 不算"显式上下文"，
+//   故 t('k', { code: 1 }) 字面量非法（as 断言也救不了）。唯一合法构造 = 空{} + 索引赋值。
+//   调用处改写：t('k', { code: n }) → t('k', kv('code', n))；
+//               t('k', { a: x, b: y }) → t('k', kv2('a', x, 'b', y))。
+export function kv(k: string, v: string | number): Record<string, string | number> {
+  const p: Record<string, string | number> = {};
+  p[k] = v;
+  return p;
+}
+export function kv2(k1: string, v1: string | number, k2: string, v2: string | number): Record<string, string | number> {
+  const p: Record<string, string | number> = {};
+  p[k1] = v1;
+  p[k2] = v2;
+  return p;
+}
+export function kv3(k1: string, v1: string | number, k2: string, v2: string | number, k3: string, v3: string | number): Record<string, string | number> {
+  const p: Record<string, string | number> = {};
+  p[k1] = v1;
+  p[k2] = v2;
+  p[k3] = v3;
+  return p;
+}
+export function kv4(k1: string, v1: string | number, k2: string, v2: string | number, k3: string, v3: string | number, k4: string, v4: string | number): Record<string, string | number> {
+  const p: Record<string, string | number> = {};
+  p[k1] = v1;
+  p[k2] = v2;
+  p[k3] = v3;
+  p[k4] = v4;
+  return p;
+}
