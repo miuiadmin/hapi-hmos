@@ -673,11 +673,15 @@ struct NewSessionPage {
 
                 // 该机器上次 spawn 错误诊断（Hub runnerState.lastSpawnError；非空才显示）
                 if (this.machineSpawnErrorText() !== '') {
-                  Text('⚠ ' + this.machineSpawnErrorText())
-                    .fontSize(fs(12))
-                    .fontColor(this.c.error)
-                    .width('100%')
-                    .margin({ top: 8 })
+                  Row({ space: 4 }) {
+                    SymbolGlyph($r('sys.symbol.exclamationmark_triangle')).fontSize(fs(12)).fontColor([this.c.error])
+                    Text(this.machineSpawnErrorText())
+                      .fontSize(fs(12))
+                      .fontColor(this.c.error)
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .margin({ top: 8 })
                 }
               }
               .width('100%')

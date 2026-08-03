@@ -1,7 +1,8 @@
 // ChecklistList —— 对照 web/src/components/ToolCard/checklist.tsx 的 ChecklistList
-// TodoWrite / update_plan 清单渲染：每项 glyph（☑/◉/☐）+ 正文，按状态着色/删除线。
+// TodoWrite / update_plan 清单渲染：每项字形（checkmark_square/circle_fill/square）+ 正文，按状态着色/删除线。
 
 import { ChecklistItem } from '../chat/Checklist';
+import { checklistGlyph } from './IconGlyphs';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -12,16 +13,6 @@ struct ChecklistList {
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
-
-  private glyph(status: string): string {
-    if (status === 'completed') {
-      return '☑';
-    }
-    if (status === 'in_progress') {
-      return '◉';
-    }
-    return '☐';
-  }
 
   private tone(status: string): string {
     if (status === 'completed') {
@@ -44,9 +35,9 @@ struct ChecklistList {
       } else {
         ForEach(this.items, (item: ChecklistItem, idx: number) => {
           Row() {
-            Text(this.glyph(item.status))
+            SymbolGlyph(checklistGlyph(item.status))
               .fontSize(fs(13))
-              .fontColor(this.tone(item.status))
+              .fontColor([this.tone(item.status)])
               .margin({ right: 6 })
             Text(item.text.trim().length > 0 ? item.text.trim() : t('checklist.emptyItem'))
               .fontSize(fs(13))

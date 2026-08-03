@@ -347,9 +347,9 @@ struct SettingsPage {
         .fontColor(this.c.textPrimary)
         .layoutWeight(1)
       if (selected) {
-        Text('✓')
+        SymbolGlyph($r('sys.symbol.checkmark'))
           .fontSize(fs(16))
-          .fontColor(this.c.primary)
+          .fontColor([this.c.primary])
       }
     }
     .width('100%')
@@ -372,9 +372,9 @@ struct SettingsPage {
         .fontColor(this.c.textTertiary)
         .margin({ right: 12 })
       if (this.fontScaleMode === scaleMode) {
-        Text('✓')
+        SymbolGlyph($r('sys.symbol.checkmark'))
           .fontSize(fs(16))
-          .fontColor(this.c.primary)
+          .fontColor([this.c.primary])
       }
     }
     .width('100%')
@@ -437,9 +437,9 @@ struct SettingsPage {
         .fontColor(this.c.textPrimary)
         .layoutWeight(1)
       if (selected) {
-        Text('✓')
+        SymbolGlyph($r('sys.symbol.checkmark'))
           .fontSize(fs(16))
-          .fontColor(this.c.primary)
+          .fontColor([this.c.primary])
       }
     }
     .width('100%')
@@ -459,9 +459,9 @@ struct SettingsPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .layoutWeight(1)
-        Text('✕')
+        SymbolGlyph($r('sys.symbol.xmark'))
           .fontSize(fs(18))
-          .fontColor(this.c.textSecondary)
+          .fontColor([this.c.textSecondary])
           .onClick(() => { this.voiceSheetOpen = false; })
       }
       .width('100%')
@@ -543,9 +543,9 @@ struct SettingsPage {
         .layoutWeight(1)
         .margin({ left: 12 })
       if (selected) {
-        Text('✓')
+        SymbolGlyph($r('sys.symbol.checkmark'))
           .fontSize(fs(16))
-          .fontColor(this.c.primary)
+          .fontColor([this.c.primary])
       }
     }
     .width('100%')
@@ -595,9 +595,9 @@ struct SettingsPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .layoutWeight(1)
-        Text('✕')
+        SymbolGlyph($r('sys.symbol.xmark'))
           .fontSize(fs(18))
-          .fontColor(this.c.textSecondary)
+          .fontColor([this.c.textSecondary])
           .onClick(() => { this.surfaceSheetOpen = false; })
       }
       .width('100%')

@@ -8,7 +8,7 @@
 
 import { ChatBlock, ChatToolCall } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation } from '../chat/Presentation';
-import { toolGlyph } from './IconGlyphs';
+import { toolGlyph, stateGlyph } from './IconGlyphs';
 import { formatGroupedHeaderTitle, formatGroupedHeaderSubtitle } from '../chat/GroupedPresentation';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
@@ -43,22 +43,23 @@ struct ToolGroupCard {
     return tool === null ? new ToolPresentation() : getToolPresentation(tool);
   }
 
-  // 状态符号（镜像 ToolCard.statusGlyph）：🔒 pending / ✓ completed / ✕ error / ● running
+  // 状态符号 token（渲染侧 stateGlyph 映射成字形；镜像 ToolCard.statusGlyph）：
+  //   pending 锁 / completed 勾 / error 叉 / running 点
   private stateGlyph(child: ChatBlock): string {
     const tool: ChatToolCall | null = child.tool;
     if (tool === null) {
       return '';
     }
     if (tool.permission !== null && tool.permission.status === 'pending') {
-      return '🔒';
+      return 'pending';
     }
     if (tool.state === 'completed') {
-      return '✓';
+      return 'completed';
     }
     if (tool.state === 'error') {
-      return '✕';
+      return 'error';
     }
-    return '●';
+    return 'running';
   }
 
   private stateColor(child: ChatBlock): string {
@@ -191,9 +192,11 @@ struct ToolGroupCard {
   @Builder
   GroupRow(child: ChatBlock) {
     Row({ space: 8 }) {
-      Text(this.stateGlyph(child))
-        .fontSize(fs(13))
-        .fontColor(this.stateColor(child))
+      if (this.stateGlyph(child) !== '') {
+        SymbolGlyph(stateGlyph(this.stateGlyph(child)))
+          .fontSize(fs(13))
+          .fontColor([this.stateColor(child)])
+      }
       SymbolGlyph(toolGlyph(this.presentationOf(child).icon))
         .fontSize(fs(13))
         .fontColor([this.c.textSecondary])

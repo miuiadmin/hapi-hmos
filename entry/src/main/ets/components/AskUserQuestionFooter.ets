@@ -14,6 +14,7 @@ import {
 } from '../chat/AskUserQuestion';
 import { getHubClient, ApproveOptions } from '../api/HubClient';
 import { MarkdownText } from './MarkdownText';
+import { selectGlyph } from './IconGlyphs';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -261,7 +262,7 @@ struct AskUserQuestionFooter {
   }
 
   private optionGlyph(selected: boolean): string {
-    return this.isMulti ? (selected ? '☑' : '☐') : (selected ? '●' : '○');
+    return this.isMulti ? (selected ? 'checkbox_on' : 'checkbox_off') : (selected ? 'radio_on' : 'radio_off');
   }
 
   build() {
@@ -358,9 +359,9 @@ struct AskUserQuestionFooter {
         // 选项
         ForEach(this.current.options, (opt: AskUserQuestionOption, optIdx: number) => {
           Row({ space: 8 }) {
-            Text(this.optionGlyph(this.isOptionSelected(optIdx)))
+            SymbolGlyph(selectGlyph(this.optionGlyph(this.isOptionSelected(optIdx))))
               .fontSize(fs(15))
-              .fontColor(this.isOptionSelected(optIdx) ? this.c.success : this.c.textSecondary)
+              .fontColor([this.isOptionSelected(optIdx) ? this.c.success : this.c.textSecondary])
             Column() {
               Text(opt.label)
                 .fontSize(fs(13))
@@ -388,9 +389,9 @@ struct AskUserQuestionFooter {
 
         // 「其他」行
         Row({ space: 8 }) {
-          Text(this.optionGlyph(this.currentOtherSelected()))
+          SymbolGlyph(selectGlyph(this.optionGlyph(this.currentOtherSelected())))
             .fontSize(fs(15))
-            .fontColor(this.currentOtherSelected() ? this.c.success : this.c.textSecondary)
+            .fontColor([this.currentOtherSelected() ? this.c.success : this.c.textSecondary])
           Column() {
             Text(t('askUser.other'))
               .fontSize(fs(13))

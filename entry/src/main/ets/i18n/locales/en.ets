@@ -146,8 +146,8 @@ export const en: Record<string, string> = {
   'sessions.time.minutesAgo': '{n}m ago',
   'sessions.time.hoursAgo': '{n}h ago',
   'sessions.time.daysAgo': '{n}d ago',
-  'sessions.sse.live': '● Live',
-  'sessions.sse.connecting': '○ Connecting',
+  'sessions.sse.live': 'Live',
+  'sessions.sse.connecting': 'Connecting',
 
   // —— Chat ——
   'chat.loadError': 'Failed to load messages',
@@ -257,7 +257,6 @@ export const en: Record<string, string> = {
   'terminal.stdout': 'Stdout',
   'terminal.stderr': 'Stderr',
   'terminal.output': 'Terminal output',
-  'terminal.icon': '⌘',
 
   // —— Voice (ElevenLabs Conversational AI) ——
   'voice.title': 'Voice',

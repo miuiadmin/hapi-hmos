@@ -101,9 +101,9 @@ struct RequestUserInputView {
   @Builder
   OptionRow(label: string, description: string, selected: boolean) {
     Row({ space: 8 }) {
-      Text(selected ? '●' : '○')
+      SymbolGlyph(selected ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
         .fontSize(fs(15))
-        .fontColor(selected ? this.c.success : this.c.textSecondary)
+        .fontColor([selected ? this.c.success : this.c.textSecondary])
       Column({ space: 2 }) {
         Text(label)
           .fontSize(fs(13))
@@ -123,13 +123,13 @@ struct RequestUserInputView {
     .backgroundColor(selected ? this.c.surfaceSelected : Color.Transparent)
   }
 
-  // 纯文本题答案盒（翠绿 ● + 文本）
+  // 纯文本题答案盒（翠绿圆点 + 文本）
   @Builder
   PureTextNoteBox(note: string) {
     Row({ space: 8 }) {
-      Text('●')
+      SymbolGlyph($r('sys.symbol.circle_fill'))
         .fontSize(fs(13))
-        .fontColor(this.c.success)
+        .fontColor([this.c.success])
       Text(note)
         .fontSize(fs(13))
         .fontColor(this.c.success)
@@ -145,8 +145,9 @@ struct RequestUserInputView {
   @Builder
   OptionNoteBox(note: string) {
     Row({ space: 8 }) {
-      Text('📝')
+      SymbolGlyph($r('sys.symbol.square_and_pencil'))
         .fontSize(fs(12))
+        .fontColor([this.c.textSecondary])
       Column({ space: 2 }) {
         Text(t('requestInput.answeredNote'))
           .fontSize(fs(10))

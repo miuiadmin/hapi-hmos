@@ -45,7 +45,7 @@ export struct ConnectionBanner {
   build() {
     Row({ space: 8 }) {
       if (this.kind === 'device-offline') {
-        Text('⚠').fontSize(fs(12)).fontColor(this.c.bubbleUserText)
+        SymbolGlyph($r('sys.symbol.exclamationmark_triangle')).fontSize(fs(12)).fontColor([this.c.bubbleUserText])
         Text(t('connection.deviceOffline'))
           .fontSize(fs(12))
           .fontColor(this.c.bubbleUserText)
@@ -55,7 +55,7 @@ export struct ConnectionBanner {
           .fontSize(fs(12))
           .fontColor(this.c.textSecondary)
       } else if (this.kind === 'sse-closed') {
-        Text('⚠').fontSize(fs(12)).fontColor(this.c.bubbleUserText)
+        SymbolGlyph($r('sys.symbol.exclamationmark_triangle')).fontSize(fs(12)).fontColor([this.c.bubbleUserText])
         Text(t('connection.disconnected'))
           .fontSize(fs(12))
           .fontColor(this.c.bubbleUserText)

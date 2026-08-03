@@ -1186,9 +1186,9 @@ struct ChatPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .constraintSize({ maxWidth: 160 })
-            Text('✕')
+            SymbolGlyph($r('sys.symbol.xmark'))
               .fontSize(fs(13))
-              .fontColor(this.c.textTertiary)
+              .fontColor([this.c.textTertiary])
               .onClick(() => { this.removeAttachment(meta); })
           }
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
@@ -1579,13 +1579,14 @@ struct ChatPage {
     }
   }
 
-  // 指令 chip（对照 web DirectiveChip）：✨ + label 的圆角 pill，半透明白叠在彩色气泡上（Palette 无
+  // 指令 chip（对照 web DirectiveChip）：wand_and_stars + label 的圆角 pill，半透明白叠在彩色气泡上（Palette 无
   //   chip 专用色，rgba(255,255,255,0.22) 在任意 userMessageBg 上皆成立；字色复用 bubbleUserText 白）。
   @Builder
   private DirectiveChipPill(value: string) {
     Row({ space: 4 }) {
-      Text('✨')
+      SymbolGlyph($r('sys.symbol.wand_and_stars'))
         .fontSize(fs(12))
+        .fontColor([this.c.bubbleUserText])
       Text(formatDirectiveLabel(value))
         .fontSize(fs(13))
         .fontColor(this.c.bubbleUserText)

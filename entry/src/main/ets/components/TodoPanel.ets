@@ -54,7 +54,7 @@ export struct TodoPanel {
     Column() {
       // 折叠头（点击展开/收起，对照 TeamPanel header）
       Row({ space: 6 }) {
-        Text('📋').fontSize(fs(14))
+        SymbolGlyph($r('sys.symbol.list_bullet')).fontSize(fs(14)).fontColor([this.c.textPrimary])
         Text(t('todo.title'))
           .fontSize(fs(13))
           .fontWeight(FontWeight.Medium)

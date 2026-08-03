@@ -11,6 +11,7 @@ import {
   parseAskUserQuestionInput
 } from '../chat/AskUserQuestion';
 import { MarkdownText } from './MarkdownText';
+import { selectGlyph } from './IconGlyphs';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 
@@ -143,9 +144,9 @@ struct AskUserQuestionView {
   @Builder
   AnswerRow(label: string, selected: boolean, isMulti: boolean, description: string) {
     Row({ space: 8 }) {
-      Text(isMulti ? (selected ? '☑' : '☐') : (selected ? '●' : '○'))
+      SymbolGlyph(selectGlyph(isMulti ? (selected ? 'checkbox_on' : 'checkbox_off') : (selected ? 'radio_on' : 'radio_off')))
         .fontSize(fs(15))
-        .fontColor(selected ? this.c.success : this.c.textSecondary)
+        .fontColor([selected ? this.c.success : this.c.textSecondary])
       Column() {
         Text(label)
           .fontSize(fs(13))

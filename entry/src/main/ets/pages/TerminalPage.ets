@@ -415,9 +415,9 @@ struct TerminalPage {
   private StatusBanner() {
     if (!this.sessionActive || this.state === 'error' || this.state === 'exited') {
       Row({ space: 8 }) {
-        Text('⚠')
+        SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
           .fontSize(fs(14))
-          .fontColor(this.state === 'exited' ? this.c.textTertiary : (this.quotaMax >= 0 ? this.c.warning : this.c.error))
+          .fontColor([this.state === 'exited' ? this.c.textTertiary : (this.quotaMax >= 0 ? this.c.warning : this.c.error)])
         Text(this.quotaMax >= 0
           ? t('terminal.quotaExceeded', kv('max', this.quotaMax))
           : this.statusLabel())
@@ -522,9 +522,9 @@ struct TerminalPage {
         .backgroundColor(this.c.surface).borderRadius(8)
         .width(38).height(38).textAlign(TextAlign.Center)
         .onClick(() => { this.runFind(true); })
-      Text('✕')
-        .fontSize(fs(15)).fontColor(this.c.textSecondary)
-        .width(38).height(38).textAlign(TextAlign.Center)
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(fs(15)).fontColor([this.c.textSecondary])
+        .width(38).height(38)
         .onClick(() => { this.closeFind(); })
     }
     .width('100%')

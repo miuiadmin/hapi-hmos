@@ -228,7 +228,7 @@ struct FileViewerPage {
         .backgroundColor(this.c.surface)
     } else if (this.isBinary) {
       Column({ space: 6 }) {
-        Text('🗄️').fontSize(fs(36))
+        SymbolGlyph($r('sys.symbol.archivebox')).fontSize(fs(36)).fontColor([this.c.textTertiary])
         Text(t('fileViewer.binary')).fontSize(fs(14)).fontColor(this.c.textTertiary)
       }
       .width('100%')
@@ -248,9 +248,9 @@ struct FileViewerPage {
 
   @Builder
   private CopyMenu() {
-    Text(this.copied ? '✓' : '⧉')
+    SymbolGlyph(this.copied ? $r('sys.symbol.checkmark') : $r('sys.symbol.doc_filled_on_doc'))
       .fontSize(fs(18))
-      .fontColor(this.canCopy ? this.c.textPrimary : this.c.textTertiary)
+      .fontColor([this.canCopy ? this.c.textPrimary : this.c.textTertiary])
       .onClick(() => { this.copyContent(); })
   }
 

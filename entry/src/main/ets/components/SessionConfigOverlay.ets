@@ -96,9 +96,9 @@ export struct SessionConfigOverlay {
   @Builder
   private optionRow(label: string, value: string, current: string, field: string) {
     Row({ space: 10 }) {
-      Text(value === current ? '●' : '○')
+      SymbolGlyph(value === current ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
         .fontSize(fs(14))
-        .fontColor(value === current ? this.c.primary : this.c.textTertiary)
+        .fontColor([value === current ? this.c.primary : this.c.textTertiary])
         .width(18)
       Text(label)
         .fontSize(fs(15))

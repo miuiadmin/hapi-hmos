@@ -19,7 +19,7 @@
 import { ChatBlock, ChatToolCall } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation } from '../chat/Presentation';
 import { EventPresentation, getEventPresentation } from '../chat/EventPresentation';
-import { toolGlyph, eventGlyph } from './IconGlyphs';
+import { toolGlyph, eventGlyph, stateGlyph } from './IconGlyphs';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningBubble } from './ReasoningBubble';
@@ -122,13 +122,13 @@ struct TraceSection {
 
   private childStateGlyph(ch: ChatBlock): string {
     if (ch.tool === null) {
-      return '●';
+      return 'dot';
     }
     const s: string = ch.tool.state;
-    if (s === 'pending') { return '🔒'; }
-    if (s === 'completed') { return '✓'; }
-    if (s === 'error') { return '✕'; }
-    return '●';   // running
+    if (s === 'pending') { return 'pending'; }
+    if (s === 'completed') { return 'completed'; }
+    if (s === 'error') { return 'error'; }
+    return 'running';   // running
   }
 
   private childStateColor(ch: ChatBlock): string {
@@ -195,7 +195,7 @@ struct TraceSection {
   @Builder
   ToolCallRowInner(ch: ChatBlock) {
     Row({ space: 8 }) {
-      Text(this.childStateGlyph(ch)).fontSize(fs(13)).fontColor(this.childStateColor(ch))
+      SymbolGlyph(stateGlyph(this.childStateGlyph(ch))).fontSize(fs(13)).fontColor([this.childStateColor(ch)])
       SymbolGlyph(toolGlyph(this.presentationOf(ch).icon)).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Column({ space: 2 }) {
         Text(this.presentationOf(ch).title)

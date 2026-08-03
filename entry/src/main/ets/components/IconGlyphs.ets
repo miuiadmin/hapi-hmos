@@ -36,3 +36,66 @@ export function eventGlyph(name: string): Resource {
     default: return $r('sys.symbol.exclamationmark_triangle');
   }
 }
+
+// 工具/子代理状态符号 token → Resource（ToolCard.statusGlyph / ToolGroupCard.stateGlyph /
+//   TraceSection.childStateGlyph 产 token，渲染侧调本函数）。对照原 emoji：
+//   🔒 pending → lock / ✓ completed → checkmark / ✕ error/denied → xmark /
+//   ● running/dot → circle_fill / ⊘ aborted/canceled → nosign。
+export function stateGlyph(name: string): Resource {
+  switch (name) {
+    case 'pending': return $r('sys.symbol.lock');
+    case 'completed': return $r('sys.symbol.checkmark');
+    case 'error': return $r('sys.symbol.xmark');
+    case 'denied': return $r('sys.symbol.xmark');
+    case 'running': return $r('sys.symbol.circle_fill');
+    case 'dot': return $r('sys.symbol.circle_fill');
+    case 'aborted': return $r('sys.symbol.nosign');
+    case 'canceled': return $r('sys.symbol.nosign');
+    default: return $r('sys.symbol.circle_fill');
+  }
+}
+
+// 选项选择标记 token → Resource（AskUserQuestionFooter.optionGlyph 产 token）。
+//   多选 ☑/☐ → checkmark_square/square；单选 ●/○ → circle_fill/circle。
+export function selectGlyph(name: string): Resource {
+  switch (name) {
+    case 'checkbox_on': return $r('sys.symbol.checkmark_square');
+    case 'checkbox_off': return $r('sys.symbol.square');
+    case 'radio_on': return $r('sys.symbol.circle_fill');
+    case 'radio_off': return $r('sys.symbol.circle');
+    default: return $r('sys.symbol.circle');
+  }
+}
+
+// 清单项状态 → Resource（ChecklistList）。☑ completed → checkmark_square /
+//   ◉ in_progress → circle_fill / ☐ pending → square。
+export function checklistGlyph(status: string): Resource {
+  switch (status) {
+    case 'completed': return $r('sys.symbol.checkmark_square');
+    case 'in_progress': return $r('sys.symbol.circle_fill');
+    default: return $r('sys.symbol.square');
+  }
+}
+
+// 文件项 token → Resource（FilesPage.fileEmoji 产 token；folder/image/code/doc）。
+//   📁 folder / 🖼️ image → picture / 📜 code → doc_plaintext / 📄 doc → doc。
+export function fileGlyph(token: string): Resource {
+  switch (token) {
+    case 'folder': return $r('sys.symbol.folder');
+    case 'image': return $r('sys.symbol.picture');
+    case 'code': return $r('sys.symbol.doc_plaintext');
+    case 'doc': return $r('sys.symbol.doc');
+    default: return $r('sys.symbol.doc');
+  }
+}
+
+// 团队任务状态 → Resource（TeamPanel.taskIcon）。☑ completed → checkmark_square /
+//   ▶ in_progress → play_fill / ⚠ blocked → exclamationmark_triangle / ☐ pending → square。
+export function taskGlyph(status: string): Resource {
+  switch (status) {
+    case 'completed': return $r('sys.symbol.checkmark_square');
+    case 'in_progress': return $r('sys.symbol.play_fill');
+    case 'blocked': return $r('sys.symbol.exclamationmark_triangle');
+    default: return $r('sys.symbol.square');
+  }
+}

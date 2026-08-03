@@ -277,9 +277,9 @@ struct RequestUserInputFooter {
           // 有选项：单选列表
           ForEach(this.current.options, (opt: RequestUserInputOption, optIdx: number) => {
             Row({ space: 8 }) {
-              Text(this.isSelected(opt.label) ? '●' : '○')
+              SymbolGlyph(this.isSelected(opt.label) ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
                 .fontSize(fs(15))
-                .fontColor(this.isSelected(opt.label) ? this.c.success : this.c.textSecondary)
+                .fontColor([this.isSelected(opt.label) ? this.c.success : this.c.textSecondary])
               Column() {
                 Text(opt.label)
                   .fontSize(fs(13))

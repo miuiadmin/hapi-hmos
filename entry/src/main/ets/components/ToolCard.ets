@@ -1,6 +1,6 @@
 import { ChatBlock, ChatToolCall, ToolPermission } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation, isEditToolName, isAskToolName } from '../chat/Presentation';
-import { toolGlyph } from './IconGlyphs';
+import { toolGlyph, stateGlyph } from './IconGlyphs';
 import { getInputStrAny } from '../chat/ToolInputUtils';
 import { isAskUserQuestionToolName } from '../chat/AskUserQuestion';
 import { isRequestUserInputToolName } from '../chat/RequestUserInput';
@@ -168,22 +168,22 @@ struct ToolCard {
     return p !== null && p.status === 'denied' && p.decision === 'abort';
   }
 
-  // 状态符号：🔒 pending / ✓ completed / ✕ error / ● running
+  // 状态符号 token（渲染侧 stateGlyph 映射成字形）：pending 锁 / completed 勾 / error 叉 / running 点
   private statusGlyph(): string {
     const t = this.tool;
     if (t === null) {
       return '';
     }
     if (t.permission !== null && t.permission.status === 'pending') {
-      return '🔒';
+      return 'pending';
     }
     if (t.state === 'completed') {
-      return '✓';
+      return 'completed';
     }
     if (t.state === 'error') {
-      return '✕';
+      return 'error';
     }
-    return '●';
+    return 'running';
   }
 
   private statusColor(): string {
@@ -422,9 +422,11 @@ struct ToolCard {
               .fontColor(this.c.textTertiary)
               .margin({ right: 6 })
           }
-          Text(this.statusGlyph())
-            .fontSize(fs(13))
-            .fontColor(this.statusColor())
+          if (this.statusGlyph() !== '') {
+            SymbolGlyph(stateGlyph(this.statusGlyph()))
+              .fontSize(fs(13))
+              .fontColor([this.statusColor()])
+          }
           Text('›')
             .fontSize(fs(18))
             .fontColor(this.c.textTertiary)
@@ -536,9 +538,9 @@ struct ToolCard {
       // denied/canceled/aborted：状态标签（✕ 已拒绝 / ⊘ 已中止 / ⊘ 已取消）+ 原因（若有）
       Column({ space: 6 }) {
         Row({ space: 6 }) {
-          Text(this.isAborted ? '⊘' : (this.permission !== null && this.permission.status === 'denied' ? '✕' : '⊘'))
+          SymbolGlyph(this.isAborted ? $r('sys.symbol.nosign') : (this.permission !== null && this.permission.status === 'denied' ? $r('sys.symbol.xmark') : $r('sys.symbol.nosign')))
             .fontSize(fs(13))
-            .fontColor(this.c.error)
+            .fontColor([this.c.error])
           Text(this.isAborted ? t('tool.aborted') : (this.permission !== null && this.permission.status === 'denied' ? t('tool.rejected') : t('tool.canceled')))
             .fontSize(fs(12))
             .fontColor(this.c.error)

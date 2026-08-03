@@ -646,7 +646,13 @@ struct Index {
             Row() {
               Text(t('sessions.title')).fontSize(fs(22)).fontWeight(FontWeight.Bold).fontColor(this.c.textPrimary)
               if (this.sseBadge() !== '') {
-                Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary).margin({ left: 8 })
+                Row({ space: 4 }) {
+                  SymbolGlyph(this.sseState === 'open' ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
+                    .fontSize(fs(8))
+                    .fontColor([this.c.textTertiary])
+                  Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary)
+                }
+                .margin({ left: 8 })
               }
             }
             .layoutWeight(1)

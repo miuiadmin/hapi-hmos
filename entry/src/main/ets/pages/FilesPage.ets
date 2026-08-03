@@ -1,5 +1,6 @@
 import { getHubClient } from '../api/HubClient';
 import { FileSearchItem, SessionDirEntry } from '../models/Types';
+import { fileGlyph } from '../components/IconGlyphs';
 import { GitStatusFiles, GitFileStatus, GitFileStatusType, buildGitStatusFiles } from '../chat/GitParsers';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { FileViewerRouteParams } from './FileViewerPage';
@@ -327,8 +328,9 @@ struct FilesPage {
   @Builder
   private DirRow(e: SessionDirEntry) {
     Row({ space: 10 }) {
-      Text(e.type === 'directory' ? '📁' : this.fileEmoji(e.name))
+      SymbolGlyph(fileGlyph(e.type === 'directory' ? 'folder' : this.fileEmoji(e.name)))
         .fontSize(fs(16))
+        .fontColor([this.c.textSecondary])
         .width(20)
       Text(e.name)
         .fontSize(fs(15))
@@ -393,8 +395,9 @@ struct FilesPage {
   @Builder
   private SearchRow(f: FileSearchItem) {
     Row({ space: 10 }) {
-      Text(f.fileType === 'folder' ? '📁' : this.fileEmoji(f.fileName))
+      SymbolGlyph(fileGlyph(f.fileType === 'folder' ? 'folder' : this.fileEmoji(f.fileName)))
         .fontSize(fs(16))
+        .fontColor([this.c.textSecondary])
         .width(20)
       Column({ space: 2 }) {
         Text(f.fileName)
@@ -454,19 +457,19 @@ struct FilesPage {
       .padding({ top: 48, bottom: 48, left: 24, right: 24 })
   }
 
-  // 文件名 → emoji（简单后缀判断，与项目 📁/📄 风格一致）
+  // 文件名 → 类型 token（简单后缀判断；渲染侧 fileGlyph 映射成字形 folder/image/code/doc）
   private fileEmoji(name: string): string {
     const lower: string = name.toLowerCase();
     const dot: number = lower.lastIndexOf('.');
-    if (dot < 0) { return '📄'; }
+    if (dot < 0) { return 'doc'; }
     const ext: string = lower.substring(dot + 1);
     if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg' || ext === 'bmp') {
-      return '🖼️';
+      return 'image';
     }
     if (ext === 'ts' || ext === 'ets' || ext === 'js' || ext === 'json' || ext === 'md' || ext === 'py' || ext === 'go' || ext === 'rs' || ext === 'java' || ext === 'sh') {
-      return '📜';
+      return 'code';
     }
-    return '📄';
+    return 'doc';
   }
 
   @Builder

@@ -20,8 +20,9 @@ export struct MentionMenu {
         Column({ space: 0 }) {
           ForEach(this.items, (item: FileSearchItem, index: number) => {
             Row({ space: 8 }) {
-              Text(item.fileType === 'folder' ? '📁' : '📄')
+              SymbolGlyph(item.fileType === 'folder' ? $r('sys.symbol.folder') : $r('sys.symbol.doc'))
                 .fontSize(fs(14))
+                .fontColor([this.c.textSecondary])
               Column() {
                 Text(item.fileName)
                   .fontSize(fs(14))

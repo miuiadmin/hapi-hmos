@@ -1,4 +1,5 @@
 import { TeamState, TeamMember, TeamTask, TeamMessage } from '../models/Types';
+import { taskGlyph } from './IconGlyphs';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t, kv, kv2 } from '../i18n/I18nService';
 
@@ -32,13 +33,7 @@ export struct TeamPanel {
     return this.c.textTertiary;
   }
 
-  // 任务状态图标：completed☑ / in_progress▶ / blocked⚠ / 余☐
-  private taskIcon(status: string): string {
-    if (status === 'completed') { return '☑'; }
-    if (status === 'in_progress') { return '▶'; }
-    if (status === 'blocked') { return '⚠'; }
-    return '☐';
-  }
+  // 任务状态图标 → 渲染侧 taskGlyph 映射成字形（completed☑/in_progress▶/blocked⚠/pending☐）
 
   // 活跃成员数（status==='active'）
   private activeMemberCount(): number {
@@ -120,9 +115,9 @@ export struct TeamPanel {
   @Builder
   private TaskRow(task: TeamTask) {
     Row({ space: 6 }) {
-      Text(this.taskIcon(task.status))
+      SymbolGlyph(taskGlyph(task.status))
         .fontSize(fs(12))
-        .fontColor(this.taskColor(task.status))
+        .fontColor([this.taskColor(task.status)])
       Text(task.title)
         .fontSize(fs(12))
         .fontColor(this.taskColor(task.status))
@@ -169,7 +164,7 @@ export struct TeamPanel {
     Column() {
       // 折叠头（点击展开/收起，对照上游 header button）
       Row({ space: 6 }) {
-        Text('👥').fontSize(fs(14))
+        SymbolGlyph($r('sys.symbol.person_2')).fontSize(fs(14)).fontColor([this.c.textSecondary])
         Text(`Team: ${this.teamState.teamName}`)
           .fontSize(fs(13))
           .fontWeight(FontWeight.Medium)

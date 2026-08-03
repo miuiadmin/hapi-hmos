@@ -147,8 +147,8 @@ export const zhCN: Record<string, string> = {
   'sessions.time.minutesAgo': '{n}分钟前',
   'sessions.time.hoursAgo': '{n}小时前',
   'sessions.time.daysAgo': '{n}天前',
-  'sessions.sse.live': '● 实时',
-  'sessions.sse.connecting': '○ 连接中',
+  'sessions.sse.live': '实时',
+  'sessions.sse.connecting': '连接中',
 
   // —— 对话页 ——
   'chat.loadError': '加载消息失败',
@@ -258,7 +258,6 @@ export const zhCN: Record<string, string> = {
   'terminal.stdout': '标准输出',
   'terminal.stderr': '标准错误',
   'terminal.output': '终端输出',
-  'terminal.icon': '⌘',
 
   // —— 语音页（ElevenLabs Conversational AI）——
   'voice.title': '语音',

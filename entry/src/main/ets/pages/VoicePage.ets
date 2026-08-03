@@ -545,7 +545,7 @@ struct VoicePage {
   private StatusBanner() {
     if (!this.sessionActive || this.state === 'error' || (!this.micGranted && this.sessionActive && this.state === 'idle')) {
       Row({ space: 8 }) {
-        Text('⚠').fontSize(fs(14)).fontColor(this.c.error)
+        SymbolGlyph($r('sys.symbol.exclamationmark_triangle')).fontSize(fs(14)).fontColor([this.c.error])
         Text(this.bannerMessage())
           .fontSize(fs(13))
           .fontColor(this.c.error)
@@ -602,10 +602,10 @@ struct VoicePage {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         // 静音切换（仅 connected 态可用）
-        Text(this.muted ? '🔇' : '🎤')
+        SymbolGlyph(this.muted ? $r('sys.symbol.mic_slash') : $r('sys.symbol.mic'))
           .fontSize(fs(20))
-          .fontColor(this.state === 'connected' ? this.c.textPrimary : this.c.textTertiary)
-          .width(44).height(44).textAlign(TextAlign.Center)
+          .fontColor([this.state === 'connected' ? this.c.textPrimary : this.c.textTertiary])
+          .width(44).height(44)
           .backgroundColor(this.c.surface).borderRadius(22)
           .opacity(this.state === 'connected' ? 1 : 0.4)
           .onClick(() => { this.toggleMute(); })
