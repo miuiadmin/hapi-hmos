@@ -161,6 +161,7 @@ struct ChatPage {
   private nextAttachmentSeq: number = 0;         // 附件 id 自增序号（多文件并发 upload 防撞键，替代 Date.now()+length）
 
   aboutToAppear(): void {
+    this.isDisposed = false;        // 复用兜底：aboutToDisappear 置 true 后，若组件被复用须复位
     // @Param 在构造时已由 @Builder 注入，aboutToAppear 可读
     this.sessionId = this.routeParamsSeed !== null ? this.routeParamsSeed.sessionId : '';
     this.sessionTitle = this.routeParamsSeed !== null ? this.routeParamsSeed.title : '';
@@ -196,6 +197,12 @@ struct ChatPage {
     if (this.sseListenerId !== -1) {
       getSSEClient().removeListener(this.sseListenerId);
       this.sseListenerId = -1;
+    }
+    // 节流窗口末次兜底可能还在排程 → 销毁前置位 + 清 timer，防回调跑重算操作已释放组件
+    this.isDisposed = true;
+    if (this.blocksRecomputeTimer !== -1) {
+      clearTimeout(this.blocksRecomputeTimer);
+      this.blocksRecomputeTimer = -1;
     }
   }
 
@@ -259,18 +266,36 @@ struct ChatPage {
     this.recomputeBlocks();
   }
 
-  // recomputeBlocks 节流：流式 SSE 高频 delta 合并——首次立即算（乐观消息即时显），
-  //   80ms 内后续调用合并为末次兜底（messages 已最新，不丢最终态）。解「发消息后卡死」。
+  // recomputeBlocks 节流（leading + trailing，150ms 窗口）——解「发消息卡死 / 收消息不实时 / 输入框撑满」。
+  //   根因：流式 SSE 每秒可触发数十次 message-received，旧实现每次都同步跑 doRecomputeBlocks
+  //   （reduceChatBlocks 全量 O(n) + List 全量重排）→ 阻塞 UI 线程，绘制与输入布局被饿死。
+  //   正解：窗口内【首】调用立即算（乐观发送 / 单条新消息即时显），窗口内【后续】调用合并为末次兜底
+  //   （messages 已是最新，末次必应用，不丢最终态）。150ms 内最多 1 次重算，给 UI 线程留绘制 + 布局空隙。
   private blocksRecomputeTimer: number = -1;
+  private blocksRecomputeInWindow: boolean = false;   // 窗口内（leading 已用，后续合并）
+  private blocksRecomputePending: boolean = false;    // 窗口内有新调用 → 末次兜底
+  private isDisposed: boolean = false;                // aboutToDisappear 置位，防销毁后回调跑重算
   private recomputeBlocks(): void {
-    this.doRecomputeBlocks();                       // 首次立即算
-    if (this.blocksRecomputeTimer !== -1) {
-      clearTimeout(this.blocksRecomputeTimer);
+    if (this.isDisposed) {
+      return;
     }
+    if (this.blocksRecomputeInWindow) {
+      this.blocksRecomputePending = true;             // 窗口内后续：仅标记，等末次兜底
+      return;
+    }
+    this.doRecomputeBlocks();                         // 窗口首调用：立即算 + 开窗口
+    this.blocksRecomputeInWindow = true;
     this.blocksRecomputeTimer = setTimeout((): void => {
       this.blocksRecomputeTimer = -1;
-      this.doRecomputeBlocks();                     // 末次兜底（合并流式 delta）
-    }, 80);
+      this.blocksRecomputeInWindow = false;
+      if (this.isDisposed) {
+        return;
+      }
+      if (this.blocksRecomputePending) {
+        this.blocksRecomputePending = false;
+        this.recomputeBlocks();                       // 末次兜底；递归开新窗口（持续流则持续节流）
+      }
+    }, 150);
   }
 
   private doRecomputeBlocks(): void {
