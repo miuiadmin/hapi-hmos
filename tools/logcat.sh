@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/logcat.sh — Hapi 设备日志工具
 #
-# 移植自 berry3/tools/logcat.sh，包名过滤改为 com.twsxtd.hapi。
+# 移植自 berry3/tools/logcat.sh，包名过滤改为 com.berry.hapi。
 #
 # ── Agent 友好模式（自动退出）────────────────────────────────────────────────
 #   tools/logcat.sh snap [N]         最近 N 行 Hapi 日志（默认 300，按 PID 过滤）
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HDC="/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc"
 LOG_FILE="$PROJECT_ROOT/debug.log"
-BUNDLE="com.twsxtd.hapi"
+BUNDLE="com.berry.hapi"
 
 # JS 诊断日志的 hilog tag；berry3 用 MLK，hapi 暂沿用，如 ArkTS 侧自定义了 tag 在此改。
 JS_TAG="${HAPI_JS_TAG:-MLK}"

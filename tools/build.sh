@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/build.sh - Hapi 项目编译脚本
 #
-# 移植自 berry3/tools/build.sh，适配 hapi 身份（com.twsxtd.hapi）。
+# 移植自 berry3/tools/build.sh，适配 hapi 身份（com.berry.hapi）。
 # 已移除：AboutPage 编译日期更新（hapi 无 AboutPage.ets）、check_changelog 闸（hapi 无 changelog.json）。
 # 保留：hvigor/SDK/JAVA_HOME 自动发现、release 签名校验、sideload 变包名状态闸。
 
@@ -14,7 +14,7 @@ SCRIPT_NAME="$(basename "$0")"
 PROJECT_HVIGORW="$PROJECT_ROOT/hvigorw"
 DEVECO_APP_MAC_DEFAULT="/Applications/DevEco-Studio.app"
 DEVECO_HOME_EFFECTIVE="${DEVECO_HOME:-$DEVECO_APP_MAC_DEFAULT}"
-OFFICIAL_BUNDLE="com.twsxtd.hapi"
+OFFICIAL_BUNDLE="com.berry.hapi"
 
 # 默认禁用 daemon，避免 daemon 锁文件导致构建失败
 HVIGOR_NO_DAEMON="${HVIGOR_NO_DAEMON:-1}"
@@ -236,7 +236,7 @@ run_sideload_release_hap() {
 
 # HDC 路径与包名
 HDC="/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/hdc"
-BUNDLE="com.twsxtd.hapi"
+BUNDLE="com.berry.hapi"
 HAP_PATH="$PROJECT_ROOT/entry/build/default/outputs/default/entry-default-signed.hap"
 DEVICE_TMP="/data/local/tmp/entry-default-signed.hap"
 

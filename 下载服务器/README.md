@@ -67,7 +67,7 @@ bash 下载服务器/scripts/publish.sh      # ★一键：打包 + 上传
 
 | 包 | 包名 | 用途 |
 |----|------|------|
-| `hapi-X.X.X-88-release.app` | `com.twsxtd.hapi88` | ⭐88 共存 release，OTA 升级源，与正式版互不冲突 |
+| `hapi-X.X.X-88-release.app` | `com.berry.hapi88` | ⭐88 共存 release，OTA 升级源，与正式版互不冲突 |
 
 未签名（pack.sh 清 signingConfig 生成侧载包），调试设备 `hdc install -r` 可装。
 

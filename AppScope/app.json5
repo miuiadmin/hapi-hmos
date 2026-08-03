@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "com.twsxtd.hapi",
+    "bundleName": "com.berry.hapi",
     "vendor": "twsxtd",
     "versionCode": 1,
     "versionName": "0.0.1",

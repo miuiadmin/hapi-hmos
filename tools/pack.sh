@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # tools/pack.sh — Hapi 侧载包构建脚本
 #
-# 移植自 berry3/tools/pack.sh，适配 hapi 身份（com.twsxtd.hapi）。
+# 移植自 berry3/tools/pack.sh，适配 hapi 身份（com.berry.hapi）。
 # 已移除：AboutPage 编译日期更新（hapi 无 AboutPage.ets）、check_changelog 闸（hapi 无 changelog.json）、
 #         应用名共存版改名（hapi 当前仅 app.json5 硬编码包名）。
 #
 # 功能：
-#   1. 自动将 com.twsxtd.hapi 改为 com.twsxtd.hapiNN（NN 为数字后缀，默认 88）
+#   1. 自动将 com.berry.hapi 改为 com.berry.hapiNN（NN 为数字后缀，默认 88）
 #   2. 每个被修改的文件单独备份，保证任何情况下都能逐文件精确恢复
 #   3. 编译前/恢复后各执行一次 clean，杜绝增量缓存混入旧包名产物
 #   4. 调用 build.sh/hvigor 编译（侧载 release 走 sideload-* 状态闸，生成未签名 .app/.hap）
@@ -14,11 +14,11 @@
 #   6. 无论成功/失败/Ctrl-C/kill，都强制恢复所有修改，并二次校验
 #
 # 用法：
-#   tools/pack.sh              # 默认固定后缀 88（com.twsxtd.hapi88），打 release .app
+#   tools/pack.sh              # 默认固定后缀 88（com.berry.hapi88），打 release .app
 #   tools/pack.sh hap          # 变包名88，打 debug .hap
 #   tools/pack.sh all          # ★ 全量：一次打出 3 个发布文件（见下）
-#   tools/pack.sh all 99       # 全量，后缀用 99（com.twsxtd.hapi99）
-#   tools/pack.sh 42           # 指定后缀数字（com.twsxtd.hapi42），打 release .app
+#   tools/pack.sh all 99       # 全量，后缀用 99（com.berry.hapi99）
+#   tools/pack.sh 42           # 指定后缀数字（com.berry.hapi42），打 release .app
 #   tools/pack.sh --help       # 显示帮助
 #
 # all 模式产出（变包名88，一次发布所需全部）：
@@ -34,7 +34,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ========== 配置 ==========
 
-ORIGINAL_BUNDLE="com.twsxtd.hapi"
+ORIGINAL_BUNDLE="com.berry.hapi"
 
 # 需要替换包名的文件列表（扫描到新的硬编码时在此添加）。
 # 当前 hapi 仅 AppScope/app.json5 硬编码 bundleName，故只列这一份。
@@ -64,10 +64,10 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<EOF
 用法: tools/pack.sh [all|hap] [后缀数字]
 
-  不传参数：固定后缀 88，打 release .app（com.twsxtd.hapi88）
+  不传参数：固定后缀 88，打 release .app（com.berry.hapi88）
   all      ：★ 全量打包，一次产出发布所需的 3 个文件（变包名88）
               ① debug HAP    ② release HAP    ③ zip(内含 release .app + debug .app)
-  hap      ：只打 debug .hap（com.twsxtd.hapi88，可 hdc install）
+  hap      ：只打 debug .hap（com.berry.hapi88，可 hdc install）
   数字     ：用该数字作后缀（如 tools/pack.sh 42）
 
 流程：
@@ -82,10 +82,10 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   output/ 目录下的 .app / .hap / .zip 文件（均未签名，调试设备可 hdc install）
 
 示例：
-  tools/pack.sh        # com.twsxtd.hapi → com.twsxtd.hapi88，打 release .app
+  tools/pack.sh        # com.berry.hapi → com.berry.hapi88，打 release .app
   tools/pack.sh all    # ★ 全量：debug HAP + release HAP + zip(release app + debug app)
   tools/pack.sh hap    # 变包名88，打 debug .hap
-  tools/pack.sh all 99 # 全量，后缀 99（com.twsxtd.hapi99）
+  tools/pack.sh all 99 # 全量，后缀 99（com.berry.hapi99）
 EOF
   exit 0
 fi

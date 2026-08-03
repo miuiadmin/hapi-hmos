@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/pack_common.sh — pack-app-* 系列脚本公共库
 #
-# 移植自 berry3/tools/pack_common.sh，适配 hapi 身份（com.twsxtd.hapi）。
+# 移植自 berry3/tools/pack_common.sh，适配 hapi 身份（com.berry.hapi）。
 # 已移除：AboutPage 编译日期更新（hapi 无 AboutPage.ets）、check_changelog 闸（hapi 无 changelog.json）。
 #
 # 被 tools/pack-app-{release,debug}.sh source，提供：
@@ -13,7 +13,7 @@
 #   LABEL      产物标签：APP / APP_DEBUG
 #   PREFIX     文件名前缀："侧载包_"（88 侧载）或 ""（正式包）
 # 可选：
-#   SUFFIX     包名后缀：空=正式包（不变包名）；88=变包名 com.twsxtd.hapi88
+#   SUFFIX     包名后缀：空=正式包（不变包名）；88=变包名 com.berry.hapi88
 #
 # source 后调用 run_pack 执行。
 
@@ -26,7 +26,7 @@ fi
 
 # ========== 配置常量 ==========
 
-ORIGINAL_BUNDLE="com.twsxtd.hapi"
+ORIGINAL_BUNDLE="com.berry.hapi"
 
 # 需要替换包名的文件列表（扫描到新硬编码时在此添加；与 pack.sh 保持同步）。
 # 当前 hapi 仅 AppScope/app.json5 硬编码 bundleName。

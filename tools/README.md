@@ -1,7 +1,7 @@
 # hapi-hmos 工具脚本
 
 移植自 berry3（Berry Browser）的构建/打包/签名/日志 shell 脚本，适配 hapi 身份
-（bundle name `com.twsxtd.hapi`）。这些脚本只对接 hvigor / hdc / DevEco Studio，不依赖
+（bundle name `com.berry.hapi`）。这些脚本只对接 hvigor / hdc / DevEco Studio，不依赖
 berry3 的任何证书、changelog 或 AboutPage。
 
 ## 首次使用
@@ -26,12 +26,12 @@ tools/build.sh doctor          # 检查 hvigor / SDK / JAVA_HOME 是否正确发
 | 脚本 | 作用 |
 |---|---|
 | `build.sh` | 编译总调度。子命令：`build`/`release`/`debug`/`app-debug`/`hap-release`/`run`（编+装+启）/`install`/`clean`/`lint`/`deprecated`/`doctor`。含 hvigor/SDK/JAVA_HOME 自动发现、release 签名校验闸、`sideload-*` 变包名状态闸。 |
-| `logcat.sh` | hdc hilog 包装。模式：`snap`/`err`/`tag`/`grep`/`stream`/`js`/`clear`，按 `com.twsxtd.hapi` 的 PID 过滤，输出追加到 `debug.log`。 |
+| `logcat.sh` | hdc hilog 包装。模式：`snap`/`err`/`tag`/`grep`/`stream`/`js`/`clear`，按 `com.berry.hapi` 的 PID 过滤，输出追加到 `debug.log`。 |
 | `switch-signing.sh` | 切换 `build-profile.json5` 中 `products[0].signingConfig` 的引用名（`--show` / `--to <name>` / `--allow-debug`）。不创建证书。 |
 | `check_release_signing.sh` | 发版前校验闸：读取当前 signingConfig，用 `strings` 解析其 `.p7b` 的 `type`，`release` 必须 `type="release"` 且 `keyAlias != debugKey`。 |
 | `check_deprecated_apis.sh` | `rg` 扫描 deprecated API 模式（默认 `getContext(`）。 |
 | `setup-hooks.sh` | 一次性把 `core.hooksPath` 指向 `.githooks/`。 |
-| `pack.sh` | 侧载包构建（变包名 `com.twsxtd.hapi → com.twsxtd.hapiNN`，默认 `NN=88`）。模式：默认 release `.app` / `hap` debug `.hap` / `all`（debug HAP + release HAP + zip）。含备份/恢复 trap、`.pack.lock`、硬编码包名预检、`output/` 产物拷贝。 |
+| `pack.sh` | 侧载包构建（变包名 `com.berry.hapi → com.berry.hapiNN`，默认 `NN=88`）。模式：默认 release `.app` / `hap` debug `.hap` / `all`（debug HAP + release HAP + zip）。含备份/恢复 trap、`.pack.lock`、硬编码包名预检、`output/` 产物拷贝。 |
 | `pack_common.sh` | `pack-app-*.sh` 的公共库（被 source，不直接执行）。 |
 | `pack-app-release.sh` | 正式包 release `.app`（不变包名，走 `build.sh build`，含 release 签名校验）。 |
 | `pack-app-debug.sh` | 正式包 debug `.app`（不变包名，走 `build.sh app-debug`）。 |
@@ -61,8 +61,8 @@ hapi 的 `build-profile.json5` 当前是 `"signingConfigs": []`、`"signingConfi
 
 ## 从 berry3 移植时做了什么
 
-**包名重绑**：所有 `com.berry.browser` → `com.twsxtd.hapi`；`OFFICIAL_BUNDLE`/`BUNDLE`/
-`ORIGINAL_BUNDLE` 全部重绑。侧载默认后缀 `88` → `com.twsxtd.hapi88`。
+**包名重绑**：所有 `com.berry.browser` → `com.berry.hapi`；`OFFICIAL_BUNDLE`/`BUNDLE`/
+`ORIGINAL_BUNDLE` 全部重绑。侧载默认后缀 `88` → `com.berry.hapi88`。
 
 **删除的步骤**（hapi 无对应文件/数据）：
 - `AboutPage.ets` 编译日期更新（`update_build_date`）——hapi 无此文件。

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # tools/pack-app-release.sh — 正式包 release .app
 #
-# 移植自 berry3/tools/pack-app-release.sh，适配 hapi（com.twsxtd.hapi）。
+# 移植自 berry3/tools/pack-app-release.sh，适配 hapi（com.berry.hapi）。
 #
-# 正式包名 com.twsxtd.hapi，release .app（带正式签名校验：release 签名）。
+# 正式包名 com.berry.hapi，release .app（带正式签名校验：release 签名）。
 # 即 build.sh build 的命名化封装，纳入 pack-app-* 统一系列。
 # 用于正式发版 / 归档。不变包名、不清签名。
 #
@@ -19,7 +19,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<EOF
 用法: tools/pack-app-release.sh
 
-正式包 com.twsxtd.hapi + release .app（带正式签名校验）。
+正式包 com.berry.hapi + release .app（带正式签名校验）。
 不变包名、不清签名，直接 build.sh build（含 release-signing 强校验）。
 
 流程：

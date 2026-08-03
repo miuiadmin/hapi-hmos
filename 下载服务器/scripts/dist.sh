@@ -2,7 +2,7 @@
 # dist.sh — OTA 分发打包：只产 1 个 88 共存 release 包到 output/dist/<版本>_<时间戳>/
 #
 # 唯一产物：
-#   hapi-<版本>-88-release.app   变包名 com.twsxtd.hapi88，release（pack.sh 默认固定后缀 88）
+#   hapi-<版本>-88-release.app   变包名 com.berry.hapi88，release（pack.sh 默认固定后缀 88）
 #
 # 设计：OTA 只推 88 共存包（正式版走 AGC 应用市场；debug 按需 build.sh app-debug 手打）。
 #   故发版只需 88-release 一个包，1 次编译，最快路径。历史 4 包流程已废弃。
@@ -62,13 +62,13 @@ CHANGELOG_ITEMS='[]'
 md5_of() { (command -v md5 >/dev/null 2>&1 && md5 -q "$1") || (command -v md5sum >/dev/null 2>&1 && md5sum "$1" | awk '{print $1}'); }
 
 # bundleName：OTA 升级目标包名，客户端 SelfUpdateManager 校验「下载包 bundleName === 当前包 bundleName」，
-#   防 88 包装到非 88 包（服务端推错/归档混入）。固定 com.twsxtd.hapi88（pack.sh 默认 88 后缀）。
+#   防 88 包装到非 88 包（服务端推错/归档混入）。固定 com.berry.hapi88（pack.sh 默认 88 后缀）。
 OTA_FILE="hapi-${VERSION}-88-release.app"
 cat > "$DIST_DIR/manifest.json" <<EOF
 {
   "version": "$VERSION",
   "versionCode": $VERSION_CODE,
-  "bundleName": "com.twsxtd.hapi88",
+  "bundleName": "com.berry.hapi88",
   "buildTime": "$(date +%Y-%m-%dT%H:%M:%S)",
   "date": "$(date +%Y-%m-%d)",
   "changelog": $CHANGELOG_ITEMS,
