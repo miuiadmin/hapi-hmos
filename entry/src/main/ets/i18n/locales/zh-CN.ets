@@ -99,6 +99,11 @@ export const zhCN: Record<string, string> = {
   'login.error.failedWithReason': '登录失败：{reason}',
   'login.error.unknown': '未知错误',
 
+  // —— 配置导入（deep link hapi://connect?server=&token=）——
+  'deeplink.importing': '正在导入配置…',
+  'deeplink.imported': '已连接到 Hub',
+  'deeplink.invalid': '无效的导入链接',
+
   // —— 新建会话页 ——
   'newSession.title': '新建会话',
   'newSession.create': '创建会话',

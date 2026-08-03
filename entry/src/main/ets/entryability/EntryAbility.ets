@@ -24,6 +24,9 @@ import { SelfUpdateManager } from '../services/SelfUpdateManager';
 import { OtaController } from '../services/UpdateState';
 import { decodeJwtExpMs } from '../utils/JwtUtils';
 import { shouldResync } from '../chat/SyncResync';
+import { getDeepLinkImporter, ParsedConnect, ImportResult } from '../services/DeepLinkImporter';
+import { showToast } from '../utils/Toast';
+import { t } from '../i18n/I18nService';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
@@ -40,6 +43,20 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
+    // 冷启动经 deep link（hapi://connect?…）拉起：暂存 URI，待首屏消费（LoginPage.aboutToAppear 或 bootstrap 回调）
+    const uri: string = want.uri !== undefined ? want.uri : '';
+    if (uri !== '' && getDeepLinkImporter().isConnectLink(uri)) {
+      getDeepLinkImporter().setPending(uri);
+    }
+  }
+
+  // 暖启动经 deep link 拉起（App 已在运行）：直接处理导入
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onNewWant');
+    const uri: string = want.uri !== undefined ? want.uri : '';
+    if (uri !== '' && getDeepLinkImporter().isConnectLink(uri)) {
+      this.applyImport(uri);
+    }
   }
 
   onDestroy(): void {
@@ -98,6 +115,11 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, TAG, '%{public}s', 'Loaded ' + pagePath);
+      // 冷启动经 deep link 拉起且首屏未消费（如已登录重导入、或 LoginPage 尚未消费的竞态兜底）：在此处理
+      const pending: string = getDeepLinkImporter().consumePending();
+      if (pending !== '') {
+        this.applyImport(pending);
+      }
       // 冷启动静默检查更新（force=true 不节流；silent 不弹窗，发现新版只置「检查更新」行徽标；
       //   fire-and-forget 不阻塞首屏；仅共存版 com.berry.hapi88 会真正发请求）
       OtaController.checkForUpdates(true, true);
@@ -163,6 +185,34 @@ export default class EntryAbility extends UIAbility {
       }
     } catch (e) {
       getJwtRefreshScheduler().retryIfStillValid();
+    }
+  }
+
+  // deep link 导入处理：解析 → apply（验证 token + 持久化）→ 成功切到主页；失败 toast，未登录落登录页。
+  //   冷启动重导入（bootstrap 回调兜底）与暖启动（onNewWant）共用此入口。
+  private async applyImport(uri: string): Promise<void> {
+    const parsed: ParsedConnect | null = getDeepLinkImporter().parse(uri);
+    if (parsed === null) {
+      showToast(t('deeplink.invalid'));
+      return;
+    }
+    showToast(t('deeplink.importing'));
+    const r: ImportResult = await getDeepLinkImporter().apply(parsed.server, parsed.token);
+    if (r.success) {
+      showToast(t('deeplink.imported'));
+      const stage = AppStorage.get<window.WindowStage>(AppStorageKeys.MAIN_WINDOW_STAGE);
+      if (stage !== undefined) {
+        stage.loadContent('pages/Index');
+      }
+    } else {
+      showToast(r.errorMessage);
+      // 导入失败且当前未登录 → 落到登录页让用户手动重试
+      if (!getConnectionService().isLoggedIn()) {
+        const stage = AppStorage.get<window.WindowStage>(AppStorageKeys.MAIN_WINDOW_STAGE);
+        if (stage !== undefined) {
+          stage.loadContent('pages/LoginPage');
+        }
+      }
     }
   }
 }

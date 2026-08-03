@@ -35,6 +35,20 @@
             "actions": [
               "ohos.want.action.home"
             ]
+          },
+          {
+            // 配置导入 deep link：hapi://connect?server=<urlencoded>&token=<CLI_API_TOKEN>
+            //   点链接 → 拉起 App → 验证 token → 存 preferences（持久化），取代编译期 token。
+            //   对照 berry3/ClashBox module.json5 的 clash://install-config scheme 声明。
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "hapi",
+                "host": "connect"
+              }
+            ]
           }
         ]
       }

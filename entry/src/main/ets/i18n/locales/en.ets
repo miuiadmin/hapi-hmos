@@ -98,6 +98,11 @@ export const en: Record<string, string> = {
   'login.error.failedWithReason': 'Sign-in failed: {reason}',
   'login.error.unknown': 'Unknown error',
 
+  // —— Config import (deep link hapi://connect?server=&token=) ——
+  'deeplink.importing': 'Importing config…',
+  'deeplink.imported': 'Connected to Hub',
+  'deeplink.invalid': 'Invalid import link',
+
   // —— New session ——
   'newSession.title': 'New session',
   'newSession.create': 'Create session',
