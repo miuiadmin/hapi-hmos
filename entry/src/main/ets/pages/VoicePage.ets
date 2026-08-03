@@ -9,7 +9,7 @@ import { ensureMicrophonePermission } from '../utils/Permission';
 import { AgentState, AgentStateRequest, parseAgentState } from '../chat/AgentState';
 import { ChatMessage, parseMessage, mergeMessage } from '../models/Message';
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
-import { Session, VoiceTelemetryEvent } from '../models/Types';
+import { Session, VoiceTelemetryEvent, VoiceTokenResult } from '../models/Types';
 import { uuid } from '../chat/TerminalInput';
 import { formatVoiceStartedContext, formatNewSingleMessage, formatReadyEvent,
   formatPermissionRequest, extractLastAssistantSpeakable } from '../chat/VoiceFormatters';
@@ -264,7 +264,7 @@ struct VoicePage {
     //   voiceId=''=Hub 默认 agent；language=''=自动检测（getElevenLabsCodeFromPreference 不支持的 locale/自动→''，不覆盖）。
     const voiceId: string = VoiceSettingsService.currentVoiceId;
     const language: string = getElevenLabsCodeFromPreference(VoiceSettingsService.currentLang);
-    let tokenResult;
+    let tokenResult: VoiceTokenResult;
     try {
       tokenResult = await getHubClient().fetchVoiceToken(voiceId);
     } catch (e) {

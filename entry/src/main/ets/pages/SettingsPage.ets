@@ -6,7 +6,8 @@ import { AppStorageKeys, PreferenceKeys } from '../config/Keys';
 import { window } from '@kit.ArkUI';
 import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeService, ThemeMode, FontScaleMode } from '../theme/ThemeService';
-import { TerminalToolDisplayService, TerminalToolDisplayMode } from '../services/TerminalToolDisplayService';
+import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
+import { TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
 import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
@@ -14,7 +15,7 @@ import { HapticService } from '../services/HapticService';
 import { VALID_TERMINAL_FONT_SIZES } from '../chat/TerminalFontSize';
 import { SessionListStatusMode } from '../chat/SessionListStatusMode';
 import { showToast } from '../utils/Toast';
-import { t, I18nService, LanguageChoice } from '../i18n/I18nService';
+import { t, I18nService, LanguageChoice, getI18nState } from '../i18n/I18nService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { VOICE_LANGUAGES, VoiceLanguage, findLanguageByCode, getLanguageDisplayName } from '../chat/VoiceLanguages';
 import { VOICE_PRESETS, VoicePreset, getPresetDisplayName } from '../chat/VoiceVoices';
@@ -122,7 +123,7 @@ struct SettingsPage {
   private get voiceIdLabel(): string {
     const id: string = VoiceSettingsService.currentVoiceId;
     if (id === '') { return t('settings.voice.hubDefault'); }
-    return getPresetDisplayName(id, I18nService.locale);
+    return getPresetDisplayName(id, getI18nState().locale);
   }
   // 打开选择器（mode 区分语言/声音）
   private openVoiceSheet(mode: 'lang' | 'voice'): void {
@@ -480,7 +481,7 @@ struct SettingsPage {
               VoiceSettingsService.currentVoiceId === '',
               (): void => { this.pickVoice(''); })
             ForEach(VOICE_PRESETS, (v: VoicePreset) => {
-              this.PickerOptionRow(getPresetDisplayName(v.id, I18nService.locale),
+              this.PickerOptionRow(getPresetDisplayName(v.id, getI18nState().locale),
                 VoiceSettingsService.currentVoiceId === v.id,
                 (): void => { this.pickVoice(v.id); })
             }, (v: VoicePreset) => v.id)

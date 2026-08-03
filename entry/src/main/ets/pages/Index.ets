@@ -28,7 +28,7 @@ import { SyncStateService, getSyncState, SyncState } from '../services/SyncState
 import { ToastService } from '../services/ToastService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { localizeToast } from '../chat/ToastLocalize';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // 会话列表页（已登录首屏）
 // UI 写法/样式对照 chatcube Index（Navigation + 列表 + 列表项 + 空态/加载态/错误态）
@@ -376,15 +376,15 @@ struct Index {
       return t('sessions.time.justNow');
     }
     if (min < 60) {
-      return t('sessions.time.minutesAgo', { n: min });
+      return t('sessions.time.minutesAgo', kv('n', min));
     }
     const hr: number = Math.floor(min / 60);
     if (hr < 24) {
-      return t('sessions.time.hoursAgo', { n: hr });
+      return t('sessions.time.hoursAgo', kv('n', hr));
     }
     const day: number = Math.floor(hr / 24);
     if (day < 7) {
-      return t('sessions.time.daysAgo', { n: day });
+      return t('sessions.time.daysAgo', kv('n', day));
     }
     const d: Date = new Date(ts);
     return `${d.getMonth() + 1}-${d.getDate()}`;
@@ -472,9 +472,8 @@ struct Index {
           if (session.todoTotal > 0 && session.todoCompleted !== session.todoTotal) {
             Row({ space: 3 }) {
               Text('💡').fontSize(fs(10))
-              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(fs(11))
+              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(fs(11)).fontColor(this.c.textTertiary)
             }
-            .fontColor(this.c.textTertiary)
             .margin({ right: 6 })
           }
           if (session.pendingRequestsCount > 0) {
@@ -489,9 +488,8 @@ struct Index {
           if (session.backgroundTaskCount > 0) {
             Row({ space: 3 }) {
               Text('⚙').fontSize(fs(10))
-              Text(`${session.backgroundTaskCount}`).fontSize(fs(11))
+              Text(`${session.backgroundTaskCount}`).fontSize(fs(11)).fontColor(this.c.textSecondary)
             }
-            .fontColor(this.c.textSecondary)
             .backgroundColor(this.c.surface)
             .borderRadius(8)
             .padding({ left: 6, right: 6, top: 1, bottom: 1 })
@@ -501,9 +499,8 @@ struct Index {
           if (session.futureScheduledMessageCount > 0) {
             Row({ space: 3 }) {
               Text('⏰').fontSize(fs(10))
-              Text(`${session.futureScheduledMessageCount}`).fontSize(fs(11))
+              Text(`${session.futureScheduledMessageCount}`).fontSize(fs(11)).fontColor(this.c.textSecondary)
             }
-            .fontColor(this.c.textSecondary)
             .backgroundColor(this.c.surface)
             .borderRadius(8)
             .padding({ left: 6, right: 6, top: 1, bottom: 1 })
@@ -527,7 +524,7 @@ struct Index {
   @Builder
   private ShowMoreRow(row: RenderRow) {
     Row() {
-      Text(t('sessions.showMore', { n: row.remaining }))
+      Text(t('sessions.showMore', kv('n', row.remaining)))
         .fontSize(fs(12))
         .fontColor(this.c.primary)
     }

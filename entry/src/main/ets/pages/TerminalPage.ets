@@ -3,7 +3,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { getHubClient } from '../api/HubClient';
 import { getConnectionService } from '../services/ConnectionService';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 import { showToast } from '../utils/Toast';
 import {
   QUICK_INPUT_ROWS,
@@ -290,12 +290,12 @@ struct TerminalPage {
     if (this.state === 'ready') { return t('terminal.state.ready'); }
     if (this.state === 'reconnecting') { return t('terminal.state.reconnecting'); }
     if (this.state === 'error') {
-      if (this.quotaMax >= 0) { return t('terminal.quotaExceeded', { max: this.quotaMax }); }
+      if (this.quotaMax >= 0) { return t('terminal.quotaExceeded', kv('max', this.quotaMax)); }
       return this.errorMsg !== '' ? this.errorMsg : t('terminal.state.error');
     }
     if (this.state === 'exited') {
       return this.exitCode >= 0
-        ? t('terminal.exitWithCode', { code: this.exitCode })
+        ? t('terminal.exitWithCode', kv('code', this.exitCode))
         : t('terminal.state.exited');
     }
     return '';
@@ -419,7 +419,7 @@ struct TerminalPage {
           .fontSize(fs(14))
           .fontColor(this.state === 'exited' ? this.c.textTertiary : (this.quotaMax >= 0 ? this.c.warning : this.c.error))
         Text(this.quotaMax >= 0
-          ? t('terminal.quotaExceeded', { max: this.quotaMax })
+          ? t('terminal.quotaExceeded', kv('max', this.quotaMax))
           : this.statusLabel())
           .fontSize(fs(13))
           .fontColor(this.state === 'exited' ? this.c.textTertiary : (this.quotaMax >= 0 ? this.c.warning : this.c.error))

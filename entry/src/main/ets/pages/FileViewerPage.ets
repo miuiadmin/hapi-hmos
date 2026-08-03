@@ -3,6 +3,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { getHubClient } from '../api/HubClient';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { CodeBlock } from '../components/CodeBlock';
 
 // 文件查看页（NavDestination）—— 对照 hapi web /sessions/$sessionId/file
 //   readSessionFile → content(base64)：图片扩展名→Image(data:mime;base64,...)；

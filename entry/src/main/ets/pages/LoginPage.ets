@@ -2,7 +2,7 @@ import { getConnectionService } from '../services/ConnectionService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 import { window } from '@kit.ArkUI';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
@@ -80,7 +80,7 @@ struct LoginPage {
       getJwtRefreshScheduler().arm();
       this.switchToMainContent();
     } catch (e) {
-      this.lastError = t('login.error.failedWithReason', { reason: e instanceof Error ? e.message : t('login.error.unknown') });
+      this.lastError = t('login.error.failedWithReason', kv('reason', e instanceof Error ? e.message : t('login.error.unknown')));
     } finally {
       this.isSubmitting = false;
     }

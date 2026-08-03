@@ -3,7 +3,7 @@ import { FileSearchItem, SessionDirEntry } from '../models/Types';
 import { GitStatusFiles, GitFileStatus, GitFileStatusType, buildGitStatusFiles } from '../chat/GitParsers';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { FileViewerRouteParams } from './FileViewerPage';
-import { t } from '../i18n/I18nService';
+import { t, kv2 } from '../i18n/I18nService';
 
 // 会话文件浏览页（NavDestination）—— 对照 hapi web /sessions/$sessionId/files（全量：git 变更 + 目录树 + 搜索）
 //   3 Tab：① 改动（getGitStatus porcelain v2 + git-diff-numstat ×2 → buildGitStatusFiles）
@@ -60,10 +60,8 @@ struct FilesPage {
         this.gitError = status.error !== '' ? status.error : (status.stderr !== '' ? status.stderr : t('files.changes.noGit'));
         return;
       }
-      const [unstaged, staged] = await Promise.all([
-        getHubClient().getGitDiffNumstat(this.sessionId, false),
-        getHubClient().getGitDiffNumstat(this.sessionId, true)
-      ]);
+      const unstaged = await getHubClient().getGitDiffNumstat(this.sessionId, false);
+      const staged = await getHubClient().getGitDiffNumstat(this.sessionId, true);
       this.gitStatus = buildGitStatusFiles(
         status.stdout,
         unstaged.success ? unstaged.stdout : '',
@@ -290,23 +288,26 @@ struct FilesPage {
   private FilesView() {
     Column({ space: 0 }) {
       // 面包屑
-      Row() {
-        Text(t('files.workspaceRoot'))
-          .fontSize(fs(13))
-          .fontColor(this.dirPath === '' ? this.c.textPrimary : this.c.primary)
-          .onClick(() => { this.goToSegment(-1); })
-        ForEach(this.pathSegments(), (seg: string, i: number) => {
-          Text(` / ${seg}`)
+      Scroll() {
+        Row() {
+          Text(t('files.workspaceRoot'))
             .fontSize(fs(13))
-            .fontColor(i === this.pathSegments().length - 1 ? this.c.textPrimary : this.c.primary)
-            .maxLines(1)
-            .onClick(() => { this.goToSegment(i); })
-        }, (seg: string, i: number) => `${i}-${seg}`)
+            .fontColor(this.dirPath === '' ? this.c.textPrimary : this.c.primary)
+            .onClick(() => { this.goToSegment(-1); })
+          ForEach(this.pathSegments(), (seg: string, i: number) => {
+            Text(` / ${seg}`)
+              .fontSize(fs(13))
+              .fontColor(i === this.pathSegments().length - 1 ? this.c.textPrimary : this.c.primary)
+              .maxLines(1)
+              .onClick(() => { this.goToSegment(i); })
+          }, (seg: string, i: number) => `${i}-${seg}`)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
+      .width('100%')
 
       if (this.dirLoading) {
         this.LoadingRow(t('files.dir.loading'))
@@ -424,7 +425,7 @@ struct FilesPage {
   // —— 公共 @Builder ——
   @Builder
   private SectionHeader(title: string, count: number) {
-    Text(t('files.section.count', { title: title, count: count }))
+    Text(t('files.section.count', kv2('title', title, 'count', count)))
       .fontSize(fs(12))
       .fontColor(this.c.textTertiary)
       .width('100%')

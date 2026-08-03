@@ -30,7 +30,7 @@ import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skill
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
 import { getLatestThreadGoal } from '../chat/ThreadGoal';
 import { getEventPresentation, EventPresentation } from '../chat/EventPresentation';
-import { extractLeadingDirectives, formatDirectiveLabel, DirectiveExtract } from '../chat/UserDirectives';
+import { extractLeadingDirectives, formatDirectiveLabel } from '../chat/UserDirectives';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
 import { SkillsMenu } from '../components/SkillsMenu';
@@ -56,7 +56,7 @@ import { isImageMimeType, formatFileSize } from '../chat/AttachmentFormat';
 import { PreferenceKeys } from '../config/Keys';
 import { pickAndReadDocuments, PickedFile } from '../services/FilePicker';
 import { showToast } from '../utils/Toast';
-import { t } from '../i18n/I18nService';
+import { t, kv, kv2, kv4 } from '../i18n/I18nService';
 
 // 对话页：消息流 + 输入发送 + SSE 实时接收
 // 协议对照 hapi：GET /api/sessions/:id/messages 拉历史；POST 同端点发送（{ok:true}，真实消息靠 SSE message-received 回推）
@@ -1138,7 +1138,7 @@ struct ChatPage {
       if (okCount === 0) {
         showToast(lastError !== '' ? lastError : t('chat.uploadFailed'));
       } else if (okCount < picked.length) {
-        showToast(t('chat.attachPartialFail', { ok: okCount, total: picked.length }));
+        showToast(t('chat.attachPartialFail', kv2('ok', okCount, 'total', picked.length)));
       }
     } catch (e) {
       showToast(t('chat.uploadFailed'));
@@ -1168,7 +1168,7 @@ struct ChatPage {
               .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
               .maxLines(1)
-              .textOverflow(TextOverflow.Ellipsis)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
               .constraintSize({ maxWidth: 160 })
             Text('✕')
               .fontSize(fs(13))
@@ -1357,7 +1357,7 @@ struct ChatPage {
         lines.push('');
       }
       const clock: string = b.createdAt > 0 ? formatClock(b.createdAt) : '--:--';
-      lines.push(b.kind === 'user-text' ? t('chat.exportUser', { time: clock }) : t('chat.exportAssistant', { time: clock }));
+      lines.push(b.kind === 'user-text' ? t('chat.exportUser', kv('time', clock)) : t('chat.exportAssistant', kv('time', clock)));
       lines.push('');
       lines.push(b.text);
       lines.push('');
@@ -1463,7 +1463,7 @@ struct ChatPage {
       Text('↓')
         .fontSize(fs(13))
         .fontColor(this.c.primary)
-      Text(this.newMessagesCount > 0 ? t('chat.newMessages', { n: this.newMessagesCount }) : t('chat.newMessagesShort'))
+      Text(this.newMessagesCount > 0 ? t('chat.newMessages', kv('n', this.newMessagesCount)) : t('chat.newMessagesShort'))
         .fontSize(fs(13))
         .fontColor(this.c.primary)
         .fontWeight(FontWeight.Medium)
@@ -1537,19 +1537,27 @@ struct ChatPage {
   // 用户气泡正文：抽前导指令（/slash·$skill）显成独立 chip，剩余 body 作正文（对照 web user-bubble.tsx
   //   UserBubbleContent）。鸿蒙简化为「chip 行（Flex wrap）+ 正文 Text」恒堆叠——上游 inline 模式
   //   （chip 与单行 body 同流换行）在 ArkUI 混排换行不稳，移动端堆叠更稳，视觉差异可忽略。
+  // @Builder 内禁局部 const 声明（arkts 10905209：only UI component syntax），
+  //   故把 extractLeadingDirectives 的两段结果拆成无状态 helper，Builder 内多次调用（用户气泡文本短，重复计算可接受）。
+  private directivesOf(text: string): string[] {
+    return extractLeadingDirectives(text).directives;
+  }
+  private bodyOf(text: string): string {
+    return extractLeadingDirectives(text).body;
+  }
+
   @Builder
   private UserBubbleText(text: string) {
-    const extract: DirectiveExtract = extractLeadingDirectives(text);
-    if (extract.directives.length > 0) {
+    if (this.directivesOf(text).length > 0) {
       Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(extract.directives, (d: string) => {
+        ForEach(this.directivesOf(text), (d: string) => {
           this.DirectiveChipPill(d)
         }, (d: string, idx: number) => `${d}@${idx}`)
       }
-      .margin({ bottom: extract.body !== '' ? 6 : 0 })
+      .margin({ bottom: this.bodyOf(text) !== '' ? 6 : 0 })
     }
-    if (extract.body !== '') {
-      Text(extract.body)
+    if (this.bodyOf(text) !== '') {
+      Text(this.bodyOf(text))
         .fontSize(fs(15))
         .fontColor(this.c.bubbleUserText)
     }
@@ -1566,7 +1574,7 @@ struct ChatPage {
         .fontSize(fs(13))
         .fontColor(this.c.bubbleUserText)
         .maxLines(1)
-        .textOverflow(TextOverflow.Ellipsis)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .padding({ left: 8, right: 8, top: 3, bottom: 3 })
     .borderRadius(12)
@@ -1615,7 +1623,7 @@ struct ChatPage {
                   .fontSize(fs(13))
                   .fontColor(this.c.bubbleUserText)
                   .maxLines(1)
-                  .textOverflow(TextOverflow.Ellipsis)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
                 Text(formatFileSize(meta.size))
                   .fontSize(fs(11))
                   .fontColor('rgba(255,255,255,0.75)')
@@ -2039,7 +2047,7 @@ struct ChatPage {
     d.setHours(this.pickHour, this.pickMinute, 0, 0);
     const hh: string = this.pickHour < 10 ? `0${this.pickHour}` : `${this.pickHour}`;
     const mm: string = this.pickMinute < 10 ? `0${this.pickMinute}` : `${this.pickMinute}`;
-    const absPart: string = t('chat.scheduleAbsTime', { m: d.getMonth() + 1, d: d.getDate(), hh: hh, mm: mm });
+    const absPart: string = t('chat.scheduleAbsTime', kv4('m', d.getMonth() + 1, 'd', d.getDate(), 'hh', hh, 'mm', mm));
     const relPart: string = formatScheduledIn(d.getTime(), Date.now());
     return `${absPart}（${relPart}）`;
   }
@@ -2143,7 +2151,7 @@ struct ChatPage {
         .placeholderColor(this.c.textTertiary)
         .onChange((value: string) => { this.searchQuery = value; })
       if (this.isFiltering()) {
-        Text(t('chat.searchMatches', { n: this.filteredBlocks.length }))
+        Text(t('chat.searchMatches', kv('n', this.filteredBlocks.length)))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
           .width('100%')
@@ -2258,7 +2266,7 @@ struct ChatPage {
               this.LoadingOlderBar()
             }
             // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
-            Stack({ alignContent: Alignment.BottomCenter }) {
+            Stack({ alignContent: Alignment.Bottom }) {
             List({ scroller: this.scroller, space: 8 }) {
               ForEach(this.filteredBlocks, (b: ChatBlock) => {
                 ListItem() {
@@ -2429,7 +2437,6 @@ struct ChatPage {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as ChatPageRouteParams;
       if (param !== null && param !== undefined) {
-        this.routeParamsSeed = param;
         if (this.sessionId === '') {
           this.sessionId = param.sessionId;
         }
