@@ -18,7 +18,7 @@ import { ChecklistList } from './ChecklistList';
 import { MarkdownText } from './MarkdownText';
 import { AskUserQuestionView } from './AskUserQuestionView';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 const MAX_COMPACT_EDITS: number = 3;
 
@@ -136,11 +136,11 @@ struct ToolInputView {
   }
 
   private writeContent(): string {
-    const c: Object = this.input !== null ? this.input['content'] : null;
+    const c: Object | null = this.input !== null ? this.input['content'] : null;
     if (typeof c === 'string') {
       return c;
     }
-    const t: Object = this.input !== null ? this.input['text'] : null;
+    const t: Object | null = this.input !== null ? this.input['text'] : null;
     return typeof t === 'string' ? t : '';
   }
 
@@ -197,7 +197,7 @@ struct ToolInputView {
     Column() {
       if (this.tool.name === 'Edit') {
         if (this.hasEditStrings) {
-          DiffView({ oldString: this.editOld(), newString: this.editNew(), size: this.isInline ? 'compact' : 'comfortable' })
+          DiffView({ oldString: this.editOld(), newString: this.editNew(), density: this.isInline ? 'compact' : 'comfortable' })
         }
       } else if (this.tool.name === 'MultiEdit') {
         this.MultiEditInput()
@@ -236,7 +236,7 @@ struct ToolInputView {
         DiffView({ oldString: ep.oldStr, newString: ep.newStr })
       }, (ep: EditPair, idx: number) => `edit-${idx}`)
       if (this.isInline && this.multiEdits().length > MAX_COMPACT_EDITS) {
-        Text(t('tool.moreEdits', { n: this.multiEdits().length - MAX_COMPACT_EDITS }))
+        Text(t('tool.moreEdits', kv('n', this.multiEdits().length - MAX_COMPACT_EDITS)))
           .fontSize(fs(11))
           .fontColor(this.c.textSecondary)
       }
@@ -290,7 +290,7 @@ struct ToolInputView {
         oldString: this.codexDiffParsed().oldText,
         newString: this.codexDiffParsed().newText,
         filePath: this.isInline ? '' : this.codexDiffParsed().fileName,
-        size: this.isInline ? 'compact' : 'comfortable'
+        density: this.isInline ? 'compact' : 'comfortable'
       })
     } else {
       CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
@@ -495,7 +495,7 @@ struct ToolResultView {
   }
   private skillLoadedLabel(): string {
     const skill: string = getInputStrAny(this.tool.input, ['skill']);
-    return skill !== '' ? t('tool.skillLoaded', { name: skill }) : t('tool.skillLoadedShort');
+    return skill !== '' ? t('tool.skillLoaded', kv('name', skill)) : t('tool.skillLoadedShort');
   }
 
   // —— CodexDiff 结果解析（parseUnifiedDiff 恒返回非空；old/new 均空 = 非 diff 文本 → 回退 CodeBlock）——
@@ -874,7 +874,7 @@ struct ToolResultView {
 
   @Builder
   NAgentsPill(count: number) {
-    this.Pill(count === 1 ? t('agent.nAgent', { n: count }) : t('agent.nAgents', { n: count }))
+    this.Pill(count === 1 ? t('agent.nAgent', kv('n', count)) : t('agent.nAgents', kv('n', count)))
   }
 
   @Builder

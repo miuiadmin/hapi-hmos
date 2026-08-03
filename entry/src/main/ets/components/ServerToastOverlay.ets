@@ -31,14 +31,14 @@ export struct ServerToastOverlay {
               .fontWeight(FontWeight.Bold)
               .fontColor(this.c.textPrimary)
               .maxLines(1)
-              .textOverflow(TextOverflow.Ellipsis)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
             if (this.toastState.current.body !== '') {
               Text(this.toastState.current.body)
                 .fontSize(fs(12))
                 .fontColor(this.c.textSecondary)
                 .maxLines(2)
-                .textOverflow(TextOverflow.Ellipsis)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .width('100%')
             }
           }

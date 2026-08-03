@@ -12,7 +12,7 @@ import { formatGroupedHeaderTitle, formatGroupedHeaderSubtitle } from '../chat/G
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 @ComponentV2
 struct ToolGroupCard {
@@ -148,34 +148,34 @@ struct ToolGroupCard {
       // 徽标簇（对照上游：toolCount 恒显；running/pending/error 按计数；fileTargets 文件数）
       Row({ space: 4 }) {
         this.Badge(
-          t('toolGroup.toolCount', { n: this.summary.totalTools }),
+          t('toolGroup.toolCount', kv('n', this.summary.totalTools)),
           this.c.textTertiary,
           this.c.surfaceSelected
         )
         if (this.summary.runningCount > 0) {
           this.Badge(
-            t('toolGroup.badge.running', { n: this.summary.runningCount }),
+            t('toolGroup.badge.running', kv('n', this.summary.runningCount)),
             this.c.primary,
             this.c.surfaceSelected
           )
         }
         if (this.summary.pendingCount > 0) {
           this.Badge(
-            t('toolGroup.badge.pending', { n: this.summary.pendingCount }),
+            t('toolGroup.badge.pending', kv('n', this.summary.pendingCount)),
             this.c.warning,
             this.c.surfaceSelected
           )
         }
         if (this.summary.errorCount > 0) {
           this.Badge(
-            t('toolGroup.badge.error', { n: this.summary.errorCount }),
+            t('toolGroup.badge.error', kv('n', this.summary.errorCount)),
             this.c.error,
             this.c.errorBg
           )
         }
         if (this.summary.fileTargets.length > 0) {
           this.Badge(
-            t('toolGroup.badge.fileTargets', { n: this.summary.fileTargets.length }),
+            t('toolGroup.badge.fileTargets', kv('n', this.summary.fileTargets.length)),
             this.c.textTertiary,
             this.c.surfaceSelected
           )

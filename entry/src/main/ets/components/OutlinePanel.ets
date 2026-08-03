@@ -52,7 +52,7 @@ export struct OutlinePanel {
                   .fontSize(fs(14))
                   .fontColor(this.c.textPrimary)
                   .maxLines(2)
-                  .textOverflow(TextOverflow.Ellipsis)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .width('100%')
                 if (item.createdAt > 0) {
                   Text(formatClock(item.createdAt))

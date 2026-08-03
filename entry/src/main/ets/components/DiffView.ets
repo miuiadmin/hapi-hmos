@@ -13,7 +13,7 @@ struct DiffView {
   @Param oldString: string = '';
   @Param newString: string = '';
   @Param filePath: string = '';
-  @Param size: string = 'compact';        // 'compact' | 'comfortable'（comfortable 用于 sheet）
+  @Param density: string = 'compact';        // 'compact' | 'comfortable'（comfortable 用于 sheet）
   @Param scrollY: boolean = false;
   @Param maxHeight: number = 0;
 

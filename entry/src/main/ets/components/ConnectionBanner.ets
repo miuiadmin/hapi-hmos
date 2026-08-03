@@ -3,7 +3,7 @@ import { SyncEvent } from '../models/SyncEvent';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 import { getDeviceNetworkState, DeviceNetworkState } from '../services/DeviceNetworkService';
-import { resolveNetworkBanner } from '../chat/NetworkBannerResolve';
+import { resolveNetworkBanner, NetworkBannerKind } from '../chat/NetworkBannerResolve';
 
 // 连接状态横幅：SSE 重连 / 断开 + 设备离线时顶部细条提示（对照上游 ReconnectingBanner/OfflineBanner）。
 // 自注册一条独立 SSE onStateChange 监听者（与宿主页的监听者互不影响）；aboutToAppear 先读 getState()
@@ -24,6 +24,7 @@ export struct ConnectionBanner {
   private listenerId: number = -1;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  private get kind(): NetworkBannerKind { return resolveNetworkBanner(this.net.online, this.sseState); }
 
   aboutToAppear(): void {
     const sse = getSSEClient();
@@ -42,19 +43,18 @@ export struct ConnectionBanner {
   }
 
   build() {
-    const kind = resolveNetworkBanner(this.net.online, this.sseState);
     Row({ space: 8 }) {
-      if (kind === 'device-offline') {
+      if (this.kind === 'device-offline') {
         Text('⚠').fontSize(fs(12)).fontColor(this.c.bubbleUserText)
         Text(t('connection.deviceOffline'))
           .fontSize(fs(12))
           .fontColor(this.c.bubbleUserText)
-      } else if (kind === 'sse-reconnecting') {
+      } else if (this.kind === 'sse-reconnecting') {
         LoadingProgress().width(14).height(14).color(this.c.textSecondary)
         Text(t('connection.reconnecting'))
           .fontSize(fs(12))
           .fontColor(this.c.textSecondary)
-      } else if (kind === 'sse-closed') {
+      } else if (this.kind === 'sse-closed') {
         Text('⚠').fontSize(fs(12)).fontColor(this.c.bubbleUserText)
         Text(t('connection.disconnected'))
           .fontSize(fs(12))
@@ -65,7 +65,7 @@ export struct ConnectionBanner {
     .height(32)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(kind === 'device-offline' || kind === 'sse-closed' ? this.c.error : this.c.surface)
-    .visibility(kind === 'none' ? Visibility.None : Visibility.Visible)
+    .backgroundColor(this.kind === 'device-offline' || this.kind === 'sse-closed' ? this.c.error : this.c.surface)
+    .visibility(this.kind === 'none' ? Visibility.None : Visibility.Visible)
   }
 }

@@ -1,6 +1,6 @@
 import { CodexReview, CodexReviewFinding, formatReviewPercent, formatReviewLocation, reviewPriorityColor } from '../chat/CodexReview';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // CodexReviewCard —— 对照 web/src/components/AssistantChat/messages/CodexReviewCard.tsx
 // Codex agent 偶把 review JSON 当文本发出；parse 嗅探命中 → codex-review 块 → 本卡渲染结构化结果：
@@ -46,7 +46,7 @@ export struct CodexReviewCard {
       .borderRadius(6)
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .maxLines(1)
-      .textOverflow(TextOverflow.Ellipsis)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
   }
 
   @Builder
@@ -88,7 +88,7 @@ export struct CodexReviewCard {
             .fontColor(this.c.codeMuted)
             .fontFamily('monospace')
             .maxLines(1)
-            .textOverflow(TextOverflow.Ellipsis)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
         } else {
           Text(t('codexReview.location.missing'))
@@ -96,8 +96,8 @@ export struct CodexReviewCard {
             .fontColor(this.c.textTertiary)
             .layoutWeight(1)
         }
-        if (this.findingConfidence(finding) !== null) {
-          Text(t('codexReview.confidence', { value: this.findingConfidence(finding) }))
+        if (this.findingConfidence(finding) !== '') {
+          Text(t('codexReview.confidence', kv('value', this.findingConfidence(finding))))
             .fontSize(fs(11))
             .fontColor(this.c.textTertiary)
             .margin({ left: 12 })
@@ -119,9 +119,10 @@ export struct CodexReviewCard {
     return formatReviewLocation(finding);
   }
 
-  // 单条置信度 %（null = 无/非有限，隐藏）
-  private findingConfidence(finding: CodexReviewFinding): string | null {
-    return formatReviewPercent(finding.confidenceScore);
+  // 单条置信度 %（'' = 无/非有限，隐藏）。返 string 非 null —— @Builder 内不能加 const 缓存，
+  //   两次调用无法窄化 null，故归一为 string（''），调用方判 '' 隐藏。
+  private findingConfidence(finding: CodexReviewFinding): string {
+    return formatReviewPercent(finding.confidenceScore) ?? '';
   }
 
   build() {
@@ -154,7 +155,7 @@ export struct CodexReviewCard {
             .width('100%')
             .margin({ bottom: 12 })
         }
-        Text(t('codexReview.findings', { count: this.review.findings.length }))
+        Text(t('codexReview.findings', kv('count', this.review.findings.length)))
           .fontSize(fs(11))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textTertiary)

@@ -9,7 +9,7 @@ import { pasteboard } from '@kit.BasicServicesKit'
 import { fs, paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
 import { showToast } from '../utils/Toast';
 import { NON_HTTPS_LINKIFY_SCHEMES } from '../chat/LinkSchemes';
-import { t } from '../i18n/I18nService';
+import { t, kv2 } from '../i18n/I18nService';
 import {
   classifyScheme,
   hasScheme,
@@ -236,12 +236,12 @@ export struct MarkdownText {
   private confirmCustomScheme(url: string, scheme: string): void {
     this.getUIContext().showAlertDialog({
       title: t('markdown.openExternalTitle'),
-      message: t('markdown.openExternalMessage', { scheme: scheme, url: url }),
+      message: t('markdown.openExternalMessage', kv2('scheme', scheme, 'url', url)),
       autoCancel: true,
       buttons: [
-        { text: t('common.cancel'), color: this.c.textSecondary },
-        { text: t('markdown.open'), color: this.c.primary, action: (): void => { this.openSafeLink(url); } },
-        { text: t('markdown.alwaysAllow'), color: this.c.primary, action: (): void => {
+        { value: t('common.cancel'), fontColor: this.c.textSecondary, action: (): void => {} },
+        { value: t('markdown.open'), fontColor: this.c.primary, action: (): void => { this.openSafeLink(url); } },
+        { value: t('markdown.alwaysAllow'), fontColor: this.c.primary, action: (): void => {
           saveAllowedScheme(scheme, getPreferencesService()).then((): void => { this.openSafeLink(url); });
         } }
       ]

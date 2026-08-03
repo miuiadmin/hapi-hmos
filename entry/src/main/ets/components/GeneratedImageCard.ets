@@ -4,7 +4,7 @@ import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { buildImageCacheKey } from '../services/GeneratedImageCacheUtils';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // GeneratedImageCard —— 对照 web ToolMessage.tsx:52-104 GeneratedImageCard
 // agent 调 display_image 工具登记的图：aboutToAppear 按 imageId GET 二进制 → 磁盘缓存 → Image(裸沙箱路径)。
@@ -51,11 +51,11 @@ export struct GeneratedImageCard {
 
   build() {
     Column() {
-      Text(t('genImage.caption', { fileName: this.block.fileName }))
+      Text(t('genImage.caption', kv('fileName', this.block.fileName)))
         .fontSize(fs(11))
         .fontColor(this.c.textTertiary)
         .maxLines(1)
-        .textOverflow(TextOverflow.Ellipsis)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ bottom: 6 })
       if (this.filePath !== '') {
         Image(this.filePath)
@@ -79,7 +79,7 @@ export struct GeneratedImageCard {
         .backgroundColor(this.c.surfaceSelected)
         .justifyContent(FlexAlign.Center)
       } else {
-        Text(t('genImage.unavailable', { error: this.error }))
+        Text(t('genImage.unavailable', kv('error', this.error)))
           .fontSize(fs(13))
           .fontColor(this.c.textTertiary)
           .padding({ top: 24, bottom: 24, left: 12, right: 12 })

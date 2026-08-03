@@ -1,6 +1,6 @@
 import { TeamState, TeamMember, TeamTask, TeamMessage } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv, kv2 } from '../i18n/I18nService';
 
 // 会话内多 agent 团队面板（对照上游 web/src/components/TeamPanel.tsx）。
 //   teamState 是 Session 的运行时字段（agent 自治上报，非 spawn 配置）——纯只读展示，无客户端改写。
@@ -63,12 +63,12 @@ export struct TeamPanel {
   // 头部计数文案："{N} 成员" + (活跃>0 ? "（{M} 活跃）" : "") + (任务>0 ? " · {done}/{total} 任务" : "")
   private headerCounts(): string {
     const total: number = this.teamState.members.length;
-    let s: string = t('team.memberCount', { count: total });
+    let s: string = t('team.memberCount', kv('count', total));
     const active: number = this.activeMemberCount();
-    if (active > 0) { s = `${s}${t('team.activeCount', { count: active })}`; }
+    if (active > 0) { s = `${s}${t('team.activeCount', kv('count', active))}`; }
     const tasks: number = this.teamState.tasks.length;
     if (tasks > 0) {
-      s = `${s}${t('team.taskCount', { done: this.completedTaskCount(), total: tasks })}`;
+      s = `${s}${t('team.taskCount', kv2('done', this.completedTaskCount(), 'total', tasks))}`;
     }
     return s;
   }

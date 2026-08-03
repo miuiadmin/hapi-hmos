@@ -3,7 +3,7 @@ import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { HapticService } from '../services/HapticService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // 会话动作菜单（重命名 / 归档 / 删除）——列表长按（Index）与对话页标题栏 ⋯（ChatPage）复用，去重。
 // 组件自持两 sheet（动作面板 + 重命名面板）+ 全部生命周期逻辑（确认弹窗 / API 调用 / 防重入）。
@@ -125,7 +125,7 @@ export struct SessionActionMenu {
     this.onClose();
     this.getUIContext().showAlertDialog({
       title: t('sessionMenu.archiveTitle'),
-      message: t('sessionMenu.archiveConfirm', { name: this.title }),
+      message: t('sessionMenu.archiveConfirm', kv('name', this.title)),
       autoCancel: true,
       confirm: {
         value: t('sessionMenu.archive'),
@@ -140,7 +140,7 @@ export struct SessionActionMenu {
     this.onClose();
     this.getUIContext().showAlertDialog({
       title: t('sessionMenu.deleteTitle'),
-      message: t('sessionMenu.deleteConfirm', { name: this.title }),
+      message: t('sessionMenu.deleteConfirm', kv('name', this.title)),
       autoCancel: true,
       confirm: {
         value: t('sessionMenu.delete'),

@@ -1,6 +1,6 @@
 import { ChatMessage, formatScheduledIn } from '../models/Message';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // 排队消息条（对照 web AssistantChat/QueuedMessagesBar.tsx）：渲染在 composer/InputBar 正上方，
 //   列出所有「已发但未被 CLI 消费」的用户消息（即时排队 + 定时共用 invokedAt=0 状态）。
@@ -32,7 +32,7 @@ export struct QueuedMessagesBar {
       // 头：排队计数
       Row({ space: 6 }) {
         Text('🕓').fontSize(fs(12))
-        Text(t('queued.count', { count: this.queued.length }))
+        Text(t('queued.count', kv('count', this.queued.length)))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
         Blank()
@@ -46,7 +46,7 @@ export struct QueuedMessagesBar {
               .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
               .maxLines(3)
-              .textOverflow(TextOverflow.Ellipsis)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
               .width('100%')
             if (this.scheduleLabel(m) !== '') {

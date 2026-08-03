@@ -28,13 +28,13 @@ export struct MentionMenu {
                   .fontWeight(FontWeight.Medium)
                   .fontColor(this.c.textPrimary)
                   .maxLines(1)
-                  .textOverflow(TextOverflow.Ellipsis)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
                 if (item.filePath !== '' && item.filePath !== item.fileName) {
                   Text(item.filePath)
                     .fontSize(fs(11))
                     .fontColor(this.c.textTertiary)
                     .maxLines(1)
-                    .textOverflow(TextOverflow.Ellipsis)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .margin({ top: 1 })
                 }
               }

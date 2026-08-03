@@ -35,7 +35,7 @@ export struct SlashMenu {
                 .fontSize(fs(12))
                 .fontColor(this.c.textTertiary)
                 .maxLines(1)
-                .textOverflow(TextOverflow.Ellipsis)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
             }
             .width('100%')

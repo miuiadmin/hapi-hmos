@@ -255,17 +255,17 @@ struct ToolCard {
 
   private async doAllowForSession(): Promise<void> {
     const p = this.permission;
-    const t = this.tool;
-    if (p === null || t === null || this.actionLoading !== '') {
+    const tool = this.tool;
+    if (p === null || tool === null || this.actionLoading !== '') {
       return;
     }
     this.actionError = '';
     this.actionLoading = 'session';
     try {
       const opts: ApproveOptions = new ApproveOptions();
-      let ident: string = t.name;
-      if (t.name === 'Bash') {
-        const cmd: string = getInputStrAny(t.input, ['command', 'cmd']);
+      let ident: string = tool.name;
+      if (tool.name === 'Bash') {
+        const cmd: string = getInputStrAny(tool.input, ['command', 'cmd']);
         ident = cmd !== '' ? `Bash(${cmd})` : 'Bash';
       }
       opts.allowTools = [ident];

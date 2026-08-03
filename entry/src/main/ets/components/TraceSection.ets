@@ -24,7 +24,7 @@ import { MarkdownText } from './MarkdownText';
 import { ReasoningBubble } from './ReasoningBubble';
 import { CliOutputCard } from './CliOutputCard';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 @ComponentV2
 struct TraceSection {
@@ -103,15 +103,15 @@ struct TraceSection {
     const parts: string[] = [];
     const cnt: number = this.headerCount;
     if (cnt > 0) {
-      parts.push(t('tool.traceCalls', { n: cnt }));
+      parts.push(t('tool.traceCalls', kv('n', cnt)));
     }
     const tok: number = this.totalTokens;
     if (tok > 0) {
-      parts.push(t('tool.traceTokens', { n: Math.floor(tok / 1000) }));
+      parts.push(t('tool.traceTokens', kv('n', Math.floor(tok / 1000))));
     }
     const dur: number = this.totalDurationMs;
     if (dur > 0) {
-      parts.push(t('tool.traceDuration', { n: Math.floor(dur / 1000) }));
+      parts.push(t('tool.traceDuration', kv('n', Math.floor(dur / 1000))));
     }
     if (parts.length > 0) {
       label += '  ·  ' + parts.join('  ·  ');

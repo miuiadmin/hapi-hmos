@@ -15,7 +15,7 @@ export struct ImagePreviewSheet {
   @Param open: boolean = false;
   @Event onClose: () => void = (): void => {};
 
-  @Local private scale: number = 1;
+  @Local private zoomScale: number = 1;
   @Local private offsetX: number = 0;
   @Local private offsetY: number = 0;
   // 手势起点快照（非响应式，仅回调内读写）
@@ -24,7 +24,7 @@ export struct ImagePreviewSheet {
   private panStartY: number = 0;
 
   private resetTransform(): void {
-    this.scale = 1;
+    this.zoomScale = 1;
     this.offsetX = 0;
     this.offsetY = 0;
     this.pinchStartScale = 1;
@@ -40,25 +40,25 @@ export struct ImagePreviewSheet {
         .height('100%')
         .objectFit(ImageFit.Contain)
         .draggable(false)
-        .scale({ x: this.scale, y: this.scale, z: 1 })
+        .scale({ x: this.zoomScale, y: this.zoomScale, z: 1 })
         .translate({ x: this.offsetX, y: this.offsetY })
         .onClick((): void => { this.onClose(); })
         .gesture(
           GestureGroup(GestureMode.Parallel,
             // 双指捏合缩放：event.scale 相对手势起点；onActionStart 快照当前 scale 作乘子。
             PinchGesture({ fingers: 2 })
-              .onActionStart((e: GestureEvent): void => { this.pinchStartScale = this.scale; })
+              .onActionStart((e: GestureEvent): void => { this.pinchStartScale = this.zoomScale; })
               .onActionUpdate((e: GestureEvent): void => {
                 const next: number = this.pinchStartScale * e.scale;
                 if (next < MIN_SCALE) {
-                  this.scale = MIN_SCALE;
+                  this.zoomScale = MIN_SCALE;
                 } else if (next > MAX_SCALE) {
-                  this.scale = MAX_SCALE;
+                  this.zoomScale = MAX_SCALE;
                 } else {
-                  this.scale = next;
+                  this.zoomScale = next;
                 }
                 // 回到 ≤ 1x：强制居中（缩小到整图内无平移意义）
-                if (this.scale <= 1) {
+                if (this.zoomScale <= 1) {
                   this.offsetX = 0;
                   this.offsetY = 0;
                 }
@@ -67,7 +67,7 @@ export struct ImagePreviewSheet {
             PanGesture()
               .onActionStart((e: GestureEvent): void => { this.panStartX = this.offsetX; this.panStartY = this.offsetY; })
               .onActionUpdate((e: GestureEvent): void => {
-                if (this.scale > 1) {
+                if (this.zoomScale > 1) {
                   this.offsetX = this.panStartX + e.offsetX;
                   this.offsetY = this.panStartY + e.offsetY;
                 }
@@ -91,7 +91,6 @@ export struct ImagePreviewSheet {
         showClose: true,
         // 纯黑背板：backgroundColor 须配 backgroundBlurStyle.NONE（默认模糊会使纯色发灰）
         backgroundColor: Color.Black,
-        backgroundBlurStyle: BlurStyle.NONE,
         onDisappear: (): void => {
           this.resetTransform();   // 关闭后重置，下次打开回到 1x/居中
           this.onClose();          // 兜底：dragBar/showClose/下滑关闭时同步父状态

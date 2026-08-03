@@ -3,7 +3,7 @@ import { SyncEvent } from '../models/SyncEvent';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { AgentState } from '../chat/AgentState';
 import { getDeviceNetworkState, DeviceNetworkState } from '../services/DeviceNetworkService';
-import { resolveStatusBarState, VIBING_MESSAGES } from '../chat/StatusBarStatus';
+import { resolveStatusBarState, VIBING_MESSAGES, StatusBarState } from '../chat/StatusBarStatus';
 import {
   shouldShowReasoningChip,
   shouldShowFastChip,
@@ -15,7 +15,7 @@ import {
   normalizeReasoningEffort
 } from '../chat/StatusBarChips';
 import { permissionModeDisplayName, collaborationModeDisplayName, ThreadGoal } from '../models/Types';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // 顶部常驻细状态行：左 色点 + 文案；右 模式 chip 簇。对照上游 AssistantChat/StatusBar。
 // 左侧状态优先级：设备离线/SSE 未连(灰) → 权限待批(橙) → 思考中(蓝 + 随机 vibing 动词) → 在线(绿)。
@@ -52,7 +52,7 @@ export struct StatusBar {
   private reasoningLabel(): string {
     const token: string = normalizeReasoningEffort(this.modelReasoningEffort);
     if (token === 'default') { return t('statusBar.reasoningDefault'); }
-    return t('statusBar.reasoning', { effort: token });
+    return t('statusBar.reasoning', kv('effort', token));
   }
 
   // goal chip label（对照 StatusBar.tsx:215-218）：active→goal；budgetLimited→goal limited；
@@ -94,17 +94,20 @@ export struct StatusBar {
       .textOverflow({ overflow: TextOverflow.Ellipsis })
   }
 
+  // build 内禁局部 const（arkts 10905210）：状态合成下沉到 getter，build 内多次读 this.statusBarState。
+  private get statusBarState(): StatusBarState {
+    return resolveStatusBarState(this.net.online, this.sseState === 'open', this.hasPermissions, this.isThinking, this.vibingIndex);
+  }
+
   build() {
-    const sseOpen: boolean = this.sseState === 'open';
-    const state = resolveStatusBarState(this.net.online, sseOpen, this.hasPermissions, this.isThinking, this.vibingIndex);
     Row({ space: 6 }) {
       // 左：连接色点 + 文案（吃满剩余宽度，右侧 chip 不被挤压）
       Row({ space: 6 }) {
         Circle({ width: 8, height: 8 })
-          .fill(state.color)
-        Text(state.label)
+          .fill(this.statusBarState.color)
+        Text(this.statusBarState.label)
           .fontSize(fs(12))
-          .fontColor(state.color)
+          .fontColor(this.statusBarState.color)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
