@@ -27,3 +27,9 @@ __pycache__/
 # 参考源码：官方 hapi（AGPL）/ chatcube（MIT）的本地对照 clone，自带独立 .git、共 245M。
 #   非本项目源码，整体不入库（对照用，同步上游走 git pull）。
 参考源码/
+
+# 打包产物与锁
+/output/
+/.pack.lock
+/.pack_backup_*/
+下载服务器/scripts/config.sh

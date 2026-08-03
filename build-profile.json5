@@ -5,7 +5,9 @@
       {
         "name": "default",
         "signingConfig": "",
-        "targetSdkVersion": "6.1.0(23)",
+        // targetSdk 提到 24 对齐本机 DevEco bundled SDK（6.1.1/API24）；compatibleSdkVersion 留 23 不丢老设备。
+        //   原 6.1.0(23) 致 CLI hvigor 配置阶段报 00303168（本机仅装 API24 SDK，无 API23 组件）。
+        "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {

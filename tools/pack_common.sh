@@ -246,7 +246,7 @@ run_preflight() {
   while IFS= read -r abs_path; do
     rel_path="${abs_path#$PROJECT_ROOT/}"
     covered=0
-    for f in "${FILES_TO_PATCH[@]}" "${SCAN_WHITELIST[@]}"; do
+    for f in "${FILES_TO_PATCH[@]}" ${SCAN_WHITELIST[@]+"${SCAN_WHITELIST[@]}"}; do
       [[ "$f" == "$rel_path" ]] && covered=1 && break
     done
     # build-profile.json5 单独处理，不出现在预检警告里
