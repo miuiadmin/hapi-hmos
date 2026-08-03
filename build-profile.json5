@@ -7,6 +7,12 @@
         "signingConfig": "",
         // targetSdk 提到 24 对齐本机 DevEco bundled SDK（6.1.1/API24）；compatibleSdkVersion 留 23 不丢老设备。
         //   原 6.1.0(23) 致 CLI hvigor 配置阶段报 00303168（本机仅装 API24 SDK，无 API23 组件）。
+        //   CLI hvigorw 验编译可用（已 BUILD SUCCESSFUL），需在 shell 设：
+        //     DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk   ← 指向 default 的【父目录】，非 default 本身
+        //       （getLocalSdks 扫父目录、读 default/sdk-pkg.json 注册 api24；指到 default 或 ohsdk 都会 00303168）
+        //     JAVA_HOME=/Applications/DevEco-Studio.app/Contents/jbr/Contents/Home  ← PackageHap 阶段需 JDK（shell 无 java）
+        //     NODE_HOME=/Applications/DevEco-Studio.app/Contents/tools/node
+        //     hvigorw=/Applications/DevEco-Studio.app/Contents/tools/hvigor/bin/hvigorw
         "targetSdkVersion": "6.1.1(24)",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",

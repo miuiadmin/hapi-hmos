@@ -20,6 +20,8 @@ import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
 import { DeviceNetworkService } from '../services/DeviceNetworkService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
+import { SelfUpdateManager } from '../services/SelfUpdateManager';
+import { OtaController } from '../services/UpdateState';
 import { decodeJwtExpMs } from '../utils/JwtUtils';
 import { shouldResync } from '../chat/SyncResync';
 
@@ -86,6 +88,8 @@ export default class EntryAbility extends UIAbility {
     await DeviceNetworkService.init();
     // 生成图片磁盘缓存须在 loadContent 前初始化（扫目录重建索引），首屏命中即直读盘免 base64
     await getGeneratedImageCache().initialize(this.context);
+    // OTA 自更新：注入 ability context + 初始化独立 prefs（共存版守卫 / 检查 / 下载 / 安装均依赖；幂等）
+    SelfUpdateManager.getInstance().init(this.context);
     // 按登录态选首屏
     const pagePath: string = getConnectionService().isLoggedIn() ? 'pages/Index' : 'pages/LoginPage';
     windowStage.loadContent(pagePath, (err: BusinessError) => {
@@ -94,6 +98,9 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, TAG, '%{public}s', 'Loaded ' + pagePath);
+      // 冷启动静默检查更新（force=true 不节流；silent 不弹窗，发现新版只置「检查更新」行徽标；
+      //   fire-and-forget 不阻塞首屏；仅共存版 com.berry.hapi88 会真正发请求）
+      OtaController.checkForUpdates(true, true);
     });
   }
 
@@ -121,6 +128,8 @@ export default class EntryAbility extends UIAbility {
     if (jwt !== '' && expMs > 0 && expMs - Date.now() < 60_000) {
       this.refreshAndArm();
     }
+    // 回前台静默检查更新（force=false 走 2h 节流；silent 不弹窗；仅共存版会真正发请求）
+    OtaController.checkForUpdates(false, true);
     this.reportVisibility('visible');
   }
 

@@ -15,7 +15,7 @@ import { HapticService } from '../services/HapticService';
 import { VALID_TERMINAL_FONT_SIZES } from '../chat/TerminalFontSize';
 import { SessionListStatusMode } from '../chat/SessionListStatusMode';
 import { showToast } from '../utils/Toast';
-import { t, I18nService, LanguageChoice, getI18nState } from '../i18n/I18nService';
+import { t, kv, I18nService, LanguageChoice, getI18nState } from '../i18n/I18nService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { VOICE_LANGUAGES, VoiceLanguage, findLanguageByCode, getLanguageDisplayName } from '../chat/VoiceLanguages';
 import { VOICE_PRESETS, VoicePreset, getPresetDisplayName } from '../chat/VoiceVoices';
@@ -28,6 +28,8 @@ import {
   toCustomPreference
 } from '../chat/ChatSurfaceColors';
 import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
+import { OtaController, getUpdateState, UpdateState } from '../services/UpdateState';
+import { UpdateInfo } from '../services/SelfUpdateManager';
 
 // 设置页（NavDestination）—— 主题/字号/语言/输入 + 连接信息 + 关于 + 退出登录
 // UI 对照 chatcube 设置类页面（NavDestination + 分组信息行 + 危险操作按钮），V2 状态管理
@@ -51,6 +53,7 @@ struct SettingsPage {
   @Local surfaceSheetOpen: boolean = false;         // 气泡配色选择器 sheet 开关（bindSheet 双向）
   @Local surfaceSheetMode: 'tool' | 'user' = 'tool'; // 当前 sheet 内容：工具组背景 / 用户消息背景
   @Local customHex: string = '';                    // 自定义 hex 输入（sheet 内 TextInput 双向）
+  @Local otaEligible: boolean = false;              // 当前包是否支持 OTA 自更新（仅共存版 com.berry.hapi88 显示检查更新行）
 
   // 主题（读 @Trace isDark/mode 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -76,6 +79,38 @@ struct SettingsPage {
   // 终端字号（读 @Trace fontSize 建立刷新依赖；5 档 radio ✓ 高亮）
   private get terminalFontSize(): number {
     return TerminalFontSizeService.currentSize;
+  }
+
+  // —— OTA 自更新状态（读 getUpdateState() 的 @Trace 字段建立刷新依赖；弹窗阶段/进度/错误随下载回调即时重渲染）——
+  private get ota(): UpdateState { return getUpdateState(); }
+  private get otaVersionName(): string {
+    const i: UpdateInfo | null = this.ota.info;
+    return i !== null ? i.versionName : '';
+  }
+  // 弹窗标题：安装中=「拉起安装器」/ 下载中=「下载中 X%」/ 否则=「发现新版本 vX」
+  private get otaSheetTitle(): string {
+    if (this.ota.installing) { return t('ota.installing'); }
+    if (this.ota.phase === 'downloading') { return OtaController.downloadingText(this.ota.percent); }
+    return t('ota.newVersion', kv('version', this.otaVersionName));
+  }
+  // 「版本号 · 大小」（prompting 态横幅）
+  private get otaVersionMeta(): string {
+    const i: UpdateInfo | null = this.ota.info;
+    return i !== null ? `${i.versionName} · ${OtaController.formatSize(i.size)}` : '';
+  }
+  // 下载进度文本：「X% · 已下 / 总」
+  private get otaProgressText(): string {
+    const pct: string = `${this.ota.percent}%`;
+    const received: number = this.ota.received;
+    const total: number = this.ota.total;
+    if (total > 0) {
+      return `${pct} · ${OtaController.formatSize(received)} / ${OtaController.formatSize(total)}`;
+    }
+    return `${pct} · ${OtaController.formatSize(received)}`;
+  }
+  private get otaChangelog(): string[] {
+    const i: UpdateInfo | null = this.ota.info;
+    return i !== null ? i.changelog : [];
   }
 
   // 会话列表每组预览行数（读 @Trace limit；TextInput 双向绑定 localInput，onChange clamp 1–99）
@@ -209,6 +244,18 @@ struct SettingsPage {
     this.loadEnterToSend();
     this.langChoice = I18nService.currentChoice;
     this.loadVersionName();
+    // 共存版（com.berry.hapi88）才显示「检查更新」行；正式版无后缀 → 隐藏
+    this.otaEligible = OtaController.isEligible();
+  }
+
+  // OTA sheet 关闭（用户下滑/系统关闭）：下载中视为取消（静默收尾），否则仅关 sheet
+  private closeOtaSheet(): void {
+    const s: UpdateState = getUpdateState();
+    if (s.downloading) {
+      OtaController.cancelDownload();   // onCancel 回调会清 sheetOpen
+    } else {
+      s.sheetOpen = false;
+    }
   }
 
   private loadEnterToSend(): void {
@@ -315,6 +362,180 @@ struct SettingsPage {
       .fontColor(this.c.textTertiary)
       .width('100%')
       .padding({ left: 16, top: 22, bottom: 8 })
+  }
+
+  // OTA 全宽按钮（primary=主色填充白字；secondary=bg 底主色字）
+  @Builder
+  private OtaButton(label: string, primary: boolean, onTap: () => void) {
+    Button(label)
+      .width('100%')
+      .height(46)
+      .backgroundColor(primary ? this.c.primary : this.c.bg)
+      .fontColor(primary ? '#FFFFFFFF' : this.c.textPrimary)
+      .borderRadius(12)
+      .onClick(() => { onTap(); })
+  }
+
+  // 「检查更新」行（共存版才渲染）：checking 时显示 spinner，否则 ›；tap 触发手动检查
+  @Builder
+  private OtaCheckRow() {
+    Row() {
+      Text(t('settings.about.checkUpdate'))
+        .fontSize(fs(15))
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+      if (this.ota.checking) {
+        LoadingProgress().width(18).height(18).color(this.c.textTertiary)
+      } else {
+        if (this.ota.hasUpdate) {
+          Circle({ width: 7, height: 7 }).fill(this.c.error).margin({ right: 8 })
+        }
+        Text('›')
+          .fontSize(fs(16))
+          .fontColor(this.c.textTertiary)
+          .margin({ left: 6 })
+      }
+    }
+    .width('100%')
+    .height(54)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { OtaController.checkForUpdates(true, false); })
+  }
+
+  // OTA 更新弹窗 sheet（阶段驱动：prompting 展示日志 / downloading 进度条 / failed 重试 / installing 拉起中）
+  @Builder
+  private OtaSheet() {
+    Column() {
+      // 标题（随阶段变化）
+      Text(this.otaSheetTitle)
+        .fontSize(fs(17))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 24, bottom: 14 })
+
+      if (this.ota.installing) {
+        // 拉起安装器中
+        Row() {
+          LoadingProgress().width(24).height(24).color(this.c.primary)
+          Text(t('ota.installing'))
+            .fontSize(fs(14))
+            .fontColor(this.c.textSecondary)
+            .margin({ left: 10 })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 28 })
+        .alignItems(VerticalAlign.Center)
+      } else if (this.ota.phase === 'downloading') {
+        // 下载进度
+        Column() {
+          Progress({ value: this.ota.percent, total: 100, type: ProgressType.Linear })
+            .width('100%')
+            .color(this.c.primary)
+            .backgroundColor(this.c.border)
+          Text(this.otaProgressText)
+            .fontSize(fs(13))
+            .fontColor(this.c.textTertiary)
+            .width('100%')
+            .margin({ top: 8 })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 28 })
+        .alignItems(HorizontalAlign.Start)
+      } else if (this.ota.phase === 'failed') {
+        // 校验失败
+        Text(this.ota.error.length > 0 ? this.ota.error : t('ota.downloadFailed'))
+          .fontSize(fs(14))
+          .fontColor(this.c.error)
+          .width('100%')
+          .padding({ left: 20, right: 20, bottom: 28 })
+      } else {
+        // prompting：版本 + 大小 + 更新日志（可滚动）
+        Scroll() {
+          Column() {
+            Text(this.otaVersionMeta)
+              .fontSize(fs(14))
+              .fontColor(this.c.textSecondary)
+              .width('100%')
+            Text(t('ota.changelog'))
+              .fontSize(fs(13))
+              .fontColor(this.c.textTertiary)
+              .width('100%')
+              .margin({ top: 16, bottom: 8 })
+            if (this.otaChangelog.length === 0) {
+              Text('—')
+                .fontSize(fs(14))
+                .fontColor(this.c.textTertiary)
+            } else {
+              ForEach(this.otaChangelog, (item: string, idx: number) => {
+                Row() {
+                  Text('•')
+                    .fontSize(fs(13))
+                    .fontColor(this.c.textTertiary)
+                    .margin({ right: 8 })
+                  Text(item)
+                    .fontSize(fs(14))
+                    .fontColor(this.c.textSecondary)
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Top)
+                .margin({ bottom: 6 })
+              }, (item: string, idx: number) => `${idx}`)
+            }
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .align(Alignment.TopStart)
+        .padding({ left: 20, right: 20, bottom: 16 })
+      }
+
+      // 操作区（随阶段）
+      if (this.ota.installing) {
+        // 安装器接管中：无操作
+      } else if (this.ota.phase === 'downloading') {
+        this.OtaButton(t('ota.cancel'), false, (): void => { OtaController.cancelDownload(); })
+      } else if (this.ota.phase === 'failed') {
+        Row() {
+          Button(t('ota.retry'))
+            .layoutWeight(1)
+            .height(46)
+            .backgroundColor(this.c.primary)
+            .fontColor('#FFFFFFFF')
+            .borderRadius(12)
+            .onClick(() => { OtaController.retry(); })
+          Button(t('ota.close'))
+            .layoutWeight(1)
+            .height(46)
+            .margin({ left: 12 })
+            .backgroundColor(this.c.bg)
+            .fontColor(this.c.textPrimary)
+            .borderRadius(12)
+            .onClick(() => { this.closeOtaSheet(); })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 28 })
+      } else {
+        // prompting：立即更新（主）+ 跳过此版本（次）
+        Column() {
+          this.OtaButton(t('ota.updateNow'), true, (): void => { OtaController.startDownload(); })
+          Text(t('ota.skipVersion'))
+            .fontSize(fs(14))
+            .fontColor(this.c.textSecondary)
+            .margin({ top: 14 })
+            .onClick(() => { OtaController.skipVersion(); })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 28 })
+        .alignItems(HorizontalAlign.Center)
+      }
+    }
+    .width('100%')
+    .backgroundColor(this.c.bg)
   }
 
   // 信息行（标签 + 值，对照 chatcube 设置项 Row）
@@ -814,6 +1035,10 @@ struct SettingsPage {
         this.SectionHeader(t('settings.section.about'))
         Column() {
           this.InfoRow(t('settings.about.version'), this.versionName)
+          if (this.otaEligible) {
+            Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+            this.OtaCheckRow()
+          }
           Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
           this.InfoRow(t('settings.about.license'), t('settings.about.licenseValue'))
           Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
@@ -834,6 +1059,12 @@ struct SettingsPage {
         }
         .width('100%')
         .backgroundColor(this.c.bg)
+        .bindSheet(this.ota.sheetOpen!!, this.OtaSheet(), {
+          height: SheetSize.LARGE,
+          detents: [SheetSize.LARGE],
+          backgroundColor: this.c.bg,
+          onDisappear: () => { this.closeOtaSheet(); }
+        })
 
         // 退出登录（危险操作，线框红字）
         Button(this.isLoggingOut ? t('settings.loggingOut') : t('settings.logout'))

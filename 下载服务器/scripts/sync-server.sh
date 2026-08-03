@@ -4,8 +4,9 @@
 # 新架构(2026-08-03):下载站纯静态化(Caddy file_server),nodebook 退出下载站。
 #   上传 = rsync over ssh(经 ~/.ssh/config 的 SSH_TARGET 别名;本机默认 aws = ProxyCommand 经火山92 中继绕 GFW)。
 #   归档:<REMOTE_ROOT>/archive/<date>/<version>/{*.app, manifest.json, update.json}
-#   提升最新(根层原子,顺序 = 包 → symlink → update.json,保证客户端任何时刻读到的 url→包已就位):
-#       <REMOTE_ROOT>/<pkg>、<REMOTE_ROOT>/latest.app -> <pkg>、<REMOTE_ROOT>/update.json
+#   提升最新(根层原子,顺序 = 包 → symlink → manifest.json → update.json[commit point],
+#            保证客户端任何时刻读到的 url→包已就位):
+#       <REMOTE_ROOT>/<pkg>、<REMOTE_ROOT>/latest.app -> <pkg>、<REMOTE_ROOT>/manifest.json、<REMOTE_ROOT>/update.json
 #   清理:脚本侧 prune archive 留最近 KEEP_VERSIONS 个日期(根层最新永不删)。
 #
 # 全部 per-app 差异收敛进 config.sh;本脚本与另一项目(hapi-hmos)的 sync-server.sh 逐字节一致。
@@ -87,7 +88,7 @@ if ! rsync -rltDz --delete -e ssh "$DIST_DIR/" "$SSH_TARGET:$ARCHIVE/"; then
 fi
 echo "  ✓ 已归档: $ARCHIVE"
 
-# ── 2. 提升为最新(根层原子;顺序:包 → symlink → 清旧 .app → update.json)──
+# ── 2. 提升为最新(根层原子;顺序:包 → symlink → 清旧 .app → manifest.json → update.json[最后=commit])──
 if ! ssh "$SSH_TARGET" "set -e
   mkdir -p '$REMOTE_ROOT'
   cd '$REMOTE_ROOT'
@@ -95,9 +96,11 @@ if ! ssh "$SSH_TARGET" "set -e
   ln -sfn '$PKG' latest.app
   # 删根层旧版本 .app(保留当前 \$PKG;latest.app 是 symlink,被 -type f 排除不删)
   find . -maxdepth 1 -type f -name '*.app' ! -name '$PKG' -delete 2>/dev/null || true
+  cp '$ARCHIVE/manifest.json' manifest.json.new
+  mv -f manifest.json.new manifest.json
   cp '$ARCHIVE/update.json' update.json.new
   mv -f update.json.new update.json
-  echo '  ✓ 根层已提升: $PKG + latest.app + update.json'
+  echo '  ✓ 根层已提升: $PKG + latest.app + manifest.json + update.json'
 "; then
   err "提升最新失败"
   exit 1

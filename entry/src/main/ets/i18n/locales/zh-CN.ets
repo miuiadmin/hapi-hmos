@@ -73,6 +73,13 @@ export const zhCN: Record<string, string> = {
   'settings.about.licenseValue': 'AGPL-3.0',
   'settings.about.sourceCode': '源代码',
   'settings.about.sourceCodeValue': 'GitHub',
+  // —— 应用内自更新（OTA；仅共存版 com.berry.hapi88 显示检查更新行）——
+  'settings.about.checkUpdate': '检查更新',
+  'settings.about.checking': '检查中…',
+  'settings.about.upToDate': '已是最新版本',
+  'settings.about.notEligible': '当前版本不支持应用内更新',
+  'settings.about.noNetwork': '无网络连接',
+  'settings.about.checkFailed': '检查更新失败',
 
   // —— 登录页 ——
   'login.subtitle': '连接到你的 Hub',
@@ -635,5 +642,25 @@ export const zhCN: Record<string, string> = {
   'toast.ready.body': '{agent} 正在 {session} 等待你的输入',
   'toast.permission.title': '权限请求',
   'toast.task.completed': '任务完成',
-  'toast.task.failed': '任务失败'
+  'toast.task.failed': '任务失败',
+
+  // —— OTA 更新弹窗文案（OtaController / SettingsPage 用；{version}/{percent} 由 kv 插值）——
+  'ota.newVersion': '发现新版本 {version}',
+  'ota.changelog': '更新日志',
+  'ota.updateNow': '立即更新',
+  'ota.skipVersion': '跳过此版本',
+  'ota.downloading': '下载中 {percent}%',
+  'ota.cancel': '取消',
+  'ota.downloadFailed': '下载失败',
+  'ota.retry': '重试',
+  'ota.close': '关闭',
+  'ota.installFailed': '无法拉起安装器，请稍后重试',
+  'ota.installing': '下载完成，正在拉起安装器…',
+
+  // —— OTA 通知栏文案（SelfUpdateManager 用；纯逻辑侧 Translate.t）——
+  'ota.notif.title': 'Hapi 更新',
+  'ota.notif.downloading': '正在下载新版本…',
+  'ota.notif.fileName': '新版本下载中',
+  'ota.notif.complete': '新版本下载完成，点击安装',
+  'ota.notif.failed': '下载失败'
 };

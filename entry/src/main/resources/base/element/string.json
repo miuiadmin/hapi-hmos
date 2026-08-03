@@ -27,6 +27,10 @@
     {
       "name": "permission_network_info_reason",
       "value": "检测设备网络在线状态，离线时提示检查网络连接"
+    },
+    {
+      "name": "permission_background_running_reason",
+      "value": "下载应用更新包时保持后台运行，切后台不中断下载"
     }
   ]
 }

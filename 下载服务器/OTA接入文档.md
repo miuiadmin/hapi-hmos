@@ -41,7 +41,7 @@ SelfUpdateManager                          Cloudflare 橙云(加速+隐藏源站
 │   ├── update.json                          ← 当前最新版的 OTA 清单(客户端读这个)
 │   ├── latest.app -> berry-1.3.156-88-release.app   ← 符号链接,版本无关的稳定下载 URL
 │   ├── berry-1.3.156-88-release.app        ← 当前最新包(版本特定文件名,可长缓存)
-│   ├── manifest.json                        ← 完整构建元数据(归档留档,browse 可见)
+│   ├── manifest.json                        ← 完整构建元数据(每次发版同步,browse 可见当前版)
 │   └── archive/<日期>/<版本>/               ← 历史版本(发版即归档,留最近 N 个日期)
 │       └── {*.app, manifest.json, update.json}
 └── hapi/
@@ -134,7 +134,7 @@ SelfUpdateManager                          Cloudflare 橙云(加速+隐藏源站
 - **多 host 容错**:可信主机列表逐个试,单点失败自动换下一个(Berry:`SELF_UPDATE_HOSTS`,berry.flyme.chat 永久首位)。
 - **url 锚定安全**:校验 `url` 必须 startsWith 列表内可信 host(防 update.json 被篡改指向恶意域)。
 
-> **Hapi** 的 OTA 客户端尚未实现;实现时按本契约走,直接用规范路径 `/hapi/update.json`(无需兼容桥,因为是全新接入)。
+> **Hapi** 的 OTA 客户端已实现(`entry/src/main/ets/services/SelfUpdateManager.ets`),按本契约走,直接用规范路径 `/hapi/update.json`(全新接入无需兼容桥)。
 
 ---
 
@@ -159,7 +159,7 @@ curl -sk https://berry.flyme.chat:8443/<app>/update.json | head
 
 ### sync 原子提升顺序(保证客户端任何时刻读到的 url→包已就位)
 1. rsync 整个 dist 目录 → `archive/<日期>/<版本>/`(归档历史)
-2. 根层原子提升(**顺序关键**):`cp 包` → `ln -sfn latest.app` → `删旧 *.app` → `mv update.json`(最后换清单 = commit point)
+2. 根层原子提升(**顺序关键**):`cp 包` → `ln -sfn latest.app` → `删旧 *.app` → `mv manifest.json` → `mv update.json`(最后换清单 = commit point)
 3. prune:`archive/` 留最近 `KEEP_VERSIONS` 个日期(根层最新永不删)
 
 > 打包内部机制(pack.sh / AboutPage 字节恢复 / manifest 字段来源 / BSD sed versionCode 坑)详见 [docs/打包流程.md](docs/打包流程.md)。

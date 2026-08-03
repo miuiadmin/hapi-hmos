@@ -72,6 +72,13 @@ export const en: Record<string, string> = {
   'settings.about.licenseValue': 'AGPL-3.0',
   'settings.about.sourceCode': 'Source code',
   'settings.about.sourceCodeValue': 'GitHub',
+  // —— In-app self-update (OTA; the check-for-updates row shows only for the coexist build com.berry.hapi88) ——
+  'settings.about.checkUpdate': 'Check for updates',
+  'settings.about.checking': 'Checking…',
+  'settings.about.upToDate': 'Already up to date',
+  'settings.about.notEligible': 'In-app updates are not available for this build',
+  'settings.about.noNetwork': 'No network connection',
+  'settings.about.checkFailed': 'Failed to check for updates',
 
   // —— Login ——
   'login.subtitle': 'Connect to your Hub',
@@ -634,5 +641,25 @@ export const en: Record<string, string> = {
   'toast.ready.body': '{agent} is waiting in {session}',
   'toast.permission.title': 'Permission Request',
   'toast.task.completed': 'Task completed',
-  'toast.task.failed': 'Task failed'
+  'toast.task.failed': 'Task failed',
+
+  // —— OTA update sheet strings (OtaController / SettingsPage; {version}/{percent} interpolated via kv) ——
+  'ota.newVersion': 'New version {version} available',
+  'ota.changelog': 'What\'s new',
+  'ota.updateNow': 'Update now',
+  'ota.skipVersion': 'Skip this version',
+  'ota.downloading': 'Downloading {percent}%',
+  'ota.cancel': 'Cancel',
+  'ota.downloadFailed': 'Download failed',
+  'ota.retry': 'Retry',
+  'ota.close': 'Close',
+  'ota.installFailed': 'Could not launch the installer. Please try again later.',
+  'ota.installing': 'Download complete, launching installer…',
+
+  // —— OTA notification strings (SelfUpdateManager; pure-logic Translate.t) ——
+  'ota.notif.title': 'Hapi update',
+  'ota.notif.downloading': 'Downloading new version…',
+  'ota.notif.fileName': 'New version downloading',
+  'ota.notif.complete': 'Download complete. Tap to install.',
+  'ota.notif.failed': 'Download failed'
 };
