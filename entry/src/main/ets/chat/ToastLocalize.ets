@@ -8,7 +8,7 @@
 //   忠实取舍：Ready body 多次出现分隔符时，上游贪婪正则取最后；端口 indexOf 取首个（会话名含该子串的极端场景
 //   略异，服务端输出单空格常态下一致）。
 
-import { t } from '../i18n/Translate';
+import { t, kv2 } from '../i18n/Translate';
 
 export type ToastKind = 'ready' | 'permission' | 'taskCompleted' | 'taskFailed' | 'unknown';
 
@@ -62,7 +62,7 @@ export function localizeToast(title: string, body: string): ToastText {
     out.title = t('toast.ready.title');
     const parsed: ReadyBody | null = parseReadyBody(body);
     out.body = parsed !== null
-      ? t('toast.ready.body', { agent: parsed.agent, session: parsed.session })
+      ? t('toast.ready.body', kv2('agent', parsed.agent, 'session', parsed.session))
       : normalizedBody;
     return out;
   }

@@ -9,7 +9,7 @@
 
 import { ChatBlock, ChatToolCall, ToolGroupCounts, ToolGroupSummary } from './ChatBlock';
 import { commandStr } from './ToolInputUtils';
-import { t } from '../i18n/Translate';
+import { t, kv } from '../i18n/Translate';
 
 export type GroupedSummaryIntent =
   | 'inspect-files'
@@ -166,22 +166,22 @@ export function formatGroupedHeaderSubtitle(summary: ToolGroupSummary): string {
   const parts: string[] = [];
   const c: ToolGroupCounts = summary.counts;
   if (c.command > 0) {
-    parts.push(t('toolGroup.summary.command', { n: c.command }));
+    parts.push(t('toolGroup.summary.command', kv('n', c.command)));
   }
   if (c.search > 0) {
-    parts.push(t('toolGroup.summary.search', { n: c.search }));
+    parts.push(t('toolGroup.summary.search', kv('n', c.search)));
   }
   if (c.read > 0) {
-    parts.push(t('toolGroup.summary.read', { n: c.read }));
+    parts.push(t('toolGroup.summary.read', kv('n', c.read)));
   }
   if (c.mutation > 0) {
-    parts.push(t('toolGroup.summary.mutation', { n: c.mutation }));
+    parts.push(t('toolGroup.summary.mutation', kv('n', c.mutation)));
   }
   if (c.web > 0) {
-    parts.push(t('toolGroup.summary.web', { n: c.web }));
+    parts.push(t('toolGroup.summary.web', kv('n', c.web)));
   }
   if (c.other > 0 && parts.length > 0) {
-    parts.push(t('toolGroup.summary.other', { n: c.other }));
+    parts.push(t('toolGroup.summary.other', kv('n', c.other)));
   }
   return parts.length > 0 ? parts.join(' · ') : '';
 }

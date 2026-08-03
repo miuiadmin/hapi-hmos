@@ -4,11 +4,11 @@
 // emoji 替代上游 SVG 图标（ArkUI 原生渲染，无需资源文件）。
 
 import { ChatToolCall } from './ChatBlock';
-import { getInputStrAny, truncateStr, basenameOfPath, commandStr, codexPatchFiles, extractStdoutStderr } from './ToolInputUtils';
+import { getInputStrAny, truncateStr, basenameOfPath, commandStr, codexPatchFiles, extractStdoutStderr, StdoutStderr } from './ToolInputUtils';
 import { extractUpdatePlanChecklist } from './Checklist';
 import { parseUnifiedDiff, CodexDiffParsed } from './CodexDiff';
 import { getCodexAgentSummary, getCodexAgentActivity, getCodexAgentReasoningEffortLabel, getCodexAgentPrompt, getCodexAgentType, getCodexAgentTargets, summarizeCodexAgentResult } from './CodexAgents';
-import { t } from '../i18n/Translate';
+import { t, kv, kv2 } from '../i18n/Translate';
 
 export class ToolPresentation {
   icon: string = '🔧';
@@ -131,7 +131,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       if (file === '') {
         p.title = t('pres.edit');
       } else if (count > 1) {
-        p.title = t('pres.multiEdit', { file: file, count: count });
+        p.title = t('pres.multiEdit', kv2('file', file, 'count', count));
       } else {
         p.title = file;
       }
@@ -144,7 +144,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       const content: string = getInputStrAny(input, ['content', 'text']);
       if (content !== '') {
         const lines: number = content.split('\n').length;
-        p.subtitle = lines > 1 ? t('pres.lines', { n: lines }) : t('pres.chars', { n: content.length });
+        p.subtitle = lines > 1 ? t('pres.lines', kv('n', lines)) : t('pres.chars', kv('n', content.length));
       }
       p.minimal = true;
       return p;
@@ -191,14 +191,14 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       p.icon = '💡';
       p.title = t('pres.todoList');
       const count: number = inputArrayLength(input, 'todos');
-      p.subtitle = count > 0 ? t('pres.items', { n: count }) : '';
+      p.subtitle = count > 0 ? t('pres.items', kv('n', count)) : '';
       p.minimal = count === 0;
       return p;
     }
     case 'update_plan': {
       p.icon = '📋';
       const steps = extractUpdatePlanChecklist(input, tool.result);
-      p.title = steps.length > 0 ? t('pres.planSteps', { n: steps.length }) : t('pres.plan');
+      p.title = steps.length > 0 ? t('pres.planSteps', kv('n', steps.length)) : t('pres.plan');
       p.minimal = steps.length === 0;   // 有步骤 → 内联清单（showInline）
       return p;
     }
@@ -232,7 +232,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
     case 'Skill': {
       p.icon = '🧩';
       const skill: string = getInputStrAny(input, ['skill']);
-      p.title = skill !== '' ? t('pres.skill', { name: skill }) : t('pres.skillLabel');
+      p.title = skill !== '' ? t('pres.skill', kv('name', skill)) : t('pres.skillLabel');
       p.minimal = true;
       return p;
     }
@@ -241,7 +241,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       //   subtitle=description、minimal=false（卡片体展示）。
       p.icon = '👥';
       const teamName: string = getInputStrAny(input, ['team_name']);
-      p.title = teamName !== '' ? t('pres.team', { name: teamName }) : t('pres.createTeam');
+      p.title = teamName !== '' ? t('pres.team', kv('name', teamName)) : t('pres.createTeam');
       p.subtitle = getInputStrAny(input, ['description']);
       p.minimal = false;
       return p;
@@ -269,13 +269,13 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       const firstKey: string = name === 'request_user_input' ? 'id' : 'header';
       const firstField: string = firstQuestionField(questions, firstKey);
       if (count > 1) {
-        p.title = t('pres.questionCount', { n: count });
+        p.title = t('pres.questionCount', kv('n', count));
       } else {
         p.title = firstField !== '' ? firstField : t('pres.question');
       }
       const question: string = firstQuestionField(questions, 'question');
       if (count > 1 && question !== '') {
-        p.subtitle = truncateStr(question, 100) + t('pres.moreCount', { n: count - 1 });
+        p.subtitle = truncateStr(question, 100) + t('pres.moreCount', kv('n', count - 1));
       } else if (question !== '') {
         p.subtitle = truncateStr(question, 120);
       }
@@ -318,7 +318,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       if (files.length === 1) {
         p.subtitle = basenameOfPath(files[0]);
       } else if (files.length > 1) {
-        p.subtitle = t('pres.patchFiles', { name: basenameOfPath(files[0]), n: files.length - 1 });
+        p.subtitle = t('pres.patchFiles', kv2('name', basenameOfPath(files[0]), 'n', files.length - 1));
       }
       p.minimal = true;
       return p;
@@ -327,7 +327,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       // 对照上游 knownTools.tsx:178-186：icon ❓、title tool?「权限：tool」:「权限请求」、subtitle message??command。
       p.icon = '❓';
       const toolName: string = getInputStrAny(input, ['tool']);
-      p.title = toolName !== '' ? t('pres.permission', { tool: toolName }) : t('pres.permissionRequest');
+      p.title = toolName !== '' ? t('pres.permission', kv('tool', toolName)) : t('pres.permissionRequest');
       p.subtitle = getInputStrAny(input, ['message', 'command']);
       p.minimal = true;
       return p;
@@ -348,11 +348,11 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       if (msgType === 'broadcast') {
         p.title = t('pres.broadcast');
       } else if (msgType === 'shutdown_request') {
-        p.title = t('pres.shutdown', { recipient: recipient !== '' ? recipient : t('pres.agent') });
+        p.title = t('pres.shutdown', kv('recipient', recipient !== '' ? recipient : t('pres.agent')));
       } else if (msgType === 'shutdown_response') {
         p.title = t('pres.shutdownResponse');
       } else if (recipient !== '') {
-        p.title = t('pres.message', { recipient });
+        p.title = t('pres.message', kv('recipient', recipient));
       } else {
         p.title = t('pres.sendMessage');
       }
@@ -377,7 +377,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       const nbPath: string = getInputStrAny(input, ['notebook_path']);
       p.title = nbPath !== '' ? nbPath : t('pres.editNotebook');
       const editMode: string = getInputStrAny(input, ['edit_mode']);
-      p.subtitle = editMode !== '' ? t('pres.editMode', { mode: editMode }) : '';
+      p.subtitle = editMode !== '' ? t('pres.editMode', kv('mode', editMode)) : '';
       p.minimal = false;
       return p;
     }
@@ -387,7 +387,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       //   ⚠️ result 摘要上游硬编码 'wait_agent'（CodexAgent 无独立 result 解析，复用 wait_agent 摘要器），忠实保留。
       p.icon = '🚀';
       const summary: string = getCodexAgentSummary(input);
-      p.title = summary !== '' ? t('pres.agentSummary', { summary: summary }) : t('pres.agent');
+      p.title = summary !== '' ? t('pres.agentSummary', kv('summary', summary)) : t('pres.agent');
       const activity: string = getCodexAgentActivity(input);
       const resultSummary: string = summarizeCodexAgentResult('wait_agent', tool.result);
       const prompt: string = getCodexAgentPrompt(input);
@@ -407,12 +407,12 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       //   subtitle summary??(type?{type} agent:Background agent)。
       p.icon = '🚀';
       const agentType: string = getCodexAgentType(input);
-      p.title = agentType !== '' ? t('pres.spawnAgentType', { type: agentType }) : t('pres.spawnAgent');
+      p.title = agentType !== '' ? t('pres.spawnAgentType', kv('type', agentType)) : t('pres.spawnAgent');
       const summary: string = summarizeCodexAgentResult('spawn_agent', tool.result);
       if (summary !== '') {
         p.subtitle = summary;
       } else {
-        p.subtitle = agentType !== '' ? t('pres.typeAgent', { type: agentType }) : t('pres.backgroundAgent');
+        p.subtitle = agentType !== '' ? t('pres.typeAgent', kv('type', agentType)) : t('pres.backgroundAgent');
       }
       p.minimal = false;
       return p;
@@ -440,7 +440,7 @@ export function getToolPresentation(tool: ChatToolCall): ToolPresentation {
       //   subtitle summary??targets.join??null。
       p.icon = '🚀';
       const targets: string[] = getCodexAgentTargets(input);
-      p.title = targets.length > 1 ? t('pres.waitForNAgents', { n: targets.length }) : t('pres.waitForAgent');
+      p.title = targets.length > 1 ? t('pres.waitForNAgents', kv('n', targets.length)) : t('pres.waitForAgent');
       const summary: string = summarizeCodexAgentResult('wait_agent', tool.result);
       if (summary !== '') {
         p.subtitle = summary;
@@ -551,7 +551,7 @@ function parsedCmdIsSingle(input: Record<string, Object> | null): boolean {
 
 // CodexBash minimal：stdout 与 stderr 均 trim 空 → true（有输出 → 内联展示）
 function bashOutputEmpty(result: Object | null): boolean {
-  const stdio: { stdout: string; stderr: string } | null = extractStdoutStderr(result);
+  const stdio: StdoutStderr | null = extractStdoutStderr(result);
   if (stdio === null) {
     return true;
   }

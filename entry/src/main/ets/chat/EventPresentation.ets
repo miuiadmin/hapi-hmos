@@ -13,7 +13,7 @@
 
 import { AgentEvent } from '../models/Types';
 import { formatClock, formatDateDivider } from '../utils/DateFormatUtils';
-import { t } from '../i18n/Translate';
+import { t, kv, kv2, kv3 } from '../i18n/Translate';
 
 export class EventPresentation {
   icon: string = '';   // '' = 无图标（上游 null；居中灰条不显图标）
@@ -88,7 +88,7 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
       p.text = t('event.apiErrorMaxRetries');
     } else if (event.maxRetries > 0) {
       p.icon = '⏳';
-      p.text = t('event.apiErrorRetrying', { n: event.retryAttempt, m: event.maxRetries });
+      p.text = t('event.apiErrorRetrying', kv2('n', event.retryAttempt, 'm', event.maxRetries));
     } else if (event.retryAttempt > 0) {
       p.icon = '⏳';
       p.text = t('event.apiErrorRetryingSimple');
@@ -104,7 +104,7 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     const saved: number = event.tokensSaved;
     const savedStr: string = saved >= 1000 ? `${Math.round(saved / 1000)}K` : `${saved}`;
     p.icon = '📦';
-    p.text = t('event.contextCompactedSaved', { saved: savedStr });
+    p.text = t('event.contextCompactedSaved', kv('saved', savedStr));
     return p;
   }
 
@@ -119,9 +119,9 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     const suffix: string = limitTypeSuffix(event.limitType);
     p.icon = '⚠️';
     if (event.endsAt > 0) {
-      p.text = t('event.usageLimitWarning', { pct: pct, suffix: suffix, resets: formatResetTime(event.endsAt) });
+      p.text = t('event.usageLimitWarning', kv3('pct', pct, 'suffix', suffix, 'resets', formatResetTime(event.endsAt)));
     } else {
-      p.text = t('event.usageLimitWarningNoReset', { pct: pct, suffix: suffix });
+      p.text = t('event.usageLimitWarningNoReset', kv2('pct', pct, 'suffix', suffix));
     }
     return p;
   }
@@ -130,9 +130,9 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     const suffix: string = limitTypeSuffix(event.limitType);
     p.icon = '⏳';
     if (event.endsAt > 0) {
-      p.text = t('event.usageLimitReached', { suffix: suffix, time: formatUnixTimestamp(event.endsAt) });
+      p.text = t('event.usageLimitReached', kv2('suffix', suffix, 'time', formatUnixTimestamp(event.endsAt)));
     } else {
-      p.text = t('event.usageLimitReachedNoTime', { suffix: suffix });
+      p.text = t('event.usageLimitReachedNoTime', kv('suffix', suffix));
     }
     return p;
   }

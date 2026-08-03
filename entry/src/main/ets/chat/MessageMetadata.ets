@@ -6,7 +6,7 @@
 //
 // import 仅经纯层：i18n/Translate（无 @kit）、models/Message（无 @kit，验过）、utils/DateFormatUtils（无 @kit）。
 
-import { t } from '../i18n/Translate';
+import { t, kv, kv3 } from '../i18n/Translate';
 import { UsageData, formatTokenCount } from '../models/Message';
 import { formatClockSeconds } from '../utils/DateFormatUtils';
 
@@ -38,27 +38,27 @@ export function buildMessageMetadataLabels(invokedAt: number, durationMs: number
   const labels: string[] = [];
 
   if (invokedAt > 0) {
-    labels.push(t('meta.invoke', { time: formatClockSeconds(invokedAt) }));
+    labels.push(t('meta.invoke', kv('time', formatClockSeconds(invokedAt))));
   }
 
   if (durationMs >= 0) {
-    labels.push(t('meta.duration', { sec: formatDurationSeconds(durationMs) }));
+    labels.push(t('meta.duration', kv('sec', formatDurationSeconds(durationMs))));
   }
 
   if (model !== '') {
-    labels.push(t('meta.model', { model }));
+    labels.push(t('meta.model', kv('model', model)));
   }
 
   if (usage !== null) {
     if (isNotableTier(usage.serviceTier)) {
-      labels.push(t('meta.tier', { tier: usage.serviceTier }));
+      labels.push(t('meta.tier', kv('tier', usage.serviceTier)));
     }
     const total: number = usage.inputTokens + usage.outputTokens;
-    labels.push(t('meta.usage', {
-      total: formatTokenCount(total),
-      input: formatTokenCount(usage.inputTokens),
-      output: formatTokenCount(usage.outputTokens)
-    }));
+    labels.push(t('meta.usage', kv3(
+      'total', formatTokenCount(total),
+      'input', formatTokenCount(usage.inputTokens),
+      'output', formatTokenCount(usage.outputTokens)
+    )));
   }
 
   return labels;

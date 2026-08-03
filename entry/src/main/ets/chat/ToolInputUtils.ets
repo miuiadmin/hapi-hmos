@@ -45,7 +45,13 @@ export function truncateStr(s: string, max: number): string {
 const TOOL_USE_ERROR_OPEN: string = '<tool_use_error>';
 const TOOL_USE_ERROR_CLOSE: string = '</tool_use_error>';
 
-export function parseToolUseError(message: string): { isToolUseError: boolean; errorMessage: string | null } {
+// parseToolUseError 返回（具名 interface 替 inline 对象类型，arkts-no-obj-literals-as-types）
+export interface ToolUseErrorParse {
+  isToolUseError: boolean;
+  errorMessage: string | null;
+}
+
+export function parseToolUseError(message: string): ToolUseErrorParse {
   const openIdx: number = message.indexOf(TOOL_USE_ERROR_OPEN);
   if (openIdx < 0) {
     return { isToolUseError: false, errorMessage: null };
@@ -93,7 +99,7 @@ function extractTextDeep(result: Object | null | undefined, depth: number): stri
     return null;
   }
   if (typeof result === 'string') {
-    const tue: { isToolUseError: boolean; errorMessage: string | null } = parseToolUseError(result);
+    const tue: ToolUseErrorParse = parseToolUseError(result);
     return tue.isToolUseError ? (tue.errorMessage ?? '') : result;
   }
   if (Array.isArray(result)) {
@@ -187,8 +193,14 @@ export function extractResultText(content: Object | null): string {
   return extractTextDeep(content, 0) ?? '';
 }
 
+// Bash 结果 stdout/stderr 对（具名 interface 替 inline 对象类型，arkts-no-obj-literals-as-types）
+export interface StdoutStderr {
+  stdout: string;
+  stderr: string;
+}
+
 // Bash 结果：从对象取 {stdout, stderr}（含 output 嵌套），任一非空即返回；否则 null
-export function extractStdoutStderr(result: Object | null): { stdout: string; stderr: string } | null {
+export function extractStdoutStderr(result: Object | null): StdoutStderr | null {
   if (result === null || result === undefined || typeof result !== 'object' || Array.isArray(result)) {
     return null;
   }

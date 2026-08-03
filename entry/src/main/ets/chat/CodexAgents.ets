@@ -5,7 +5,7 @@
 // '' 哨兵表 null；type-guard→裸 boolean + cast；Object.entries→Object.keys；全部正则→手写扫描器（ArkTS 严格）。
 
 import { getInputStrAny, truncateStr } from './ToolInputUtils';
-import { t } from '../i18n/Translate';
+import { t, kv } from '../i18n/Translate';
 
 // ===== 类型（替 TS type；'' 哨兵表 null）=====
 
@@ -610,7 +610,7 @@ export function summarizeCodexAgentResult(toolName: string, result: Object | nul
     const label: string = (parsed.nickname !== '' && parsed.agentId !== '')
       ? `${parsed.nickname} (${parsed.agentId})`
       : firstNonEmpty(parsed.nickname, parsed.agentId);
-    return label !== '' ? t('agent.launched', { label: label }) : t('agent.launchedShort');
+    return label !== '' ? t('agent.launched', kv('label', label)) : t('agent.launchedShort');
   }
   if (toolName === 'wait_agent') {
     const parsed: CodexWaitAgentResult | null = parseCodexWaitAgentResult(result);
@@ -631,10 +631,10 @@ export function summarizeCodexAgentResult(toolName: string, result: Object | nul
     }
     const parts: string[] = [];
     if (completed > 0) {
-      parts.push(t('agent.nCompleted', { n: completed }));
+      parts.push(t('agent.nCompleted', kv('n', completed)));
     }
     if (failed > 0) {
-      parts.push(t('agent.nNonCompleted', { n: failed }));
+      parts.push(t('agent.nNonCompleted', kv('n', failed)));
     }
     if (parsed.timedOut) {
       parts.push(t('agent.timedOutSuffix'));
@@ -646,7 +646,7 @@ export function summarizeCodexAgentResult(toolName: string, result: Object | nul
     if (parsed === null) {
       return '';
     }
-    return t('agent.closedState', { state: parsed.state });
+    return t('agent.closedState', kv('state', parsed.state));
   }
   return '';
 }

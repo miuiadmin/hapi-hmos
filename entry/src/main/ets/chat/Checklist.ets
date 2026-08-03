@@ -19,7 +19,7 @@ function normalizeChecklistStatus(value: Object): ChecklistStatus {
   return 'pending';
 }
 
-function isNonArrayObject(v: Object): boolean {
+function isNonArrayObject(v: Object | null): boolean {
   return v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v);
 }
 
