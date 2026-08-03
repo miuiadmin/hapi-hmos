@@ -27,6 +27,9 @@ export struct SessionActionMenu {
   @Param open: boolean = false;
   // 是否在面板顶部渲染「文件 / 终端」导航行（仅对话页 ⋯ 传 true；列表长按默认 false 不显）
   @Param showNavigation: boolean = false;
+  // 对话页顶栏瘦身下沉：导出整段对话 / 打开对话大纲（仅 ChatPage 传 true）
+  @Param showExport: boolean = false;
+  @Param showOutline: boolean = false;
 
   // 成功回调（父决定后续动作）
   @Event onRenamed: (newName: string) => void = (newName: string) => {};
@@ -36,6 +39,9 @@ export struct SessionActionMenu {
   @Event onOpenFiles: () => void = () => {};
   @Event onOpenTerminal: () => void = () => {};
   @Event onOpenVoice: () => void = () => {};
+  // 顶栏下沉回调（仅 showExport/showOutline=true 时触发）
+  @Event onExport: () => void = () => {};
+  @Event onOutline: () => void = () => {};
   // 动作面板关闭回写（滑掉/蒙层/选了重命名/归档/删除）
   @Event onClose: () => void = () => {};
 
@@ -245,6 +251,32 @@ export struct SessionActionMenu {
         .alignItems(VerticalAlign.Center)
         .opacity(this.active ? 1 : 0.5)
         .onClick(() => { if (this.active) { this.onClose(); this.onOpenVoice(); } })
+      }
+
+      // 顶栏瘦身下沉：导出整段对话（仅对话页 showExport）
+      if (this.showExport) {
+        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+        Row() {
+          Text(t('chat.exportTitle')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onClose(); this.onExport(); })
+      }
+
+      // 对话大纲（仅对话页 showOutline）
+      if (this.showOutline) {
+        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+        Row() {
+          Text(t('outline.title')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 20, right: 20 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onClose(); this.onOutline(); })
       }
 
       Row() {

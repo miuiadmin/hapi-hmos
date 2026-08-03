@@ -258,7 +258,21 @@ struct ChatPage {
     this.recomputeBlocks();
   }
 
+  // recomputeBlocks 节流：流式 SSE 高频 delta 合并——首次立即算（乐观消息即时显），
+  //   80ms 内后续调用合并为末次兜底（messages 已最新，不丢最终态）。解「发消息后卡死」。
+  private blocksRecomputeTimer: number = -1;
   private recomputeBlocks(): void {
+    this.doRecomputeBlocks();                       // 首次立即算
+    if (this.blocksRecomputeTimer !== -1) {
+      clearTimeout(this.blocksRecomputeTimer);
+    }
+    this.blocksRecomputeTimer = setTimeout((): void => {
+      this.blocksRecomputeTimer = -1;
+      this.doRecomputeBlocks();                     // 末次兜底（合并流式 delta）
+    }, 80);
+  }
+
+  private doRecomputeBlocks(): void {
     // 排队消息（isQueued：已发未被 CLI 消费，含即时排队 + 定时）不进 thread——对照 web SessionChat 过滤
     //   isQueuedForInvocation 行，仅由 QueuedMessagesBar 承载。thread 仅留已生效消息 + 失败行（可重发）。
     const visible: ChatMessage[] = this.messages.filter((m: ChatMessage): boolean => !m.isQueued);
@@ -385,13 +399,13 @@ struct ChatPage {
   private get threadGoal(): ThreadGoal | null { return getLatestThreadGoal(this.messages); }
 
   // 标题栏副标题：agent 名 + model 显示名 + worktree 分支（对照上游 SessionHeader 副标题多 span：flavor/model/worktree）。
-  //   鸿蒙简化为单行（上游 flex-wrap 多 span），长则省略号截断。flavor 未播种（''）→ ''（无副标题行）。
+  //   鸿蒙简化为单行（上游 flex-wrap 多 span），长则省略号截断。flavor/model/worktree 任一可用即显（不再因 flavor='' 整体隐藏）。
   private get chatSubtitle(): string {
-    if (this.flavor === '') { return ''; }
-    const agent: string = agentDisplayName(this.flavor);
-    const model: string = modelDisplayName(this.flavor, this.model);
-    let s: string = agent;
-    if (model !== '') { s = `${s} · ${model}`; }
+    // flavor/model/worktree 任一可用即显（解除原 flavor==='' 整体隐藏门控）。
+    // model 始终显：modelDisplayName 对 '' / 'auto' 返回「默认」，与会话配置面板一致——避免模型名不显示。
+    const agent: string = this.flavor !== '' ? agentDisplayName(this.flavor) : '';
+    const model: string = modelDisplayName(this.flavor, this.model);   // 恒非空
+    let s: string = agent !== '' ? `${agent} · ${model}` : model;
     if (this.worktreeBranch !== '') { s = `${s} · ${t('session.item.worktree')}: ${this.worktreeBranch}`; }
     return s;
   }
@@ -1162,8 +1176,9 @@ struct ChatPage {
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(this.pendingAttachments, (meta: AttachmentMetadata) => {
           Row({ space: 6 }) {
-            Text(this.attachmentIcon(meta.mimeType))
+            SymbolGlyph(this.attachmentIcon(meta.mimeType))
               .fontSize(fs(13))
+              .fontColor([this.c.textTertiary])
             Text(meta.filename)
               .fontSize(fs(13))
               .fontColor(this.c.textPrimary)
@@ -1187,11 +1202,11 @@ struct ChatPage {
     }
   }
 
-  // 文件类型 → emoji 图标（chip 左侧点缀；图片🖼/pdf📕/其余📄）。轻量视觉，无需精确。
-  private attachmentIcon(mime: string): string {
-    if (mime.startsWith('image/')) { return '🖼'; }
-    if (mime === 'application/pdf') { return '📕'; }
-    return '📄';
+  // 文件类型 → 符号字形（chip 左侧点缀；图片 gallery / pdf book / 其余 doc）。轻量视觉，无需精确。
+  private attachmentIcon(mime: string): Resource {
+    if (mime.startsWith('image/')) { return $r('sys.symbol.picture'); }
+    if (mime === 'application/pdf') { return $r('sys.symbol.book'); }
+    return $r('sys.symbol.doc');
   }
 
   // —— 会话内即时配置（对照 web setPermissionMode/setModel/...，5 端点）——
@@ -1616,8 +1631,9 @@ struct ChatPage {
         Column({ space: 4 }) {
           ForEach(this.fileAttachments(attachments), (meta: AttachmentMetadata) => {
             Row({ space: 8 }) {
-              Text(this.attachmentIcon(meta.mimeType))
+              SymbolGlyph(this.attachmentIcon(meta.mimeType))
                 .fontSize(fs(16))
+                .fontColor([this.c.textTertiary])
               Column() {
                 Text(meta.filename)
                   .fontSize(fs(13))
@@ -1744,7 +1760,7 @@ struct ChatPage {
   @Builder
   private EmptyState() {
     Column({ space: 8 }) {
-      Text('💬')
+      SymbolGlyph($r('sys.symbol.message'))
         .fontSize(fs(40))
       Text(t('chat.emptyTitle'))
         .fontSize(fs(15))
@@ -1806,16 +1822,19 @@ struct ChatPage {
   @Builder
   private InputBar() {
     Column({ space: 4 }) {
-      // 待发定时 chip（pendingSchedule>0 显形；点 ✕ 清除，对照 web PendingSchedule 徽标）
+      // 待发定时 chip（pendingSchedule>0 显形；点清除；对照 web PendingSchedule 徽标，纯符号无 emoji）
       if (this.pendingSchedule > 0) {
         Row({ space: 6 }) {
-          Text(`⏰ ${this.pendingScheduleLabel}`)
+          SymbolGlyph($r('sys.symbol.clock'))
+            .fontSize(fs(12))
+            .fontColor([this.c.warning])
+          Text(this.pendingScheduleLabel)
             .fontSize(fs(12))
             .fontColor(this.c.warning)
             .layoutWeight(1)
-          Text('✕')
+          SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize(fs(13))
-            .fontColor(this.c.textTertiary)
+            .fontColor([this.c.textTertiary])
             .onClick(() => { this.pendingSchedule = 0; })
         }
         .width('100%')
@@ -1848,22 +1867,30 @@ struct ChatPage {
       // 待发附件 chip 栏（📎 选中的文件，发送前可移除；空时不渲染）
       this.AttachmentsBar()
       Row({ space: 8 }) {
-        // 附件按钮：开 DocumentViewPicker 选文件 → 读 base64 → upload → 入待发列；上传中 disabled
-        Text(this.isUploading ? '…' : '📎')
-          .fontSize(fs(18))
-          .fontColor(this.c.textSecondary)
-          .width(36)
-          .height(40)
-          .textAlign(TextAlign.Center)
-          .onClick(() => { this.attach(); })
-        // 定时按钮：开 ScheduleSheet 选预设；已设定时显 ⏰+警告色
-        Text(this.pendingSchedule > 0 ? '⏰' : '🕖')
-          .fontSize(fs(18))
-          .fontColor(this.pendingSchedule > 0 ? this.c.warning : this.c.textSecondary)
-          .width(36)
-          .height(40)
-          .textAlign(TextAlign.Center)
-          .onClick(() => { this.scheduleSheetOpen = true; })
+        // 附件按钮：开 DocumentViewPicker 选文件 → 读 base64 → upload → 入待发列；上传中显 spinner
+        Row() {
+          if (this.isUploading) {
+            LoadingProgress().width(fs(16)).height(fs(16)).color(this.c.textSecondary)
+          } else {
+            SymbolGlyph($r('sys.symbol.paperclip'))
+              .fontSize(fs(18))
+              .fontColor([this.c.textSecondary])
+          }
+        }
+        .width(36)
+        .height(40)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => { this.attach(); })
+        // 定时按钮：开 ScheduleSheet 选预设；已设定时显警告色（系统符号 clock）
+        Row() {
+          SymbolGlyph($r('sys.symbol.clock'))
+            .fontSize(fs(18))
+            .fontColor([this.pendingSchedule > 0 ? this.c.warning : this.c.textSecondary])
+        }
+        .width(36)
+        .height(40)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => { this.scheduleSheetOpen = true; })
 
         TextArea({ text: this.inputText, placeholder: t('chat.inputPlaceholder'), controller: this.textAreaController })
           .layoutWeight(1)
@@ -1871,6 +1898,7 @@ struct ChatPage {
           .fontColor(this.c.textPrimary)
           .placeholderColor(this.c.textTertiary)
           .constraintSize({ minHeight: 40, maxHeight: 100 })
+          .maxLines(5)
           .backgroundColor(this.c.surface)
           .borderRadius(20)
           .padding({ left: 14, right: 14, top: 8, bottom: 8 })
@@ -1928,6 +1956,7 @@ struct ChatPage {
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
       .backgroundColor(this.c.bg)
       .alignItems(VerticalAlign.Top)
+      .constraintSize({ maxHeight: 160 })   // 输入行高度兜底（防 TextArea 流式/长文本撑满屏）
     }
     .width('100%')
     .backgroundColor(this.c.bg)
@@ -2094,49 +2123,41 @@ struct ChatPage {
     setTimeout((): void => { this.scroller.scrollToIndex(idx, true, ScrollAlign.START); }, 120);
   }
 
-  // 标题栏右侧菜单（NavDestination.menus CustomBuilder，对照 chatcube SettingsNavigationMenus）：
-  //   ↗ 导出/分享整个对话 + ⋯ 重命名/归档/删除（动作面板逻辑全在 SessionActionMenu 组件内）
+  // 标题栏右侧菜单（NavDestination.menus CustomBuilder，对照 chatcube 顶栏密度：仅 3 个尾随图标，避免拥挤）。
+  //   导出/大纲已下沉到「更多」面板（SessionActionMenu，showExport/showOutline）；文件/终端/语音同在此面板。
   @Builder
   private HeaderMenu() {
-    Row({ space: 2 }) {
-      Text(this.searchMode ? '✕' : '🔍')
-        .fontSize(fs(18))
-        .fontColor(this.searchMode ? this.c.primary : this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.toggleSearch(); })
-      Text('↗')
-        .fontSize(fs(20))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.exportConversation(); })
-      // 文件 📁 / 终端 >_ 已收纳进 ⋯ 会话动作面板（showNavigation）—— 顶栏瘦身，对照上游 web 顶栏密度
-      // 对话大纲（用户提问列表，tap 跳转；对照 web HappyThread ConversationOutlinePanel）
-      Text('📋')
-        .fontSize(fs(17))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.outlineOpen = true; })
-      // 会话内配置（模型/权限/effort 即时改；对照 web FloatingOverlay）
-      Text('🎛')
-        .fontSize(fs(18))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.configSheetOpen = true; })
-      Text('⋯')
-        .fontSize(fs(22))
-        .fontColor(this.c.textSecondary)
-        .width(40)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { this.menuOpen = true; })
+    Row({ space: 6 }) {
+      // 搜索（开/关切整栏；对照 chatcube sys.symbol）
+      Row() {
+        SymbolGlyph(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
+          .fontSize(fs(18))
+          .fontColor([this.searchMode ? this.c.primary : this.c.textSecondary])
+      }
+      .width(36)
+      .height(40)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.toggleSearch(); })
+      // 会话内配置（模型/权限/effort 即时改；对照 web FloatingOverlay）—— 权限切换入口，40×40 命中区
+      Row() {
+        SymbolGlyph($r('sys.symbol.gearshape'))
+          .fontSize(fs(18))
+          .fontColor([this.c.textSecondary])
+      }
+      .width(36)
+      .height(40)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.configSheetOpen = true; })
+      // 更多（重命名/归档/删除 + 文件/终端/语音 + 导出/大纲，全在 SessionActionMenu）
+      Row() {
+        SymbolGlyph($r('sys.symbol.ellipsis_message'))
+          .fontSize(fs(18))
+          .fontColor([this.c.textSecondary])
+      }
+      .width(40)
+      .height(40)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.menuOpen = true; })
     }
   }
 
@@ -2393,9 +2414,13 @@ struct ChatPage {
           active: this.isActive,
           open: this.menuOpen,
           showNavigation: true,
+          showExport: true,
+          showOutline: true,
           onOpenFiles: () => { this.openFiles(); },
           onOpenTerminal: () => { this.openTerminal(); },
           onOpenVoice: () => { this.openVoice(); },
+          onExport: () => { this.exportConversation(); },
+          onOutline: () => { this.outlineOpen = true; },
           onClose: () => { this.menuOpen = false; },
           onRenamed: (name: string) => { this.sessionTitle = name; },
           onArchived: () => { this.isActive = false; },
@@ -2408,28 +2433,39 @@ struct ChatPage {
           open: this.attachmentPreviewOpen,
           onClose: (): void => { this.attachmentPreviewOpen = false; }
         })
+      // 三 sheet 各占独立 0×0 锚点节点（延续 SessionActionMenu/Index 双节点模式：
+      //   同一节点叠多个 bindSheet 仅其中一个生效，致配置/消息菜单不开；锚点尺寸无关渲染）。
+      Column() {}
+        .width(0)
+        .height(0)
+        .bindSheet(this.messageMenuOpen, this.MessageMenuSheet(), {
+          detents: [SheetSize.FIT_CONTENT],
+          dragBar: true,
+          showClose: false,
+          onDisappear: (): void => { this.closeMessageMenu(); }
+        })
+      Column() {}
+        .width(0)
+        .height(0)
+        .bindSheet(this.configSheetOpen, this.ConfigSheet(), {
+          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+          dragBar: true,
+          showClose: true,
+          onDisappear: (): void => { this.configSheetOpen = false; }
+        })
+      Column() {}
+        .width(0)
+        .height(0)
+        .bindSheet(this.outlineOpen, this.OutlineSheet(), {
+          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+          dragBar: true,
+          showClose: true,
+          onDisappear: (): void => { this.outlineOpen = false; }
+        })
       }
       .width('100%')
       .height('100%')
       .backgroundColor(this.c.bg)
-      .bindSheet(this.messageMenuOpen, this.MessageMenuSheet(), {
-        detents: [SheetSize.FIT_CONTENT],
-        dragBar: true,
-        showClose: false,
-        onDisappear: (): void => { this.closeMessageMenu(); }
-      })
-      .bindSheet(this.configSheetOpen, this.ConfigSheet(), {
-        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-        dragBar: true,
-        showClose: true,
-        onDisappear: (): void => { this.configSheetOpen = false; }
-      })
-      .bindSheet(this.outlineOpen, this.OutlineSheet(), {
-        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-        dragBar: true,
-        showClose: true,
-        onDisappear: (): void => { this.outlineOpen = false; }
-      })
     }
     .title(this.ChatTitle)
     .menus(this.HeaderMenu)

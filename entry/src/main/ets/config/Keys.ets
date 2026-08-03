@@ -18,6 +18,8 @@ export class PreferenceKeys {
   static readonly TERMINAL_FONT_SIZE: string = 'hapi_terminal_font_size';   // 终端字号（离散 9/11/13/15/17，默认 13）
   static readonly SESSION_LIST_STATUS_MODE: string = 'hapi_session_list_status_mode';   // 会话列表状态模式（'standard'|'detailed'，默认 standard）
   static readonly HAPTICS_ENABLED: string = 'hapi_haptics_enabled';   // 触感反馈开关（'on'|'off'，默认 on：移动端发送/删除/长按/错误短震动）
+  static readonly ACTIVE_PRESET_ID: string = 'hapi_active_preset';   // 当前激活的预制服务器 id（''=手填未用预制；未来用户自定义预制用）
+  static readonly SERVER_PRESETS: string = 'hapi_server_presets';   // 用户自定义预制服务器列表（JSON ServerPreset[]；厂测预制为编译期常量不入此键）
 
   // per-session 输入草稿 key（hapi_draft_<sessionId>）：草稿随会话存，切换/重进恢复，发送即清。
   static draftKey(sessionId: string): string {

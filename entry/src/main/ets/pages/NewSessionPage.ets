@@ -526,7 +526,7 @@ struct NewSessionPage {
   @Builder
   private RecentPathRow(path: string) {
     Row({ space: 8 }) {
-      Text('📁').fontSize(fs(14))
+      SymbolGlyph($r('sys.symbol.folder')).fontSize(fs(14)).fontColor([this.c.textTertiary])
       Text(path)
         .fontSize(fs(13))
         .fontColor(this.c.textSecondary)
@@ -544,7 +544,9 @@ struct NewSessionPage {
   @Builder
   private BrowserEntryRow(entry: DirEntry) {
     Row({ space: 10 }) {
-      Text(entry.type === 'directory' ? '📁' : '📄').fontSize(fs(16))
+      SymbolGlyph(entry.type === 'directory' ? $r('sys.symbol.folder') : $r('sys.symbol.doc'))
+        .fontSize(fs(16))
+        .fontColor([entry.type === 'directory' ? this.c.textPrimary : this.c.textTertiary])
       Text(entry.name)
         .fontSize(fs(14))
         .fontColor(entry.type === 'directory' ? this.c.textPrimary : this.c.textTertiary)
@@ -816,16 +818,16 @@ struct NewSessionPage {
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
+                  .onClick(() => { this.toggleYolo(); })
 
-                  Text(this.yolo ? '✓' : '○')
-                    .fontSize(fs(18))
-                    .fontColor(this.yolo ? this.c.primary : this.c.textTertiary)
+                  Toggle({ type: ToggleType.Switch, isOn: this.yolo })
+                    .selectedColor(this.c.primary)
+                    .onChange((on: boolean) => { this.yolo = on; })
                 }
                 .width('100%')
                 .height(56)
                 .padding({ left: 16, right: 16 })
                 .alignItems(VerticalAlign.Center)
-                .onClick(() => { this.toggleYolo(); })
               }
               .width('100%')
               .backgroundColor(this.c.bg)

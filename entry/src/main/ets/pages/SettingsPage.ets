@@ -647,7 +647,8 @@ struct SettingsPage {
 
   build() {
     NavDestination() {
-      Column() {
+      Scroll() {
+        Column() {
         // 主题分组（浅色/深色/跟随系统）
         this.SectionHeader(t('settings.section.theme'))
         Column() {
@@ -844,9 +845,13 @@ struct SettingsPage {
           .borderRadius(12)
           .enabled(!this.isLoggingOut)
           .onClick(() => this.confirmLogout())
+        }
+        .width('100%')
+        .backgroundColor(this.c.surface)
       }
-      .width('100%')
-      .height('100%')
+      .scrollBar(BarState.Off)
+      .align(Alignment.TopStart)
+      .edgeEffect(EdgeEffect.Spring)
       .backgroundColor(this.c.surface)
     }
     .title(t('settings.title'))

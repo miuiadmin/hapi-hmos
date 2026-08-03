@@ -31,7 +31,7 @@ export struct QueuedMessagesBar {
     Column({ space: 6 }) {
       // 头：排队计数
       Row({ space: 6 }) {
-        Text('🕓').fontSize(fs(12))
+        SymbolGlyph($r('sys.symbol.clock')).fontSize(fs(12)).fontColor([this.c.textTertiary])
         Text(t('queued.count', kv('count', this.queued.length)))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
@@ -50,36 +50,45 @@ export struct QueuedMessagesBar {
               .layoutWeight(1)
               .width('100%')
             if (this.scheduleLabel(m) !== '') {
-              Text(`⏰ ${this.scheduleLabel(m)}`)
-                .fontSize(fs(11))
-                .fontColor(this.c.warning)
+              Row({ space: 4 }) {
+                SymbolGlyph($r('sys.symbol.clock'))
+                  .fontSize(fs(11))
+                  .fontColor([this.c.warning])
+                Text(this.scheduleLabel(m))
+                  .fontSize(fs(11))
+                  .fontColor(this.c.warning)
+              }
             }
           }
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 
-          // 编辑（回填 composer + 恢复定时 + 移除本行）
-          Text('✎')
-            .fontSize(fs(16))
-            .fontColor(this.c.textSecondary)
-            .width(30)
-            .height(30)
-            .textAlign(TextAlign.Center)
-            .borderRadius(15)
-            .onClick(() => { this.onEdit(m); })
+          // 编辑（回填 composer + 恢复定时 + 移除本行）—— 系统符号 square_and_pencil（HMOS 已验证字形）
+          Row() {
+            SymbolGlyph($r('sys.symbol.square_and_pencil'))
+              .fontSize(fs(16))
+              .fontColor([this.c.textSecondary])
+          }
+          .width(30)
+          .height(30)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(15)
+          .onClick(() => { this.onEdit(m); })
 
           // 取消（DELETE 排队消息；乐观行未落地时禁用）
-          Text('✕')
-            .fontSize(fs(15))
-            .fontColor(this.canCancel(m) ? this.c.error : this.c.textTertiary)
-            .width(30)
-            .height(30)
-            .textAlign(TextAlign.Center)
-            .borderRadius(15)
-            .opacity(this.canCancel(m) ? 1 : 0.4)
-            .onClick(() => {
-              if (this.canCancel(m)) { this.onCancel(m); }
-            })
+          Row() {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(fs(15))
+              .fontColor([this.canCancel(m) ? this.c.error : this.c.textTertiary])
+          }
+          .width(30)
+          .height(30)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(15)
+          .opacity(this.canCancel(m) ? 1 : 0.4)
+          .onClick(() => {
+            if (this.canCancel(m)) { this.onCancel(m); }
+          })
         }
         .width('100%')
         .padding({ left: 12, right: 8, top: 8, bottom: 8 })

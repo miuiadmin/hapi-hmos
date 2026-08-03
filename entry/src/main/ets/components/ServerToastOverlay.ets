@@ -47,14 +47,16 @@ export struct ServerToastOverlay {
         .alignItems(HorizontalAlign.Start)
 
         // ✕ 关闭（点击区域不触卡片 onClick：ArkUI 子节点 onClick 优先消费，不冒泡到父）
-        Text('✕')
-          .fontSize(fs(15))
-          .fontColor(this.c.textTertiary)
-          .width(28)
-          .height(28)
-          .textAlign(TextAlign.Center)
-          .borderRadius(14)
-          .onClick(() => { ToastService.dismiss(); })
+        Row() {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(fs(15))
+            .fontColor([this.c.textTertiary])
+        }
+        .width(28)
+        .height(28)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(14)
+        .onClick(() => { ToastService.dismiss(); })
       }
       .width('100%')
       .padding({ left: 14, right: 8, top: 10, bottom: 10 })

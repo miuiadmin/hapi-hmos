@@ -2,10 +2,15 @@ import { getConnectionService } from '../services/ConnectionService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
+import { ServerPreset } from '../models/HubConfig';
+import { FACTORY_PRESETS } from '../config/FactoryPresets.local';
 import { t, kv } from '../i18n/I18nService';
 import { window } from '@kit.ArkUI';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
+
+// 厂内测试预制服务器数据源见 config/FactoryPresets.local（芯片 onClick 回填并直接登录）。
+//   ⚠️ 其内 token 机密：公开仓库版本为空数组；本机用 `git update-index --skip-worktree` 后填真值，不入库/不外传。
 
 // 登录页：填 Hub 地址 + CLI_API_TOKEN，「测试连接」「登录」
 // UI 写法/样式对照 chatcube（WebDAVSyncPage 表单 + OnboardingStepProvider 内联错误），V2 状态管理
@@ -86,6 +91,32 @@ struct LoginPage {
     }
   }
 
+  // 预制服务器一键登录：回填表单 + 直接走 doLogin（厂测免手填）。
+  private applyPreset(p: ServerPreset): void {
+    this.hubUrl = p.hubUrl;
+    this.apiToken = p.apiToken;
+    this.lastError = '';
+    this.doLogin();
+  }
+
+  // 预制服务器芯片行（横向排列，点即登录）。
+  @Builder
+  private PresetChips() {
+    Row({ space: 8 }) {
+      ForEach(FACTORY_PRESETS, (p: ServerPreset): void => {
+        Text(p.name)
+          .fontSize(fs(13))
+          .fontColor(this.c.primary)
+          .backgroundColor(this.c.surface)
+          .borderRadius(16)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .onClick(() => { this.applyPreset(p); })
+      }, (p: ServerPreset): string => p.id)
+    }
+    .width('100%')
+    .margin({ top: 4, bottom: 4 })
+  }
+
   private switchToMainContent(): void {
     const stage = AppStorage.get<window.WindowStage>(AppStorageKeys.MAIN_WINDOW_STAGE);
     if (stage !== undefined) {
@@ -136,6 +167,9 @@ struct LoginPage {
           (text: string) => { this.hubUrl = text; this.lastError = '' })
         this.InputRow(t('login.accessToken'), this.apiToken, 'CLI_API_TOKEN', true,
           (text: string) => { this.apiToken = text; this.lastError = '' })
+
+        // 预制服务器（厂测一键登录）
+        this.PresetChips()
 
         // 内联错误行（条件渲染，对照 OnboardingStepProvider）
         if (this.lastError !== '') {

@@ -62,6 +62,7 @@ struct Index {
   // 会话长按菜单（重命名/归档/删除委托 SessionActionMenu 组件；本页只持有目标快照 + open 信号）
   @Local actionTarget: SessionSummary | null = null;   // 动作面板目标会话（长按时定）
   @Local actionMenuOpen: boolean = false;              // 动作面板显隐（组件 @Param open）
+  @Local currentChatSessionId: string = '';            // 当前栈顶聊天会话 id（抑制其 ready toast + 防浮卡重复 push）
 
   aboutToAppear(): void {
     this.loadSessions();
@@ -157,6 +158,10 @@ struct Index {
     const title: string = typeof titleVal === 'string' ? titleVal : '';
     const body: string = typeof bodyVal === 'string' ? bodyVal : '';
     const sessionId: string = typeof sessionVal === 'string' ? sessionVal : '';
+    // 用户已在该会话内（agent 就绪的会话正是当前所看）→ 不弹浮卡（点跳也无意义，避免打扰）
+    if (sessionId !== '' && sessionId === this.currentChatSessionId) {
+      return;
+    }
     if (title === '' && body === '') {
       return;
     }
@@ -166,17 +171,23 @@ struct Index {
 
   // 点击进入对话页（NavPathStack.pushPath，对照 chatcube openChatRoute）
   private openSession(session: SessionSummary): void {
+    this.currentChatSessionId = session.id;
     const params: ChatPageRouteParams = new ChatPageRouteParams();
     params.sessionId = session.id;
     params.title = session.title;
     this.navStack.pushPath({ name: 'ChatPage', param: params });
   }
 
-  // 点击 toast 跳会话（仅 sessionId；title 留空由 ChatPage 自拉）。sessionId 缺→不跳。
+  // 点击 toast 跳会话（仅 sessionId；title 留空由 ChatPage 自拉）。
+  //   sessionId 缺→不跳；已在目标会话（点同会话浮卡）→ 不重复 push（避免双页叠加=看着没反应）。
   private openSessionById(sessionId: string): void {
     if (sessionId === '') {
       return;
     }
+    if (sessionId === this.currentChatSessionId) {
+      return;
+    }
+    this.currentChatSessionId = sessionId;
     const params: ChatPageRouteParams = new ChatPageRouteParams();
     params.sessionId = sessionId;
     params.title = '';
@@ -328,11 +339,11 @@ struct Index {
     if (this.sessionFilter === 'archived') { return t('sessions.empty.archived'); }
     return t('sessions.search.noResults');
   }
-  private emptyIcon(): string {
-    if (this.searchQuery.trim() !== '') { return '🔍'; }
-    if (this.sessionFilter === 'active') { return '💬'; }
-    if (this.sessionFilter === 'archived') { return '📦'; }
-    return '🔍';
+  private emptyIcon(): Resource {
+    if (this.searchQuery.trim() !== '') { return $r('sys.symbol.magnifyingglass'); }
+    if (this.sessionFilter === 'active') { return $r('sys.symbol.message'); }
+    if (this.sessionFilter === 'archived') { return $r('sys.symbol.archivebox'); }
+    return $r('sys.symbol.magnifyingglass');
   }
   private countByActive(active: boolean): number {
     let n: number = 0;
@@ -417,6 +428,18 @@ struct Index {
     return kind === 'permission' ? this.c.warning : this.c.primary;
   }
 
+  // 统一会话标签胶囊（对照 chatcube 样式化 Text pill；禁 emoji，按语义着色）。
+  //   kind='error' → 待审批红底白字；其余 → 中性灰底（后台任务/定时/todo 进度统一）。
+  @Builder
+  private badgePill(text: string, kind: string) {
+    Text(text)
+      .fontSize(fs(11))
+      .fontColor(kind === 'error' ? this.c.bubbleUserText : this.c.textSecondary)
+      .backgroundColor(kind === 'error' ? this.c.error : this.c.surface)
+      .borderRadius(6)
+      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+  }
+
   // 列表项（对照 chatcube SessionCard：头像 | 标题+时间 / 摘要+角标）
   @Builder
   private SessionItem(session: SessionSummary) {
@@ -460,51 +483,28 @@ struct Index {
         }
         .width('100%')
 
-        Row() {
+        Row({ space: 6 }) {
           Text(session.summaryText !== '' ? session.summaryText : (session.thinking ? t('sessions.thinking') : ' '))
             .fontSize(fs(13))
             .fontColor(this.c.textSecondary)
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          // todo 进度（对照上游 SessionList getTodoProgress：有未完成 todo 时显 💡 done/total；
-          //   无 todo 或全部完成则隐藏——todoTotal=0 或 done===total 都不显，仅在进行中提示）
+          // todo 进度（进行中才显；统一胶囊，去 emoji）
           if (session.todoTotal > 0 && session.todoCompleted !== session.todoTotal) {
-            Row({ space: 3 }) {
-              Text('💡').fontSize(fs(10))
-              Text(`${session.todoCompleted}/${session.todoTotal}`).fontSize(fs(11)).fontColor(this.c.textTertiary)
-            }
-            .margin({ right: 6 })
+            this.badgePill(`${session.todoCompleted}/${session.todoTotal}`, 'neutral')
           }
+          // 待审批请求数（红胶囊，对照上游 SessionList 红角标）
           if (session.pendingRequestsCount > 0) {
-            Text(`${session.pendingRequestsCount}`)
-              .fontSize(fs(11))
-              .fontColor(this.c.bubbleUserText)
-              .backgroundColor(this.c.error)
-              .borderRadius(10)
-              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            this.badgePill(`${session.pendingRequestsCount}`, 'error')
           }
-          // 后台任务角标（backgroundTaskCount>0；agent 后台跑的待办任务数，中性样式区别于待审批红角标）
+          // 后台任务角标（中性灰胶囊）
           if (session.backgroundTaskCount > 0) {
-            Row({ space: 3 }) {
-              Text('⚙').fontSize(fs(10))
-              Text(`${session.backgroundTaskCount}`).fontSize(fs(11)).fontColor(this.c.textSecondary)
-            }
-            .backgroundColor(this.c.surface)
-            .borderRadius(8)
-            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-            .margin({ left: 6 })
+            this.badgePill(`${session.backgroundTaskCount}`, 'neutral')
           }
-          // 定时消息角标（futureScheduledMessageCount>0；待触发的排队定时消息数，对照上游 SessionList ⏰）
+          // 定时消息角标（中性灰胶囊）
           if (session.futureScheduledMessageCount > 0) {
-            Row({ space: 3 }) {
-              Text('⏰').fontSize(fs(10))
-              Text(`${session.futureScheduledMessageCount}`).fontSize(fs(11)).fontColor(this.c.textSecondary)
-            }
-            .backgroundColor(this.c.surface)
-            .borderRadius(8)
-            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-            .margin({ left: 6 })
+            this.badgePill(`${session.futureScheduledMessageCount}`, 'neutral')
           }
         }
         .width('100%')
@@ -540,7 +540,7 @@ struct Index {
       Text(this.machineCollapsed(mg) ? '▶' : '▼')
         .fontSize(fs(11))
         .fontColor(this.c.textTertiary)
-      Text('💻').fontSize(fs(13))
+      SymbolGlyph($r('sys.symbol.pc')).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Text(this.resolveMachineLabel(mg))
         .fontSize(fs(13))
         .fontWeight(FontWeight.Medium)
@@ -565,7 +565,7 @@ struct Index {
       Text(this.directoryCollapsed(dg) ? '▶' : '▼')
         .fontSize(fs(11))
         .fontColor(this.c.textTertiary)
-      Text('📁').fontSize(fs(13))
+      SymbolGlyph($r('sys.symbol.folder')).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Text(this.resolveDirectoryLabel(dg))
         .fontSize(fs(13))
         .fontColor(this.c.textSecondary)
@@ -576,14 +576,14 @@ struct Index {
         .fontSize(fs(12))
         .fontColor(this.c.textTertiary)
       if (this.canStartInDirectory(dg)) {
-        Text('+')
-          .fontSize(fs(18))
-          .fontColor(this.c.primary)
-          .width(28)
-          .height(28)
-          .textAlign(TextAlign.Center)
-          .hitTestBehavior(HitTestMode.Block)
-          .onClick(() => this.openNewSessionInDirectory(dg.machineId, dg.directory))
+        Row() {
+          SymbolGlyph($r('sys.symbol.plus')).fontSize(fs(18)).fontColor([this.c.primary])
+        }
+        .width(28)
+        .height(28)
+        .justifyContent(FlexAlign.Center)
+        .hitTestBehavior(HitTestMode.Block)
+        .onClick(() => this.openNewSessionInDirectory(dg.machineId, dg.directory))
       }
     }
     .width('100%')
@@ -594,7 +594,7 @@ struct Index {
   @Builder
   private EmptyState() {
     Column({ space: 10 }) {
-      Text('📭').fontSize(fs(48))
+      SymbolGlyph($r('sys.symbol.inbox')).fontSize(fs(48)).fontColor([this.c.textTertiary])
       Text(t('sessions.empty.title')).fontSize(fs(16)).fontColor(this.c.textSecondary)
       Text(t('sessions.empty.hint')).fontSize(fs(13)).fontColor(this.c.textTertiary)
       Button(t('sessions.new'))
@@ -611,9 +611,9 @@ struct Index {
 
   // 列表筛选/搜索无结果空态（icon + message 由 emptyIcon/emptyMessage 按 tab+搜索词给出）
   @Builder
-  private SearchEmptyState(icon: string, message: string) {
+  private SearchEmptyState(icon: Resource, message: string) {
     Column({ space: 8 }) {
-      Text(icon).fontSize(fs(40))
+      SymbolGlyph(icon).fontSize(fs(40)).fontColor([this.c.textTertiary])
       Text(message).fontSize(fs(15)).fontColor(this.c.textSecondary)
     }
     .width('100%')
@@ -651,23 +651,27 @@ struct Index {
             }
             .layoutWeight(1)
 
-            // 新建会话入口
-            Text('+')
-              .fontSize(fs(26))
-              .fontColor(this.c.textSecondary)
-              .width(40)
-              .height(40)
-              .textAlign(TextAlign.Center)
-              .onClick(() => this.openNewSession())
+            // 新建会话入口（系统符号字形 sys.symbol.plus，禁 emoji，对照 chatcube）
+            Row() {
+              SymbolGlyph($r('sys.symbol.plus'))
+                .fontSize(fs(20))
+                .fontColor([this.c.textSecondary])
+            }
+            .width(40)
+            .height(40)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => this.openNewSession())
 
-            // 设置入口
-            Text('⚙')
-              .fontSize(fs(22))
-              .fontColor(this.c.textSecondary)
-              .width(40)
-              .height(40)
-              .textAlign(TextAlign.Center)
-              .onClick(() => this.openSettings())
+            // 设置入口（系统符号字形 sys.symbol.gearshape）
+            Row() {
+              SymbolGlyph($r('sys.symbol.gearshape'))
+                .fontSize(fs(20))
+                .fontColor([this.c.textSecondary])
+            }
+            .width(40)
+            .height(40)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => this.openSettings())
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
@@ -760,6 +764,10 @@ struct Index {
       }
       .hideTitleBar(true)
       .mode(NavigationMode.Stack)
+      // 返回会话列表（navBar 重新可见）→ 清当前会话标记，让后续 ready toast 正常弹
+      .onNavBarStateChange((isVisible: boolean): void => {
+        if (isVisible) { this.currentChatSessionId = ''; }
+      })
 
       // 服务端 toast 悬浮卡（current 非空才显形；空态 Visibility.None 不占位、不拦截点击）
       ServerToastOverlay({
