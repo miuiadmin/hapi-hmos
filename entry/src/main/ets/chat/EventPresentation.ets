@@ -1,10 +1,13 @@
 // EventPresentation —— 对齐 web/src/chat/presentation.ts getEventPresentation。
-// 纯逻辑层（无 @kit）：AgentEvent → { icon, text }，供 ChatPage 渲染居中灰条系统消息
+// 纯逻辑层（无 @kit）：AgentEvent → { icon(token), text }，供 ChatPage 渲染居中灰条系统消息
 //   （#1 系统消息条 / #4 限额提示）。覆盖当前产出的 type：api-error / microcompact / compact /
 //   limit-warning / limit-reached；其余 type（switch / title-changed / permission-mode-changed /
 //   message / turn-duration / thread-goal* / token-count）随其解析一并 deferred 或已由专属渲染路径
 //   处理（turn-duration→脚注、thread-goal→chip、token-count→用量条），命中则走通用 JSON.stringify 回退
 //   （对照 presentation.ts:209-213）。
+//
+//   icon 为语义 token（warning/wait/package），渲染侧 components/IconGlyphs.eventGlyph 映射成 sys.symbol
+//   （对齐 chatcube 禁 emoji；'' = 无图标，caller 先判空）。
 //
 //   时间格式化移植 presentation.ts:3-27 的语义，但改用项目既有 DateFormatUtils（formatClock /
 //   formatDateDivider，手写、确定性、随 i18n locale）替代上游 toLocaleString（locale 不可控、不利于单测）：
@@ -84,16 +87,16 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
 
   if (event.type === 'api-error') {
     if (event.maxRetries > 0 && event.retryAttempt >= event.maxRetries) {
-      p.icon = '⚠️';
+      p.icon = 'warning';
       p.text = t('event.apiErrorMaxRetries');
     } else if (event.maxRetries > 0) {
-      p.icon = '⏳';
+      p.icon = 'wait';
       p.text = t('event.apiErrorRetrying', kv2('n', event.retryAttempt, 'm', event.maxRetries));
     } else if (event.retryAttempt > 0) {
-      p.icon = '⏳';
+      p.icon = 'wait';
       p.text = t('event.apiErrorRetryingSimple');
     } else {
-      p.icon = '⚠️';
+      p.icon = 'warning';
       p.text = t('event.apiError');
     }
     return p;
@@ -103,13 +106,13 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
     // saved≥1000 →「NK」（对照 presentation.ts:193-195，阈值 1000，非 formatTokenCount 的 1k）。
     const saved: number = event.tokensSaved;
     const savedStr: string = saved >= 1000 ? `${Math.round(saved / 1000)}K` : `${saved}`;
-    p.icon = '📦';
+    p.icon = 'package';
     p.text = t('event.contextCompactedSaved', kv('saved', savedStr));
     return p;
   }
 
   if (event.type === 'compact') {
-    p.icon = '📦';
+    p.icon = 'package';
     p.text = t('event.conversationCompacted');
     return p;
   }
@@ -117,7 +120,7 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
   if (event.type === 'limit-warning') {
     const pct: number = Math.round(event.utilization * 100);
     const suffix: string = limitTypeSuffix(event.limitType);
-    p.icon = '⚠️';
+    p.icon = 'warning';
     if (event.endsAt > 0) {
       p.text = t('event.usageLimitWarning', kv3('pct', pct, 'suffix', suffix, 'resets', formatResetTime(event.endsAt)));
     } else {
@@ -128,7 +131,7 @@ export function getEventPresentation(event: AgentEvent): EventPresentation {
 
   if (event.type === 'limit-reached') {
     const suffix: string = limitTypeSuffix(event.limitType);
-    p.icon = '⏳';
+    p.icon = 'wait';
     if (event.endsAt > 0) {
       p.text = t('event.usageLimitReached', kv2('suffix', suffix, 'time', formatUnixTimestamp(event.endsAt)));
     } else {

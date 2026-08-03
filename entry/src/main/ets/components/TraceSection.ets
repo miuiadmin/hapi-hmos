@@ -19,6 +19,7 @@
 import { ChatBlock, ChatToolCall } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation } from '../chat/Presentation';
 import { EventPresentation, getEventPresentation } from '../chat/EventPresentation';
+import { toolGlyph, eventGlyph } from './IconGlyphs';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningBubble } from './ReasoningBubble';
@@ -157,13 +158,18 @@ struct TraceSection {
     return 'trace';
   }
 
-  // agent-event 子行单行文本（icon + text，对照 ChatPage.eventLabel）。
-  private eventLine(ch: ChatBlock): string {
+  // agent-event 子行：text 与 icon token 分离（icon 由渲染侧 eventGlyph 映射 sys.symbol，对照 ChatPage.eventLabel）。
+  private eventLineText(ch: ChatBlock): string {
     if (ch.event === null) {
       return '';
     }
-    const p: EventPresentation = getEventPresentation(ch.event);
-    return p.icon !== '' ? p.icon + ' ' + p.text : p.text;
+    return getEventPresentation(ch.event).text;
+  }
+  private eventLineIcon(ch: ChatBlock): string {
+    if (ch.event === null) {
+      return '';
+    }
+    return getEventPresentation(ch.event).icon;   // '' = 无图标
   }
 
   private openDetail(ch: ChatBlock): void {
@@ -190,7 +196,7 @@ struct TraceSection {
   ToolCallRowInner(ch: ChatBlock) {
     Row({ space: 8 }) {
       Text(this.childStateGlyph(ch)).fontSize(fs(13)).fontColor(this.childStateColor(ch))
-      Text(this.presentationOf(ch).icon).fontSize(fs(13))
+      SymbolGlyph(toolGlyph(this.presentationOf(ch).icon)).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Column({ space: 2 }) {
         Text(this.presentationOf(ch).title)
           .fontSize(fs(13)).fontColor(this.c.textPrimary).maxLines(1)
@@ -234,9 +240,16 @@ struct TraceSection {
       CliOutputCard({ block: ch })
     } else if (ch.kind === 'agent-event') {
       if (ch.event !== null) {
-        Text(this.eventLine(ch))
-          .fontSize(fs(11)).fontColor(this.c.textTertiary).fontStyle(FontStyle.Italic)
-          .width('100%')
+        Row({ space: 4 }) {
+          if (this.eventLineIcon(ch) !== '') {
+            SymbolGlyph(eventGlyph(this.eventLineIcon(ch)))
+              .fontSize(fs(11)).fontColor([this.c.textTertiary])
+          }
+          Text(this.eventLineText(ch))
+            .fontSize(fs(11)).fontColor(this.c.textTertiary).fontStyle(FontStyle.Italic)
+            .layoutWeight(1)
+        }
+        .width('100%').alignItems(VerticalAlign.Center)
       }
     }
   }

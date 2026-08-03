@@ -41,9 +41,9 @@ export struct CliOutputCard {
     Column() {
       // header（镜像 CliOutputBlock.tsx：终端图标 + 命令名 + 详情入口 ›）
       Row() {
-        Text(t('terminal.icon'))
+        SymbolGlyph($r('sys.symbol.keyboard'))
           .fontSize(fs(14))
-          .fontColor(this.c.primary)
+          .fontColor([this.c.primary])
           .margin({ right: 6 })
         Text(this.title)
           .fontSize(fs(14))

@@ -1,5 +1,6 @@
 import { ChatBlock, ChatToolCall, ToolPermission } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation, isEditToolName, isAskToolName } from '../chat/Presentation';
+import { toolGlyph } from './IconGlyphs';
 import { getInputStrAny } from '../chat/ToolInputUtils';
 import { isAskUserQuestionToolName } from '../chat/AskUserQuestion';
 import { isRequestUserInputToolName } from '../chat/RequestUserInput';
@@ -384,8 +385,9 @@ struct ToolCard {
       // 左：图标 + 标题 + 副标题
       Column() {
         Row() {
-          Text(this.presentation.icon)
+          SymbolGlyph(toolGlyph(this.presentation.icon))
             .fontSize(fs(14))
+            .fontColor([this.c.textSecondary])
             .margin({ right: 6 })
           Text(this.presentation.title)
             .fontSize(fs(14))

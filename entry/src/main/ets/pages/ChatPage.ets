@@ -30,6 +30,7 @@ import { skillSuggestions, loadRecentSkills, markSkillUsed } from '../chat/Skill
 import { findActiveWord, applySuggestion } from '../chat/ActiveWord';
 import { getLatestThreadGoal } from '../chat/ThreadGoal';
 import { getEventPresentation, EventPresentation } from '../chat/EventPresentation';
+import { eventGlyph } from '../components/IconGlyphs';
 import { extractLeadingDirectives, formatDirectiveLabel } from '../chat/UserDirectives';
 import { SlashMenu } from '../components/SlashMenu';
 import { MentionMenu } from '../components/MentionMenu';
@@ -1731,25 +1732,35 @@ struct ChatPage {
     return buildMessageMetadataLabels(b.invokedAt, b.durationMs, b.usage, effectiveModel);
   }
 
-  // agent-event 系统消息条文本：icon + text（icon 空→仅 text；对照 web getEventPresentation）。
+  // agent-event 系统消息条：text 与 icon token 分离（icon 由渲染侧 eventGlyph 映射 sys.symbol；icon 空→仅 text）。
   private eventLabel(b: ChatBlock): string {
     if (b.event === null) { return ''; }
-    const p: EventPresentation = getEventPresentation(b.event);
-    return p.icon !== '' ? `${p.icon} ${p.text}` : p.text;
+    return getEventPresentation(b.event).text;
+  }
+  private eventIconName(b: ChatBlock): string {
+    if (b.event === null) { return ''; }
+    return getEventPresentation(b.event).icon;   // '' = 无图标
   }
 
   // 居中灰条系统消息（api-error / 用量限额 / 上下文压缩 等 agent 事件）。复用 DateDivider 居中 pill 样式。
   @Builder
   private EventMessageBar(b: ChatBlock) {
     Row() {
-      Text(this.eventLabel(b))
-        .fontSize(fs(11))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textTertiary)
-        .padding({ left: 10, right: 10, top: 3, bottom: 3 })
-        .backgroundColor(Color.Transparent)
-        .borderRadius(8)
-        .border({ width: 0.5, color: this.c.border })
+      Row({ space: 4 }) {
+        if (this.eventIconName(b) !== '') {
+          SymbolGlyph(eventGlyph(this.eventIconName(b)))
+            .fontSize(fs(11))
+            .fontColor([this.c.textTertiary])
+        }
+        Text(this.eventLabel(b))
+          .fontSize(fs(11))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.c.textTertiary)
+      }
+      .padding({ left: 10, right: 10, top: 3, bottom: 3 })
+      .backgroundColor(Color.Transparent)
+      .borderRadius(8)
+      .border({ width: 0.5, color: this.c.border })
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)

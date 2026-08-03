@@ -8,6 +8,7 @@
 
 import { ChatBlock, ChatToolCall } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation } from '../chat/Presentation';
+import { toolGlyph } from './IconGlyphs';
 import { formatGroupedHeaderTitle, formatGroupedHeaderSubtitle } from '../chat/GroupedPresentation';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
@@ -193,8 +194,9 @@ struct ToolGroupCard {
       Text(this.stateGlyph(child))
         .fontSize(fs(13))
         .fontColor(this.stateColor(child))
-      Text(this.presentationOf(child).icon)
+      SymbolGlyph(toolGlyph(this.presentationOf(child).icon))
         .fontSize(fs(13))
+        .fontColor([this.c.textSecondary])
       Column() {
         Text(this.presentationOf(child).title)
           .fontSize(fs(13))
