@@ -42,9 +42,17 @@ FILES_TO_PATCH=(
   "AppScope/app.json5"
 )
 
-# 预检白名单：包名仅出现在 URL/注释/文档中，不影响运行时，无需替换。
-# hapi 暂无此类文件；发现误报时在此添加相对路径。
-SCAN_WHITELIST=()
+# 预检白名单：包名仅出现在注释 / 正则字面量中，不影响运行时，无需替换。
+# OTA 相关文件（SelfUpdateManager 等）：com.berry.hapi 仅出现在注释 + 共存版守卫正则
+# /^com\.berry\.hapi\d+$/（\d+ 兼容 88 后缀，非字面替换；进 FILES_TO_PATCH 反会被错误 sed 破坏 regex）。
+SCAN_WHITELIST=(
+  "entry/src/main/ets/services/SelfUpdateManager.ets"
+  "entry/src/main/ets/services/UpdateState.ets"
+  "entry/src/main/ets/entryability/EntryAbility.ets"
+  "entry/src/main/ets/pages/SettingsPage.ets"
+  "entry/src/main/ets/i18n/locales/en.ets"
+  "entry/src/main/ets/i18n/locales/zh-CN.ets"
+)
 
 APP_OUTPUT_DIR="build/outputs/default"
 OUTPUT_DIR="$PROJECT_ROOT/output"

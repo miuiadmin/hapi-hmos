@@ -21,7 +21,7 @@ publish.sh                                    Cloudflare 橙云 → :8443
 ```
 
 > 服务端（Caddy/AWS/CF）由运维侧维护，见运维 `CLAUDE.md`；改服务端不在此目录。
-> ⚠️ Hapi 的 OTA 客户端（SelfUpdateManager）尚未实现；实现时按 OTA接入文档 §5 走，直接取规范路径 `/hapi/update.json`（全新接入，无需兼容桥）。
+> ✅ Hapi 的 OTA 客户端已实现（`entry/src/main/ets/services/SelfUpdateManager.ets`），按 OTA接入文档 §5 走，直接取规范路径 `/hapi/update.json`（全新接入，无需兼容桥）。
 
 ## 目录现状
 
