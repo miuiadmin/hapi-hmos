@@ -1,0 +1,3 @@
+# 本地敏感配置：首次运行 dist.sh/sync-server.sh 时
+# 由 scripts/config.example.sh 自动复制生成，含真实访问 token，禁止入库
+scripts/config.sh
