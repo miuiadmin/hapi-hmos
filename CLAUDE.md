@@ -75,12 +75,12 @@ hvigorw --mode module -p module=entry@default assembleHap
 
 | 项目 | 角色 | 参考范围 |
 |---|---|---|
-| **chatcube**（Cube Chat） | 🥇 主要 | 布局、样式、流式对话、对话、会话管理（业务 / 架构 / UX 全方位） |
+| **chatcube**（Cube Chat） | 🥇 主要 | **UI 样式（颜色 / 主题 / 字体 / 圆角 / 间距 / 阴影 / 动效 / 组件视觉）**、布局、流式对话、对话、会话管理（业务 / 架构 / UX 全方位） |
 | **berry3**（Berry Browser） | 🔧 语法/避坑/底层 | **ArkTS 语法 + 避坑文档库**（遇坑先查）+ 底层代码（系统能力） |
 | `参考源码/hapi` | 语义 | 功能行为、Hub 协议、数据结构 |
 
 - **位置**：chatcube → `参考源码/chatcube`（GitHub: LongLiveY96/chatcube）；berry3 → `~/Documents/harmony/project/berry3`（GitHub: miuiadmin/berry-browser）
-- **规则**：布局 / 样式 / 对话 / 会话拿不准 → **先看 chatcube**；**ArkTS / ArkUI 遇坑（build/getter/ForEach/@Trace/JSON.parse/签名/hvigor 等）→ 先查 berry3 避坑文档**（尤其 berry3 `docs/ArkUI-V2严格模式避坑.md`）；底层 / 系统能力 chatcube 没有才看 berry3 代码
+- **规则**：**UI 样式（颜色 / 主题 / 字体 / 圆角 / 间距 / 动效 / 组件视觉）一律以 chatcube 为准 —— 不自创、不参考 berry3 浏览器 UI**（具体文件见 [docs/参考项目.md](docs/参考项目.md) chatcube「UI 样式参考」表）；布局 / 对话 / 会话拿不准 → **先看 chatcube**；**ArkTS / ArkUI 遇坑（build/getter/ForEach/@Trace/JSON.parse/签名/hvigor 等）→ 先查 berry3 避坑文档**（尤其 berry3 `docs/ArkUI-V2严格模式避坑.md`）；底层 / 系统能力 chatcube 没有才看 berry3 代码
 - **License**：chatcube = MIT（搬代码需保留版权，与 AGPL 兼容）；berry3 license 不明，仅参考不搬代码
 - **查询鸿蒙官方文档**用本项目已复制的两个 retriever skill（`.claude/skills/`）：
   - ArkTS 语法 / 库 → `hmos-arkts-knowledge-retriever`

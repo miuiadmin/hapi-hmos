@@ -201,10 +201,10 @@ hapi-hmos/
 
 | 项目 | 角色 | 参考范围 |
 |---|---|---|
-| **[chatcube](https://github.com/LongLiveY96/chatcube)**（MIT） | 🥇 主要 | 布局、样式、流式对话、会话管理（业务 / 架构 / UX 全方位） |
-| berry3 | 🥈 次要 | 仅底层代码参考（系统能力调用、特定底层实现），license 不明 → **仅参考不搬代码** |
+| **[chatcube](https://github.com/LongLiveY96/chatcube)**（MIT） | 🥇 主要 | **UI 样式（颜色 / 主题 / 字体 / 圆角 / 间距 / 动效）**、布局、流式对话、会话管理（业务 / 架构 / UX 全方位） |
+| berry3 | 🔧 辅助 | **ArkTS 避坑文档库**（遇坑先查）+ 底层代码（系统能力），license 不明 → **仅参考不搬代码** |
 
-> ArkUI 写法 / 页面布局 / 对话 / 会话管理拿不准 → 先看 chatcube；只有底层 / 系统能力才看 berry3。
+> 🔒 **UI 样式一律以 chatcube 为准**（不自创、不参考 berry3 浏览器 UI）；ArkUI 写法 / 页面布局 / 对话 / 会话拿不准 → 先看 chatcube；**ArkTS / ArkUI 遇坑 → 先查 berry3 避坑文档**；只有底层 / 系统能力才看 berry3 代码。详见 [docs/参考项目.md](docs/参考项目.md)。
 
 ### 同步官方更新
 
