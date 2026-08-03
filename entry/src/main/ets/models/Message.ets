@@ -3,7 +3,7 @@ import { NormalizedAgentContent } from '../chat/NormalizedContent';
 import { CodexReview, parseCodexReviewMessage } from '../chat/CodexReview';
 import { parseAttachmentsFromContent } from '../chat/AttachmentFormat';
 import { PlanEntry, normalizePlanEntries } from '../chat/CodexPlan';
-import { t } from '../i18n/Translate';
+import { t, kv } from '../i18n/Translate';
 
 // Hapi 对话消息（对齐 shared/src/schemas.ts DecryptedMessage + web/src/chat 归一化）
 // ArkTS 无 Zod：手写信封解包（替代 unwrapRoleWrappedRecordEnvelope）+ 各 role 文本提取
@@ -307,11 +307,11 @@ export function formatScheduledIn(scheduledAt: number, now: number): string {
   const diff: number = scheduledAt - now;
   if (diff <= 0) { return t('msg.scheduledDue'); }
   const mins: number = Math.round(diff / 60000);
-  if (mins < 60) { return t('msg.scheduledInMins', { n: mins }); }
+  if (mins < 60) { return t('msg.scheduledInMins', kv('n', mins)); }
   const hours: number = Math.round(mins / 60);
-  if (hours < 24) { return t('msg.scheduledInHours', { n: hours }); }
+  if (hours < 24) { return t('msg.scheduledInHours', kv('n', hours)); }
   const days: number = Math.round(hours / 24);
-  return t('msg.scheduledInDays', { n: days });
+  return t('msg.scheduledInDays', kv('n', days));
 }
 
 // 取消排队消息响应（对照 shared CancelMessageResponse：cancelled | invoked 竞态分支）。
@@ -702,6 +702,12 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
     m.attachments = inner !== null ? parseAttachmentsFromContent(inner['attachments']) : [];
     m.status = m.invokedAt === 0 ? 'queued' : 'sent';
   } else if (normalizedRole === 'agent') {
+    // inner 为 null：agent 信封无 content（异常/历史脏数据），按空 agent 处理，避开 pickStr/pickObj 的非空参数。
+    if (inner === null) {
+      m.text = '';
+      m.status = 'sent';
+      return m;
+    }
     // Codex agent-run 拦截（对照 normalizeAgent.ts:538-556）：agent 报文 content={type:'codex', data:{...}}。
     //   仅 data.type 为 agent-run-start/update/trace 三类被拦为 event（data 整体透传 m.agentRunEvent，跳过正常
     //   agent 提取）；其余 codex 内容（message/reasoning/tool-call/summary/plan_update 等）仍走 extractAgentBlocks，
@@ -769,7 +775,7 @@ export function parseMessage(raw: Record<string, Object>): ChatMessage {
       //   api_error / microcompact_boundary / compact_boundary → AgentEvent，EventPresentation 渲染居中灰条（#1）。
       //   蛇形/连字符 subtype 兼容。
       const subtype: string = inner !== null ? pickStr(inner, 'subtype') : '';
-      if (subtype === 'turn_duration' || subtype === 'turn-duration') {
+      if (inner !== null && (subtype === 'turn_duration' || subtype === 'turn-duration')) {
         m.turnDurationMs = pickNum(inner, 'durationMs');
         m.turnDurationTargetId = pickStr(inner, 'messageId');
       } else if (subtype === 'api_error' || subtype === 'api-error') {

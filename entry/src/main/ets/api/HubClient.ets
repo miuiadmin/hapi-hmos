@@ -4,7 +4,7 @@ import { AuthRequest, AuthUser } from '../models/Auth';
 import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // ApproveOptions 从 HubClientUtils（纯逻辑模块）再导出，保持外部 `import { ApproveOptions } from '../api/HubClient'` 不破。
 export { ApproveOptions } from './HubClientUtils';
@@ -132,7 +132,7 @@ export class HubClient {
         success: false,
         statusCode: 0,
         data: '',
-        errorMessage: t('api.requestFailed', { detail: JSON.stringify(error) })
+        errorMessage: t('api.requestFailed', kv('detail', JSON.stringify(error)))
       };
     } finally {
       httpRequest.destroy();
@@ -167,7 +167,7 @@ export class HubClient {
         errorMessage: ok ? '' : `HTTP ${response.responseCode}`
       };
     } catch (error) {
-      return { statusCode: 0, buffer: new ArrayBuffer(0), errorMessage: t('api.requestFailed', { detail: JSON.stringify(error) }) };
+      return { statusCode: 0, buffer: new ArrayBuffer(0), errorMessage: t('api.requestFailed', kv('detail', JSON.stringify(error))) };
     } finally {
       httpRequest.destroy();
     }
@@ -268,7 +268,7 @@ export class HubClient {
   async getMachines(): Promise<Machine[]> {
     const resp = await this.request(http.RequestMethod.GET, '/api/machines', undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMachinesFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMachinesFailed', kv('code', resp.statusCode)));
     }
     return parseMachinesResponse(resp.data);
   }
@@ -281,7 +281,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/list-directory`, body, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', kv('code', resp.statusCode)));
     }
     return parseListDirectoryResponse(resp.data);
   }
@@ -295,13 +295,13 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/paths/exists`, body, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.requestFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.requestFailed', kv('code', resp.statusCode)));
     }
     let root: Record<string, Object>;
     try {
       root = JSON.parse(resp.data) as Record<string, Object>;
     } catch (_e) {
-      throw new Error(t('api.requestFailed', { code: resp.statusCode }));
+      throw new Error(t('api.requestFailed', kv('code', resp.statusCode)));
     }
     const existsRaw: Object | undefined = root['exists'];
     if (existsRaw === undefined || existsRaw === null) { return false; }
@@ -330,7 +330,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/spawn`, body, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.spawnFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.spawnFailed', kv('code', resp.statusCode)));
     }
     return parseSpawnResponse(resp.data);   // 业务 error（type:'error'）在此抛
   }
@@ -343,7 +343,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/machines/${machineId}/codex-models`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseCodexModelsResponse(resp.data);
   }
@@ -351,7 +351,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}/codex-models`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseCodexModelsResponse(resp.data);
   }
@@ -359,7 +359,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/machines/${machineId}/cursor-models`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseOpencodeModelsResponse(resp.data);
   }
@@ -367,7 +367,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}/cursor-models`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseOpencodeModelsResponse(resp.data);
   }
@@ -376,7 +376,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/machines/${machineId}/opencode-models?cwd=${encodeURIComponent(cwd)}`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseOpencodeModelsResponse(resp.data);
   }
@@ -384,7 +384,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}/opencode-models`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
     return parseOpencodeModelsResponse(resp.data);
   }
@@ -392,7 +392,7 @@ export class HubClient {
   async fetchSessions(): Promise<SessionSummary[]> {
     const resp = await this.request(http.RequestMethod.GET, '/api/sessions', undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', kv('code', resp.statusCode)));
     }
     return parseSessionsResponse(resp.data);
   }
@@ -407,7 +407,7 @@ export class HubClient {
     }
     const resp = await this.request(http.RequestMethod.GET, path, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMessagesFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadMessagesFailed', kv('code', resp.statusCode)));
     }
     return parseMessagesPageResponse(resp.data);
   }
@@ -427,7 +427,9 @@ export class HubClient {
   //   attachments 与 scheduledAt 互斥（上游 refine：scheduledAt + attachments 同时给会 400），故 attachments 非空时不带 scheduledAt。
   async sendMessage(sessionId: string, text: string, localId: string,
     scheduledAt: number = 0, attachments: AttachmentMetadata[] = []): Promise<boolean> {
-    const body: Record<string, Object> = { text: text, localId: localId };
+    const body: Record<string, Object> = {};
+    body['text'] = text;
+    body['localId'] = localId;
     if (attachments.length > 0) {
       body['attachments'] = attachments as Object;
     } else if (scheduledAt > 0) {
@@ -462,11 +464,15 @@ export class HubClient {
   //   session 非 active 时先 resume 拿【可能新的】sessionId 再发，否则 POST messages 撞 requireActive）。
   //   permissionMode 非空才随 body 发（保持当前权限模式）；成功返回 sessionId，HTTP/业务失败抛 Error。
   async resumeSession(sessionId: string, permissionMode: string = ''): Promise<string> {
+    let resumeBody: Record<string, Object> = EMPTY_BODY;
+    if (permissionMode !== '') {
+      resumeBody = {};
+      resumeBody['permissionMode'] = permissionMode;
+    }
     const resp = await this.request(http.RequestMethod.POST,
-      `/api/sessions/${sessionId}/resume`,
-      permissionMode !== '' ? { permissionMode } as Record<string, Object> : EMPTY_BODY, 'jwt');
+      `/api/sessions/${sessionId}/resume`, resumeBody, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.resumeFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.resumeFailed', kv('code', resp.statusCode)));
     }
     return parseResumeSessionResponse(resp.data);
   }
@@ -508,10 +514,9 @@ export class HubClient {
     if (subscriptionId === '') {
       return false;
     }
-    const body: Record<string, Object> = {
-      subscriptionId: subscriptionId,
-      visibility: visibility
-    };
+    const body: Record<string, Object> = {};
+    body['subscriptionId'] = subscriptionId;
+    body['visibility'] = visibility;
     const resp = await this.request(http.RequestMethod.POST, '/api/visibility', body, 'jwt');
     return resp.success;
   }
@@ -552,7 +557,7 @@ export class HubClient {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}`, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadSessionsFailed', kv('code', resp.statusCode)));
     }
     return parseSessionDetail(resp.data);
   }
@@ -582,7 +587,8 @@ export class HubClient {
 
   // 权限模式（POST /sessions/:id/permission-mode {mode}）
   async setPermissionMode(sessionId: string, mode: string): Promise<boolean> {
-    const body: Record<string, string> = { mode: mode };
+    const body: Record<string, string> = {};
+    body['mode'] = mode;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/permission-mode`, body, 'jwt');
     return resp.success;
@@ -590,7 +596,8 @@ export class HubClient {
 
   // 协作模式（POST /sessions/:id/collaboration-mode {mode}，仅 codex）
   async setCollaborationMode(sessionId: string, mode: string): Promise<boolean> {
-    const body: Record<string, string> = { mode: mode };
+    const body: Record<string, string> = {};
+    body['mode'] = mode;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/collaboration-mode`, body, 'jwt');
     return resp.success;
@@ -598,7 +605,8 @@ export class HubClient {
 
   // 模型（POST /sessions/:id/model {model}；'' → null 复位为 agent 默认）
   async setModel(sessionId: string, model: string): Promise<boolean> {
-    const body: Record<string, string | null> = { model: model !== '' ? model : null };
+    const body: Record<string, string | null> = {};
+    body['model'] = model !== '' ? model : null;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/model`, body, 'jwt');
     return resp.success;
@@ -606,7 +614,8 @@ export class HubClient {
 
   // 努力度（POST /sessions/:id/effort {effort}，claude；'' → null 复位 auto）
   async setEffort(sessionId: string, effort: string): Promise<boolean> {
-    const body: Record<string, string | null> = { effort: effort !== '' ? effort : null };
+    const body: Record<string, string | null> = {};
+    body['effort'] = effort !== '' ? effort : null;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/effort`, body, 'jwt');
     return resp.success;
@@ -614,7 +623,8 @@ export class HubClient {
 
   // 推理努力（POST /sessions/:id/model-reasoning-effort {modelReasoningEffort}，codex；'' → null 复位）
   async setModelReasoningEffort(sessionId: string, effort: string): Promise<boolean> {
-    const body: Record<string, string | null> = { modelReasoningEffort: effort !== '' ? effort : null };
+    const body: Record<string, string | null> = {};
+    body['modelReasoningEffort'] = effort !== '' ? effort : null;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/model-reasoning-effort`, body, 'jwt');
     return resp.success;
@@ -657,7 +667,7 @@ export class HubClient {
     if (params.length > 0) { p = `${p}?${params.join('&')}`; }
     const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.searchFilesFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.searchFilesFailed', kv('code', resp.statusCode)));
     }
     return parseFileSearchResponse(resp.data);
   }
@@ -675,7 +685,7 @@ export class HubClient {
     if (path !== undefined && path !== '') { p = `${p}?path=${encodeURIComponent(path)}`; }
     const resp = await this.request(http.RequestMethod.GET, p, undefined, 'jwt');
     if (!resp.success) {
-      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', { code: resp.statusCode }));
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.browseDirFailed', kv('code', resp.statusCode)));
     }
     return parseSessionDirectoryResponse(resp.data);
   }
@@ -685,11 +695,10 @@ export class HubClient {
   //   请求体较大（整文件 base64），走既有 request（Content-Type application/json + JWT）。
 
   async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<UploadFileResult> {
-    const body: Record<string, Object> = {
-      filename: filename,
-      content: content,
-      mimeType: mimeType
-    };
+    const body: Record<string, Object> = {};
+    body['filename'] = filename;
+    body['content'] = content;
+    body['mimeType'] = mimeType;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/upload`, body, 'jwt');
     const result: UploadFileResult = parseUploadFileResponse(resp.data);
@@ -701,7 +710,8 @@ export class HubClient {
   // 删除已上传附件（POST /sessions/:id/upload/delete body {path}，对照 deleteUploadFile）。
   //   用于附件 chip 的 ✕：移除待发附件时同步清服务端临时文件，避免残留。
   async deleteUploadFile(sessionId: string, path: string): Promise<boolean> {
-    const body: Record<string, Object> = { path: path };
+    const body: Record<string, Object> = {};
+    body['path'] = path;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/upload/delete`, body, 'jwt');
     return resp.success;
@@ -734,7 +744,9 @@ export class HubClient {
   // 上报语音遥测（POST /api/voice/telemetry，对照 hub telemetryEventSchema）。
   //   stage/message 必填；sessionId/voiceId/language/details 非空才随 body 发。fire-and-forget，成功与否不阻塞 UI。
   async sendVoiceTelemetry(ev: VoiceTelemetryEvent): Promise<boolean> {
-    const body: Record<string, Object> = { stage: ev.stage, message: ev.message };
+    const body: Record<string, Object> = {};
+    body['stage'] = ev.stage;
+    body['message'] = ev.message;
     if (ev.sessionId !== '') { body['sessionId'] = ev.sessionId; }
     if (ev.voiceId !== '') { body['voiceId'] = ev.voiceId; }
     if (ev.language !== '') { body['language'] = ev.language; }

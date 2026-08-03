@@ -2,7 +2,7 @@
 // 含：resolveBaseUrl（去尾斜杠）、ApproveOptions（审批请求体参数；从 HubClient 移入此处，避免 ohos 传染）、
 //     buildApproveBody（仅序列化非空字段，对照 web approvePermission）、buildDenyBody、categorizeAuthFailure（登录失败归类）。
 
-import { t } from '../i18n/Translate';
+import { t, kv } from '../i18n/Translate';
 
 // 去掉 hubUrl 末尾的 '/'（对照原 HubClient.resolveBaseUrl / SSEClient.baseUrl）
 export function resolveBaseUrl(raw: string): string {
@@ -97,7 +97,7 @@ export function categorizeAuthFailure(statusCode: number, data: string, errorMes
     } catch (e) {
       // 解析失败 → 落到默认文案
     }
-    return t('conn.loginFailed', { code: statusCode });
+    return t('conn.loginFailed', kv('code', statusCode));
   }
   if (errorMessage !== '') {
     if (statusCode === 0) {
@@ -105,5 +105,5 @@ export function categorizeAuthFailure(statusCode: number, data: string, errorMes
     }
     return errorMessage;
   }
-  return t('conn.loginFailed', { code: statusCode });
+  return t('conn.loginFailed', kv('code', statusCode));
 }
