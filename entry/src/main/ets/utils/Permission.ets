@@ -35,8 +35,7 @@ export async function ensureMicrophonePermission(context: common.UIAbilityContex
 
   // 发起系统授权弹窗
   try {
-    const result: abilityAccessCtrl.PermissionRequestResult =
-      await atManager.requestPermissionsFromUser(context, [MICROPHONE_PERMISSION]);
+    const result = await atManager.requestPermissionsFromUser(context, [MICROPHONE_PERMISSION]);
     if (result.authResults.length === 0) {
       return false;
     }

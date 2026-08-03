@@ -3,7 +3,7 @@
 // 以及「首条或跨日显示分隔」规则。纯函数无副作用，可被 LocalUnit 直接测试。
 // timestamp <= 0 一律视为无值（对齐 ChatBlock.createdAt 的「0 = null」约定），返回空串 / 不显示。
 
-import { t } from '../i18n/Translate';
+import { t, kv2, kv3 } from '../i18n/Translate';
 
 /**
  * 日期分隔文本：今天 / 昨天 / 同年 M月D日 / 跨年 YYYY年M月D日。ts<=0 返回空。
@@ -25,9 +25,9 @@ export function formatDateDivider(timestamp: number): string {
     return t('date.yesterday');
   }
   if (date.getFullYear() === now.getFullYear()) {
-    return t('date.monthDay', { m: date.getMonth() + 1, d: date.getDate() });
+    return t('date.monthDay', kv2('m', date.getMonth() + 1, 'd', date.getDate()));
   }
-  return t('date.yearMonthDay', { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() });
+  return t('date.yearMonthDay', kv3('y', date.getFullYear(), 'm', date.getMonth() + 1, 'd', date.getDate()));
 }
 
 /**

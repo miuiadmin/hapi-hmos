@@ -16,21 +16,43 @@ export class PickedFile {
 }
 
 // 常见扩展名 → MIME（其余落 application/octet-stream；图片常用项优先，覆盖 agent 常读的文本/图/表）。
-const MIME_MAP: Record<string, string> = {
-  txt: 'text/plain', md: 'text/markdown', json: 'application/json', csv: 'text/csv',
-  html: 'text/html', xml: 'application/xml', yaml: 'text/yaml', yml: 'text/yaml',
-  js: 'text/javascript', ts: 'text/typescript', py: 'text/x-python', java: 'text/x-java',
-  c: 'text/x-c', h: 'text/x-c', cpp: 'text/x-c++', hpp: 'text/x-c++',
-  go: 'text/x-go', rs: 'text/x-rust', rb: 'text/x-ruby', php: 'text/x-php',
-  sh: 'application/x-sh', sql: 'application/sql',
-  pdf: 'application/pdf', zip: 'application/zip', gz: 'application/gzip',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-  webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  xls: 'application/vnd.ms-excel',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  doc: 'application/msword'
-};
+const MIME_MAP: Record<string, string> = {};
+MIME_MAP['txt'] = 'text/plain';
+MIME_MAP['md'] = 'text/markdown';
+MIME_MAP['json'] = 'application/json';
+MIME_MAP['csv'] = 'text/csv';
+MIME_MAP['html'] = 'text/html';
+MIME_MAP['xml'] = 'application/xml';
+MIME_MAP['yaml'] = 'text/yaml';
+MIME_MAP['yml'] = 'text/yaml';
+MIME_MAP['js'] = 'text/javascript';
+MIME_MAP['ts'] = 'text/typescript';
+MIME_MAP['py'] = 'text/x-python';
+MIME_MAP['java'] = 'text/x-java';
+MIME_MAP['c'] = 'text/x-c';
+MIME_MAP['h'] = 'text/x-c';
+MIME_MAP['cpp'] = 'text/x-c++';
+MIME_MAP['hpp'] = 'text/x-c++';
+MIME_MAP['go'] = 'text/x-go';
+MIME_MAP['rs'] = 'text/x-rust';
+MIME_MAP['rb'] = 'text/x-ruby';
+MIME_MAP['php'] = 'text/x-php';
+MIME_MAP['sh'] = 'application/x-sh';
+MIME_MAP['sql'] = 'application/sql';
+MIME_MAP['pdf'] = 'application/pdf';
+MIME_MAP['zip'] = 'application/zip';
+MIME_MAP['gz'] = 'application/gzip';
+MIME_MAP['png'] = 'image/png';
+MIME_MAP['jpg'] = 'image/jpeg';
+MIME_MAP['jpeg'] = 'image/jpeg';
+MIME_MAP['gif'] = 'image/gif';
+MIME_MAP['webp'] = 'image/webp';
+MIME_MAP['svg'] = 'image/svg+xml';
+MIME_MAP['bmp'] = 'image/bmp';
+MIME_MAP['xlsx'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+MIME_MAP['xls'] = 'application/vnd.ms-excel';
+MIME_MAP['docx'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+MIME_MAP['doc'] = 'application/msword';
 
 export function guessMime(filename: string): string {
   const lower: string = filename.toLowerCase();

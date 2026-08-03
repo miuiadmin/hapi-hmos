@@ -18,6 +18,7 @@
 
 import { connection } from '@kit.NetworkKit';
 import { AppStorageV2 } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 @ObservedV2
 export class DeviceNetworkState {
@@ -57,7 +58,9 @@ export class DeviceNetworkService {
       });
       // netLost 不映射离线：可能仅切网（wifi↔蜂窝），靠 netUnavailable 兜底全无网。
       try {
-        await _netConn.register();
+        _netConn.register((err: BusinessError): void => {
+          // 注册结果回调（保持乐观在线：注册失败也不影响初始探测值显示）
+        });
       } catch (e) {
         // 注册失败保持乐观在线（监听缺失，但仍按初始探测值显示）
       }

@@ -3,14 +3,14 @@
 // 架构（镜像 ThemeService/TerminalToolDisplayService，简化版）：
 //   @ObservedV2 HapticsState{@Trace enabled} 经 AppStorageV2 应用级共享单例；
 //   SettingsPage 读 getHapticsState().enabled 建立刷新依赖；切换 setEnabled → 改 @Trace → 即时重渲染。
-//   tap(event)：enabled 门控 → 读纯层 hapticEffectFor → 调 @ohos.vibrator（@kit.MiscKit）。
+//   tap(event)：enabled 门控 → 读纯层 hapticEffectFor → 调 @ohos.vibrator（@kit.SensorServiceKit）。
 //   fire-and-forget（.then 双空回调 + try/catch），失败静默不炸 UI。
 //   init 在 EntryAbility.bootstrap（loadContent 前）从 Preferences 读回；无 context（纯 state + 持久化）。
 //
 // 拆层（项目范式）：意图→效果映射 + pref 归一在 chat/Haptics.ets（无 @kit，LocalUnit 可测）；
-//   本文件仅 @kit.MiscKit（vibrator）+ @kit.ArkUI（@ObservedV2/@Trace/AppStorageV2）+ PreferencesService，留真机验证。
+//   本文件仅 @kit.SensorServiceKit（vibrator）+ @kit.ArkUI（@ObservedV2/@Trace/AppStorageV2）+ PreferencesService，留真机验证。
 
-import { vibrator } from '@kit.MiscKit';
+import { vibrator } from '@kit.SensorServiceKit';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { getPreferencesService } from './PreferencesService';
 import { PreferenceKeys } from '../config/Keys';

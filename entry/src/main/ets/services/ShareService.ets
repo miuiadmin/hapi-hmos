@@ -1,7 +1,7 @@
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { t } from '../i18n/I18nService';
+import { t, kv } from '../i18n/I18nService';
 
 // 系统分享服务：纯文本 → 系统分享面板（@kit.ShareKit systemShare）。
 // 对照 chatcube services/ShareService.ets 的 shareText（MIT），裁掉其图片/Markdown/HTML/截图导出，
@@ -39,7 +39,7 @@ export class ShareService {
       });
       return { success: true, errorMessage: '' };
     } catch (error) {
-      return { success: false, errorMessage: t('share.failed', { detail: JSON.stringify(error) }) };
+      return { success: false, errorMessage: t('share.failed', kv('detail', JSON.stringify(error))) };
     }
   }
 }

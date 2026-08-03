@@ -57,6 +57,18 @@ export class PreferencesService implements KvStore {
     await this.dataPreferences!.flush();
   }
 
+  async getNumber(key: string, defaultValue: number = 0): Promise<number> {
+    this.checkReady();
+    const val = await this.dataPreferences!.get(key, defaultValue);
+    return val as number;
+  }
+
+  async putNumber(key: string, value: number): Promise<void> {
+    this.checkReady();
+    await this.dataPreferences!.put(key, value);
+    await this.dataPreferences!.flush();
+  }
+
   async delete(key: string): Promise<void> {
     this.checkReady();
     await this.dataPreferences!.delete(key);
