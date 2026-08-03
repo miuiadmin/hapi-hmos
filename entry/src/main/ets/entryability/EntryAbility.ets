@@ -44,7 +44,7 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
     // 冷启动经 deep link（hapi://connect?…）拉起：暂存 URI，待首屏消费（LoginPage.aboutToAppear 或 bootstrap 回调）
-    const uri: string = want.uri !== undefined ? want.uri : '';
+    const uri: string = want.uri ?? '';
     if (uri !== '' && getDeepLinkImporter().isConnectLink(uri)) {
       getDeepLinkImporter().setPending(uri);
     }
@@ -53,7 +53,7 @@ export default class EntryAbility extends UIAbility {
   // 暖启动经 deep link 拉起（App 已在运行）：直接处理导入
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onNewWant');
-    const uri: string = want.uri !== undefined ? want.uri : '';
+    const uri: string = want.uri ?? '';
     if (uri !== '' && getDeepLinkImporter().isConnectLink(uri)) {
       this.applyImport(uri);
     }

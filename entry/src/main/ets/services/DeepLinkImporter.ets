@@ -79,10 +79,10 @@ export class DeepLinkImporter {
     } catch (_e) {
       return null;
     }
-    const serverRaw: string | undefined = parsed.params.get('server');
-    const tokenRaw: string | undefined = parsed.params.get('token');
-    const server: string = serverRaw !== undefined && serverRaw !== null ? serverRaw : '';
-    const token: string = tokenRaw !== undefined && tokenRaw !== null ? tokenRaw : '';
+    const serverRaw: string | null = parsed.params.get('server');
+    const tokenRaw: string | null = parsed.params.get('token');
+    const server: string = serverRaw !== null ? serverRaw : '';
+    const token: string = tokenRaw !== null ? tokenRaw : '';
     if (server === '' || token === '') {
       return null;
     }

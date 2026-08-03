@@ -160,6 +160,10 @@ Hub 默认监听 `127.0.0.1:3006`；鸿蒙设备远程访问需配置公网地�
 1. DevEco Studio → **Open** → 选择本仓库根目录
 2. 同步 SDK，等待 hvigor 构建完成
 3. 在 App 配置里填入 Hub 地址与 `CLI_API_TOKEN`
+   - 或用**配置导入**（推荐）：在任意可点链接处（服务器网页 / 备忘录）放一条
+     `hapi://connect?server=<URL 编码的地址>&token=<CLI_API_TOKEN>`，点一下即自动拉起 App、
+     验证 token 并持久化保存（与手动登录走同一条链路；token 不入源码、不入 HAP，重启/换机点一次即恢复）。
+     例：`hapi://connect?server=https%3A%2F%2Fhub.example.com%2F&token=xxxx`
 4. 连接真机 / 模拟器，运行 `entry`
 
 > 模拟器联调：Hub 在宿主机 `127.0.0.1:3006`，模拟器内用 `http://10.0.2.2:3006` 访问；

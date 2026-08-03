@@ -1,5 +1,5 @@
 import { getConnectionService } from '../services/ConnectionService';
-import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
+import { getDeepLinkImporter, ParsedConnect } from '../services/DeepLinkImporter';
 import { getHubClient } from '../api/HubClient';
 import { AppStorageKeys } from '../config/Keys';
 import { ServerPreset } from '../models/HubConfig';
@@ -34,6 +34,11 @@ struct LoginPage {
   aboutToAppear(): void {
     // 回填已存的 Hub 地址，方便重连；token 不回填（安全）
     this.hubUrl = getConnectionService().hubUrl;
+    // 冷启动经 deep link 拉起：消费待导入链接 → 验证后登录（与手动登录走同一条 apply 链路）
+    const pending: string = getDeepLinkImporter().consumePending();
+    if (pending !== '') {
+      this.handleDeepLink(pending);
+    }
   }
 
   private isInputComplete(): boolean {
@@ -64,6 +69,7 @@ struct LoginPage {
   }
 
   // 登录：用 token 换 JWT（POST /api/auth），成功持久化并切到主页
+  //   鉴权 + 持久化 + arm 预刷抽到 DeepLinkImporter.apply，与 deep link 导入共用同一条链路。
   private async doLogin(): Promise<void> {
     if (this.isSubmitting) { return; }
     if (!this.isInputComplete()) {
@@ -73,16 +79,34 @@ struct LoginPage {
     this.isSubmitting = true;
     this.lastError = '';
     try {
-      const result = await getHubClient().authenticate(this.apiToken.trim(), this.hubUrl.trim());
-      if (!result.success) {
-        this.lastError = result.errorMessage !== '' ? result.errorMessage : t('login.error.authFailedGeneric');
+      const r = await getDeepLinkImporter().apply(this.hubUrl.trim(), this.apiToken.trim());
+      if (!r.success) {
+        this.lastError = r.errorMessage;
         return;
       }
-      // 持久化配置 + JWT，然后切到会话列表页
-      await getConnectionService().saveConnection(this.hubUrl.trim(), this.apiToken.trim());
-      await getConnectionService().saveJwt(result.jwt);
-      // 启动 JWT 主动预刷定时器（按新 jwt 的 exp 排期，到期前 60s 自动续期）
-      getJwtRefreshScheduler().arm();
+      this.switchToMainContent();
+    } catch (e) {
+      this.lastError = t('login.error.failedWithReason', kv('reason', e instanceof Error ? e.message : t('login.error.unknown')));
+    } finally {
+      this.isSubmitting = false;
+    }
+  }
+
+  // deep link 导入：解析链接 → apply（与 doLogin 同链路）。token 不回填表单（安全），仅地址回填 + 状态指示。
+  private async handleDeepLink(uri: string): Promise<void> {
+    const parsed: ParsedConnect | null = getDeepLinkImporter().parse(uri);
+    if (parsed === null) {
+      return;   // 非 connect 链接，忽略
+    }
+    this.hubUrl = parsed.server;
+    this.isSubmitting = true;
+    this.lastError = '';
+    try {
+      const r = await getDeepLinkImporter().apply(parsed.server, parsed.token);
+      if (!r.success) {
+        this.lastError = r.errorMessage;
+        return;
+      }
       this.switchToMainContent();
     } catch (e) {
       this.lastError = t('login.error.failedWithReason', kv('reason', e instanceof Error ? e.message : t('login.error.unknown')));
