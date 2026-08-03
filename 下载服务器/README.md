@@ -2,7 +2,7 @@
 
 Hapi（鸿蒙客户端）安装包**自建公网分发站**的本地脚本：把 88-release 共存包打好 + HTTP 上传到服务器归档目录。访问 `https://berry.flyme.chat:8443/hapi?t=<token>` 即下载。
 
-> ⚠️ **2026-07-10 重组（二）· 运行时融合**：下载站 Hono 路由已并入 **nodebook 单服务**（`nodebook.service`），不再有独立 `berry-dist.service` / 6699 端口，对外经 Caddy:8443。
+> ⚠️ **运行时**：下载站是 **nodebook-rs**（Rust + Salvo，单 systemd 服务 `nodebook-rs.service`），对外经 Caddy:8443。历史：2026-07-10 Hono 路由并入 nodebook 单服务、撤掉独立 `berry-dist.service` / 6699 端口；其后 nodebook 由 Node 重写为 Rust。
 
 > 🔧 **分工（重要）**：
 > - **本目录**只管 **打包 + 上传**（`dist.sh` 打 88-release 1 包 → `sync-server.sh` HTTP 上传归档）。
@@ -13,9 +13,9 @@ Hapi（鸿蒙客户端）安装包**自建公网分发站**的本地脚本：把
 ```
 本地 Mac                                     服务器 berry.flyme.chat（DNS → 实际机器 IP）
 ─────────────────────                       ──────────────────────────────────────
-"帮我同步到服务器"                            systemd: nodebook.service（单服务）
-  ↓ hapi-sync skill（若有）                     ↓ node /root/nodebook/dist/index.js
-dist.sh → pack.sh 打 88-release 1 个 app       Hono app（一个进程干多件事）
+"帮我同步到服务器"                            systemd: nodebook-rs.service（单服务）
+  ↓ hapi-sync skill（若有）                     ↓ /usr/local/bin/nodebook-rs（静态 musl 二进制）
+dist.sh → pack.sh 打 88-release 1 个 app       Rust + Salvo app（一个进程干多件事）
   ├─ 默认变包名 88 + release .app                ├─ TG webhook（bot）
   └─ 写 manifest（含 bundleName/md5/...）        ├─ /sub/:token（Clash 订阅）
   ↓                                                  ├─ /berry/*（berry 人工下载，BERRY_TOKEN）
@@ -26,7 +26,7 @@ sync-server.sh HTTP POST /hapi/upload ────→         ├─ /hapi/*（h
                                                   Caddy 8443 → 127.0.0.1:8787（全量反代）
 ```
 
-> 服务端怎么部署、hapi 的 `/hapi` 路由怎么加、token 怎么换 → 见 **nodebook `README.md`**。本目录只负责左半边（打包 + 上传）。
+> 服务端怎么部署、token 怎么换、多 App OTA 托管 → 见 **[docs/服务端部署.md](docs/服务端部署.md)**。本目录只负责左半边（打包 + 上传）。
 
 ## 目录现状
 
@@ -40,7 +40,8 @@ sync-server.sh HTTP POST /hapi/upload ────→         ├─ /hapi/*（h
 │   ├── sync-server.sh      HTTP 上传归档到服务器
 │   └── publish.sh          ★一键发布（dist + sync，skill 调这个）
 └── docs/
-    └── 打包流程.md         dist.sh 1 个包怎么来、manifest 字段、发版时序约束
+    ├── 打包流程.md         dist.sh 1 个包怎么来、manifest 字段、发版时序约束
+    └── 服务端部署.md       多 App OTA 托管的服务端上线步骤（.env / cross-build / scp / 冒烟 / 回滚）
 ```
 
 > hapi-sync skill 若存在则在 `.claude/hapi-sync/`（.claude/ gitignore，本地维护）。本任务只移植脚本，skill 不在其中——需要时另外建。
@@ -57,10 +58,10 @@ bash 下载服务器/scripts/publish.sh      # ★一键：打包 + 上传
 > 📦 **发版 TG 推送已关闭（沿用 berry 2026-07-16 决策）**：每次发版都推 TG 无必要，`sync-server.sh` 不再调 `/internal/release`（后端该端点已移除，现返 404）。发版后看脚本打印的下载页 URL 即可。
 
 ### ⚠️ 发版前置（首次 / 服务端 OTA 路由改动后）
-**必须先部署 nodebook（含 bundleName 的 hapi OTA 路由）再发新客户端**。新客户端 `SelfUpdateManager.parseUpdateInfo` 要求 `/hapi-ota/update.json` 带 bundleName（非空），旧 nodebook 不带 → 新客户端 OTA 失效（拉到 JSON 但解析失败→无更新）。向前兼容：新 nodebook 多出的 bundleName 字段旧客户端忽略。部署见 nodebook README「部署 / 改代码」（本地 build → scp → restart，1G 内存绝不在服务器 tsc）。
+**必须先部署 nodebook-rs（含 bundleName 的 hapi OTA 路由）再发新客户端**。新客户端 `SelfUpdateManager.parseUpdateInfo` 要求 `/hapi-ota/update.json` 带 bundleName（非空），旧 nodebook 不带 → 新客户端 OTA 失效（拉到 JSON 但解析失败→无更新）。向前兼容：新 nodebook-rs 多出的 bundleName 字段旧客户端忽略。部署见 [docs/服务端部署.md](docs/服务端部署.md)（本地 `cross/build.sh` 交叉编译出 musl 静态二进制 → scp → `systemctl restart nodebook-rs`；ship profile 链接峰值 4-6G，服务器 442M 小机绝不在上面编译）。
 
 ### 首次部署 / 换机 / 改服务端代码
-**不在本目录做** —— 见 **nodebook 项目 `README.md`**。本目录上传的归档，nodebook 实时 `readdir` 即生效，发新版本**无需重启服务、无需碰服务端代码**。
+**不在本目录做** —— 见 **[docs/服务端部署.md](docs/服务端部署.md)**。本目录上传的归档，nodebook-rs 实时 `readdir` 即生效，日常发新版本**无需重启服务、无需碰服务端代码**（仅多 App OTA 托管这类服务端代码变更才需重建二进制 + 重启）。
 
 ## 安装包（1 个，OTA 专用）
 
@@ -77,7 +78,7 @@ bash 下载服务器/scripts/publish.sh      # ★一键：打包 + 上传
 - **位置**：复用 berry 的下载站服务器（nodebook-rs Rust 服务，对外经 Caddy :8443）；对外域名 `berry.flyme.chat`（DNS 指向当前机器 IP，换机只改 DNS、hapi-hmos 零改）
 - **人工下载**：`https://berry.flyme.chat:8443/hapi?t=<token>`（HTTPS :8443，要 HAPI_TOKEN）
 - **OTA**：`https://berry.flyme.chat:8443/hapi-ota/update.json`（免 token，共存版 APP 内置 `SELF_UPDATE_HOST` 拉；客户端校验 `bundleName === 当前包名` 防 88 包装到非 88 包）
-- **归档根**：`/opt/hapi-dist/files/archive/<日期>/<版本>/`（nodebook `FILES_ROOT` 指此，hapi 独立存储，与 berry 的 `/opt/berry-dist` 平行）
+- **归档根**：`/opt/hapi-dist/files/archive/<日期>/<版本>/`（nodebook-rs `HAPI_FILES_ROOT` 指此，hapi 独立存储，与 berry 的 `FILES_ROOT` / `/opt/berry-dist` 平行、计数互不污染）
 - **下载计数**：`/opt/hapi-dist/files/stats/downloads.json`（archive 同级，HTTP 上传不动）
 - **APP 不内置人工下载地址**（只内置 OTA 主机常量 `SELF_UPDATE_HOST`）→ 换机换 IP 改这一处 + repack
 
@@ -102,7 +103,7 @@ berry 的 dist.sh 曾需对 `AboutPage.ets` 做字节级备份 + trap 恢复（p
 
 ### 坑 3：token 保护
 - token 在 `config.sh`（gitignore）= nodebook `.env` 的 `HAPI_TOKEN`，**两边必须一致**
-- config.sh 不进仓库 = 不泄露；完整轮换步骤见 nodebook README
+- config.sh 不进仓库 = 不泄露；完整轮换步骤见 [docs/服务端部署.md](docs/服务端部署.md) 的回滚节
 - OTA（`/hapi-ota/*`）免 token：APP 内置 `SELF_UPDATE_HOST` 主机常量拉，不内置 token，换 token 无需 repack
 
 ### 坑 4：~~原始 release 签名依赖证书~~（已随 4→1 简化失效）
@@ -117,4 +118,4 @@ pack.sh 运行中途 `git status` 会显示包名 patch 中间态（FILES_TO_PAT
 ## 相关文档
 
 - [docs/打包流程.md](docs/打包流程.md) — dist.sh 1 个包怎么来、manifest 字段、发版时序约束
-- **服务端（部署/改代码/token/排错）→ nodebook 项目 `README.md`**
+- [docs/服务端部署.md](docs/服务端部署.md) — 多 App OTA 托管服务端上线（.env / cross-build / scp / 冒烟 / 回滚）
