@@ -80,6 +80,11 @@
 - V2 状态管理（`@ComponentV2` / `@Local` / `@Param` / `@Event` / `@Builder`）
 - 渲染管线纯函数化：`ChatMessage[] + AgentState → Reducer → ChatBlock[]`（易测、可对照上游）
 
+### 🔄 应用内更新（OTA）
+- **应用内自更新**：启动检查 + 进 app 主动弹更新（2h 节流），下载 → md5/size 校验 → 安装一键完成
+- 下载站纯静态托管（`berry.flyme.chat:8443/hapi/`），多 host 容错 + url 锚定安全（防更新清单被篡改指向恶意域）
+- 跨项目共用：移植自 Berry `SelfUpdateManager`，`下载服务器/OTA接入文档.md` 与 Berry 仓逐字节一致；详见 [`下载服务器/OTA接入文档.md`](下载服务器/OTA接入文档.md)
+
 ---
 
 ## 项目简介
