@@ -8,12 +8,14 @@
 # 用法:
 #   HAPI_TOKEN=<48位hex> bash 下载服务器/scripts/deploy-server.sh
 #   不传 HAPI_TOKEN → 脚本自动 openssl rand 生成并打印(记下来,同步写进本地 config.sh 的 TOKEN=)。
+#   SSH_TARGET=<你终端能连的目标> 覆盖 SSH 目标(默认 root@47.130.2.49);
+#     你若用 `ssh aws` 能连,就 SSH_TARGET=root@aws(或 SSH_TARGET=aws 若该别名即 root)。
 #
 # 幂等:.env 已有 HAPI_TOKEN 则跳过追加;二进制每次备份 .bak.<ts>;可重复跑。
 # 回滚:见末尾提示(二进制层 / .env 层)。
 set -euo pipefail
 
-SERVER=root@47.130.2.49
+SERVER="${SSH_TARGET:-root@47.130.2.49}"   # 你终端能连的目标覆盖:SSH_TARGET=root@aws bash deploy-server.sh
 REMOTE_BIN=/usr/local/bin/nodebook-rs
 BIN="$HOME/.cargo-target/x86_64-unknown-linux-musl/ship/nodebook"
 FILES_ROOT=/opt/hapi-dist/files/archive
