@@ -22,8 +22,9 @@ import { rowPos, resolveRowRadius } from '../components/settings/RowRadiusUtil';
 // 颜色经统一主题（theme/ThemeService）—— 读 getThemeState().isDark 取调色板，切换/跟随系统即时响应
 //
 // 视觉对齐设置页 berry3 卡片风：List{ListItemGroup{SettingCard}} 分组白卡 r20 + 连续圆角咬合；
-//   6 个选择字段（machine/agent/model/effort/reasoning/sessionType）收敛为单 picker sheet（设置页选择范式，
-//   主表单 SettingCard(textAndArrow) → 点击开 SheetDialog + SettingCard(check) 选项）；yolo=switch 行；
+//   6 个选择字段（machine/agent/model/effort/reasoning/sessionType）收敛为单 picker sheet——主表单
+//   SettingCard(textAndArrow) → 点击开 picker sheet。picker 内容照齐对话页模型弹窗（SessionConfigOverlay）：
+//   半屏 [MEDIUM,LARGE] + 原生把手/关闭 + 胶囊选项行（左 radio 圆点 + 文字，非卡片形）；yolo=switch 行；
 //   工作目录=点行开 DirectoryBrowser sheet（sheet 内保留手输）；创建按钮=SettingActionButton。
 
 // 持久化 key：上次所选机器 / 偏好 agent / 偏好 yolo / 各机器最近路径（JSON 数组）
@@ -91,6 +92,16 @@ struct NewSessionPage {
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  private get isDark(): boolean { return getThemeState().isDark; }
+  // 半透明色（#RRGGBB → #AA{{RRGGBB}}，八位色 alpha 在前）—— picker 选中胶囊底用。
+  private withAlpha(color: string, alphaHex: string): string {
+    if (color.startsWith('#') && color.length === 7) {
+      return `#${alphaHex}${color.substring(1)}`;
+    }
+    return color;
+  }
+  // picker 选中胶囊底（primary 半透明：暗 '28'/亮 '14'，对照 SessionConfigOverlay.selectedBg）。
+  private selectedBg(): string { return this.withAlpha(this.c.primary, this.isDark ? '28' : '14'); }
 
   private navPathStack: NavPathStack | null = null;
 
@@ -389,13 +400,16 @@ struct NewSessionPage {
     if (value !== 'worktree') { this.worktreeName = ''; }   // 非 worktree 清名
   }
 
-  // picker sheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + LARGE 档。
+  // picker sheet 视觉配置：照齐对话页模型弹窗（ChatPage.ConfigSheet）——
+  //   半屏起 [MEDIUM,LARGE] + 原生把手 dragBar + 原生关闭 showClose（选项少，半屏够，勿占满屏）。
   private get pickerSheetOpts(): SheetOptions {
-    const ov: SheetOverrides = {
-      detents: [SheetSize.LARGE],
+    const opts: SheetOptions = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      dragBar: true,
+      showClose: true,
       onDisappear: () => { this.pickerOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return opts;
   }
   // 目录浏览器 sheet 视觉配置：MEDIUM/LARGE 双档。
   private get browserSheetOpts(): SheetOptions {
@@ -582,38 +596,56 @@ struct NewSessionPage {
     .onClick(() => { this.enterDir(entry); })
   }
 
-  // 通用 picker sheet（6 选择字段共用）：SheetDialog 标题栏 + 灰身 + SettingCard(check) 白卡浮灰底选项。
+  // 通用 picker sheet（6 选择字段共用）——照齐对话页模型弹窗（SessionConfigOverlay）：
+  //   标题 Text + 胶囊选项行（左 radio 圆点 + 文字，r12/h48，选中 primary 半透明底），非 berry3 卡片形。
+  //   半屏 sheet（MEDIUM 起）+ 原生把手/关闭（pickerSheetOpts），选项少不占满屏。
   @Builder
   private PickerSheet() {
-    Column() {
-      SheetDialog({
-        title: this.pickerTitle(),
-        showCloseButton: true,
-        onClose: () => { this.pickerOpen = false; }
-      })
-      Scroll() {
-        Column({ space: 12 }) {
-          ForEach(this.pickerEntries(), (e: PickerEntry) => {
-            SettingCard({
-              primaryText: e.label,
-              suffixType: 'check',
-              isChecked: e.value === this.pickerSelectedValue(),
-              rowPosition: 'single',
-              cardBackground: true,
-              onItemClick: (): void => { this.onPickerPick(e.value); }
-            })
-          }, (e: PickerEntry) => e.value)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+    Scroll() {
+      Column() {
+        Text(this.pickerTitle())
+          .fontSize(fs(19))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.c.textPrimary)
+          .width('100%')
+          .padding({ left: 4, top: 4, bottom: 12 })
+        ForEach(this.pickerEntries(), (e: PickerEntry) => {
+          this.PickerOptionRow(e.label, e.value, this.pickerSelectedValue())
+        }, (e: PickerEntry) => e.value)
       }
-      .layoutWeight(1)
       .width('100%')
-      .align(Alignment.TopStart)
-      .scrollBar(BarState.Auto)
+      .padding({ left: 16, right: 16, bottom: 24 })
     }
     .width('100%')
     .height('100%')
+    .align(Alignment.TopStart)
+    .scrollBar(BarState.Off)
+    .backgroundColor(this.c.bg)
+  }
+  // 胶囊选项行（对照 SessionConfigOverlay.optionRow：左 circle/circle_fill + 文字。
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→surface 灰底 + 主文字 + 空心圆。行间 margin 8）。
+  @Builder
+  private PickerOptionRow(label: string, value: string, current: string) {
+    Row({ space: 10 }) {
+      SymbolGlyph(value === current ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
+        .fontSize(fs(15))
+        .fontColor([value === current ? this.c.primary : this.c.textTertiary])
+        .width(20)
+      Text(label)
+        .fontSize(fs(15))
+        .fontWeight(value === current ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(value === current ? this.c.primary : this.c.textPrimary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(48)
+    .padding({ left: 14, right: 14 })
+    .borderRadius(12)
+    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
+    .margin({ bottom: 8 })
+    .onClick(() => { this.onPickerPick(value); })
   }
 
   // 目录浏览半模态弹层（SheetDialog 标题栏 + 路径行 + 手输框 + 列表 + 选择此目录）

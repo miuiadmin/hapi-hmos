@@ -186,7 +186,7 @@ export struct SessionConfigOverlay {
       .padding({ left: 16, right: 16, bottom: 24 })
     }
     .width('100%')
-    .constraintSize({ maxHeight: '70%' })
+    .height('100%')
     .scrollBar(BarState.Off)
     .backgroundColor(this.c.bg)
   }

@@ -469,6 +469,14 @@ struct Index {
     return '';
   }
 
+  // SSE 状态灯颜色：连上(open)=绿(success) / 连接中(connecting,reconnecting)=琥珀(warning) / 其余=灰。
+  //   对照 chatcube ModelManagePage（isConnected ? #4CAF50 绿 : 灰）——「实时已通」直观给绿灯，用户一眼确认在线。
+  private get sseDotColor(): string {
+    if (this.sseState === 'open') { return this.c.success; }
+    if (this.sseState === 'connecting' || this.sseState === 'reconnecting') { return this.c.warning; }
+    return this.c.textTertiary;
+  }
+
   // 会话注意力分级（对照 web lib/sessionAttention）：thinking 不打扰；返回左侧色点类型。
   //   detailed 模式才显 attention 指示器（对照上游 showDetailedStatus ? classify : null）；standard 隐藏色点。
   private attentionFor(session: SessionSummary): AttentionKind | null {
@@ -707,7 +715,7 @@ struct Index {
                 Row({ space: 4 }) {
                   SymbolGlyph(this.sseState === 'open' ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
                     .fontSize(fs(8))
-                    .fontColor([this.c.textTertiary])
+                    .fontColor([this.sseDotColor])
                   Text(this.sseBadge()).fontSize(fs(11)).fontColor(this.c.textTertiary)
                 }
                 .margin({ left: 8 })
