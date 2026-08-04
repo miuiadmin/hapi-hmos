@@ -53,7 +53,9 @@ import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeServi
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { SymbolGlyphModifier, LengthMetrics } from '@kit.ArkUI';
+import { HdsNavDestination, HdsNavDestinationTitleMode, ScrollEffectType, hdsMaterial, DividerShowType, BlurStrategy } from '@kit.UIDesignKit';
+import { getLayoutState } from '../state/LayoutState';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
@@ -2944,9 +2946,11 @@ struct ChatPage {
     setTimeout((): void => { this.scroller.scrollToIndex(idx, true, ScrollAlign.START); }, 120);
   }
 
-  // 液态顶栏（hideTitleBar 后自建，复刻 VoicePage 自建栏模式）。
-  //   全宽毛玻璃片（COMPONENT_ULTRA_THICK + 半透明 surface 底 + 底部发丝线）+ 液态圆钮。
-  //   左返回(导航) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 两液态 chip（3→2 瘦身：config 收进 ⋯）。
+  // 液态顶栏（HDS 沉浸光感：渲染在 HdsNavDestination 的 titleBar.stackBuilder 内）。
+  //   液态背景（systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变 + maskExtraHeight 过渡带）由系统 titleBar 提供；
+  //   本 Builder 仅渲染顶栏内容：左返回(液态圆钮) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 液态 chip。
+  //   chip 自带 backgroundBlurStyle 液态圆钮样式保留（chatcube 同款）；根容器不设 backgroundColor/backdropBlur，
+  //   避免与 titleBar 液态层叠加遮挡。
   @Builder
   private ChatTopBar() {
     Row({ space: 8 }) {
@@ -3029,12 +3033,8 @@ struct ChatPage {
     }
     .width('100%')
     .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 液态顶栏（实测选定方案）：backdropBlur + 半透明 glassBg，无 border。
-    //   真机：backdropBlur 高斯模糊滑过的消息 → 毛玻璃。模拟器：blur 着色器不渲染（实测 no-op），只剩 glassBg 半透明
-    //   染色透出背后内容（透明感 OK，已实测：滚动后顶栏 std 5→70）。⚠️ 不用 backgroundBlurStyle——它在模拟器只剩
-    //   activeColor 不透明灰叠层（盖住内容、滚动不变=死盖），即「盖一层灰」根因。无 border：底边线会复现「顶栏/内容接缝」。
-    .backgroundColor(this.glassBg())
-    .backdropBlur(30)
+    // 液态背景由系统 HDS titleBar 提供（systemMaterialEffect + GRADIENT_BLUR）：本 Builder 仅渲染顶栏内容。
+    //   不设根 backgroundColor/backdropBlur——避免与 titleBar 液态层叠加。
   }
 
   // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
@@ -3160,14 +3160,14 @@ struct ChatPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        // 液态顶栏悬浮：内容列表延伸到顶栏背后，backgroundBlurStyle 透过滑过的消息 → 真液态玻璃。
-        //   流式占位顶栏背后是纯色背景，blur 无内容可模糊 → 厚 blur 叠白层=色差小条，纯色=死板不液态。
-        //   悬浮后顶栏半透明压在消息上，消息滑过背后被模糊（对照 iOS / chatcube 毛玻璃）。
-        Stack({ alignContent: Alignment.TopStart }) {
-          // 内容层：if/else 各态（加载/错误/骨架/空/消息列表）。banners 随顶栏上浮（见悬浮层）。
-          Column() {
+        // 内容层：液态顶栏由系统 HdsNavDestination 的 titleBar 提供（stackBuilder 渲染 ChatTopBar +
+        //   systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变模糊 + maskExtraHeight 过渡带），不再自建悬浮层。
+        //   banners 下沉到内容层顶部（流式，常态不渲染不占位）。
+        Column() {
+          ConnectionBanner()
+          SyncingBanner()
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
@@ -3211,6 +3211,11 @@ struct ChatPage {
             // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
             Stack({ alignContent: Alignment.Bottom }) {
             List({ scroller: this.scroller, space: 8 }) {
+              // 顶部安全区占位：ignoreLayoutSafeArea([SYSTEM],[TOP]) 后 List 视口从 y=0（状态栏底）起，
+              //   需把首条消息推到 titleBar 下方。照搬 berry AboutPage:405：topAvoidHeight(状态栏) + 56(titleBar) + 8(间距)。
+              ListItem() {
+                Row().height(getLayoutState().topAvoidHeight + 56 + 8)
+              }
               // LazyForEach + IDataSource（对照 chatcube ChatMessageListSection：流式根治）。
               //   曾试 Repeat(filteredBlocks)+@Trace+内联 @Builder：think 渲染时触发 ArkUI「UINode added during
               //   re-render」冲突（Repeat 同 key 项管理与 @Trace 精确刷新争抢 item 所有权）→ JS 线程冻结、SSE 不进。
@@ -3284,9 +3289,8 @@ struct ChatPage {
             .height('100%')
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring)
-            // top 8：List 视口从 Stack 顶（0）起，首条消息顶部落在悬浮顶栏背后（被 blur 模糊）→ 首屏即液态；
-            //   滚动时所有消息滑过顶栏背后持续被模糊。代价：首条顶部被半透明顶栏遮（看最新消息在底部，无碍）。
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            // top 0：首项占位 ListItem（topAvoidHeight+56+8）已把首条消息推到 titleBar 下方，无需额外顶部 padding。
+            .padding({ left: 12, right: 12, top: 0, bottom: 8 })
             .onReachStart(() => {
               // 过滤中不分页：命中少/空时列表易贴顶，否则会级联拉完全部历史页（搜不到时尤甚）。
               //   搜不到 → 清搜索、手动滚顶加载更旧后再搜。
@@ -3343,20 +3347,9 @@ struct ChatPage {
           .width('100%')
           .layoutWeight(1)
         }
-          }                                   // 内容层 Column 闭合（包 if/else 各态）
+          }                                   // 内容层 Column 闭合（包 banners + if/else 各态）
           .width('100%')
-          .height('100%')
-
-          // 悬浮层（Stack 第二子节点，贴顶浮于内容之上）：液态顶栏 + 状态横幅
-          Column() {
-            this.ChatTopBar()
-            // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
-            ConnectionBanner()
-            // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
-            SyncingBanner()
-          }
-        }
-        .layoutWeight(1)                      // Stack 占据输入栏以上全部空间
+          .layoutWeight(1)                    // 内容层占据输入栏以上全部空间（原 Stack layoutWeight 1 等价）
 
         // Token / 上下文用量条（对照 web AssistantChat/StatusBar：仅在有可见 usage 时显形）
         if (this.latestUsage !== null) {
@@ -3407,7 +3400,57 @@ struct ChatPage {
       .height('100%')
       .backgroundColor(this.c.bg)
     }
-    .hideTitleBar(true)
+    // HDS 沉浸光感 titleBar（系统级材质管线，替代自建 backdropBlur）：
+    //   - titleBar(stackBuilder 渲染 ChatTopBar) + systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变模糊 +
+    //     maskExtraHeight 过渡带（解决「边缘硬线无过渡」）
+    //   - bindToScrollable：titleBar 跟随消息列表滚动驱动模糊强度（静止透明/滚动磨砂）
+    //   - ignoreLayoutSafeArea([SYSTEM],[TOP])：页面延伸到状态栏（解决「液态没到状态栏」）
+    //   - systemBarStyle：全屏后状态栏图标色显式设（暗浅/亮深）
+    .titleBar({
+      content: {
+        title: { mainTitle: ' ' },                         // 占位（真内容走 stackBuilder）
+        divider: { showType: DividerShowType.OFF },        // 关闭滚动分割线（否则又出硬线）
+        stackBuilder: (): void => { this.ChatTopBar(); }   // 自建顶栏塞进系统 titleBar
+      },
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,                        // 滚动联动：静止透明/滚动磨砂（chatcube 同款）
+          scrollEffectType: ScrollEffectType.GRADIENT_BLUR,
+          blurEffectiveStartOffset: LengthMetrics.vp(0),
+          blurEffectiveEndOffset: LengthMetrics.vp(28)
+        },
+        originalStyle: {                                   // 静止态：透明背景 + blurRadius 0（首条消息可见）
+          backgroundStyle: {
+            backgroundColor: this.withAlpha(this.c.bg, '00'),
+            maskExtraHeight: 20,                           // 渐变过渡带（解决「边缘硬线无过渡」，竖屏 20）
+            blurRadius: 0
+          }
+        },
+        scrollEffectStyle: {                               // 滚动态：bg 半透明 E6 + blurRadius 26 + 过渡带
+          backgroundStyle: {
+            backgroundColor: this.withAlpha(this.c.bg, 'E6'),
+            maskExtraHeight: 20,
+            blurRadius: 26
+          }
+        },
+        blurStrategy: BlurStrategy.ENABLE,
+        systemMaterialEffect: {                            // 系统级材质（走系统合成器，模拟器渲染）
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        }
+      },
+      avoidLayoutSafeArea: true,                           // titleBar 自身避让状态栏
+      enableComponentSafeArea: false
+    })
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .systemBarStyle(
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }
+    )
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+    .backgroundColor(this.c.bg)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as ChatPageRouteParams;

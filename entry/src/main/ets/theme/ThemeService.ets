@@ -14,6 +14,7 @@ import { ThemeState, ThemeMode } from './ThemeState';
 import { getPreferencesService } from '../services/PreferencesService';
 import { PreferenceKeys } from '../config/Keys';
 import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
+import { applyStatusBarColor } from '../state/LayoutState';
 
 // barrel：组件只需 import 自本文件即可拿到 paletteOf / PaletteColors / toArgb / ThemeState / getThemeState
 export { paletteOf, PaletteColors, toArgb } from './Palette';
@@ -123,6 +124,8 @@ export class ThemeService {
     setAppColorMode(context, toColorModeConstant(mode));
     // 气泡配色 base/ratio 随 isDark 变 → 同步重 mix（避浅深切换后气泡色不更新）
     ChatSurfaceColorsService.reapply(state.isDark);
+    // 全屏后状态栏图标色不自动随 setColorMode → 显式重设（mainWindow 未就绪时 applyStatusBarColor 静默跳过）
+    applyStatusBarColor(state.isDark);
     try {
       await getPreferencesService().putString(PreferenceKeys.THEME_MODE, mode);
     } catch (e) {
@@ -138,6 +141,8 @@ export class ThemeService {
       state.isDark = systemDark;
       // system 模式下系统明暗变化才需重 mix（显式模式已在 setMode 处理）
       ChatSurfaceColorsService.reapply(systemDark);
+      // 状态栏图标色跟随（全屏后需显式设）
+      applyStatusBarColor(systemDark);
     }
   }
 

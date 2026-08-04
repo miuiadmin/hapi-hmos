@@ -1,6 +1,6 @@
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window } from '@kit.ArkUI';
+import { window, display } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getConnectionService } from '../services/ConnectionService';
@@ -22,6 +22,7 @@ import { DeviceNetworkService } from '../services/DeviceNetworkService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { SelfUpdateManager } from '../services/SelfUpdateManager';
 import { OtaController } from '../services/UpdateState';
+import { getLayoutState, setMainWindow, applyStatusBarColor } from '../state/LayoutState';
 import { decodeJwtExpMs } from '../utils/JwtUtils';
 import { shouldResync } from '../chat/SyncResync';
 import { getDeepLinkImporter, ParsedConnect, ImportResult } from '../services/DeepLinkImporter';
@@ -30,6 +31,16 @@ import { t } from '../i18n/I18nService';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'EntryAbility';
+
+// px→vp 转换（照搬 berry3 EntryAbility:38）。全局 px2vp 已废弃（非 UIContext 感知，多屏/DPI 不准），
+//   改用 display densityPixels 手算。失败回退原 px 值。
+function pxToVp(px: number): number {
+  try {
+    return px / display.getDefaultDisplaySync().densityPixels;
+  } catch (_e) {
+    return px;
+  }
+}
 
 // 应用入口 Ability（Stage 模型）
 // 启动流程：onWindowStageCreate → bootstrap 里 await 初始化（Preferences + 登录态），
@@ -107,6 +118,40 @@ export default class EntryAbility extends UIAbility {
     await getGeneratedImageCache().initialize(this.context);
     // OTA 自更新：注入 ability context + 初始化独立 prefs（共存版守卫 / 检查 / 下载 / 安装均依赖；幂等）
     SelfUpdateManager.getInstance().init(this.context);
+    // 窗口全屏沉浸 + 安全区高度采集（ChatPage HDS 沉浸光感前提）：
+    //   setWindowLayoutFullScreen 让窗口布局延伸到状态栏/导航条区域（官方：此后 NavDestination 默认
+    //   expandSafeArea 仍把内部内容避让在安全区内 → 其他页面不回归；仅显式 ignoreLayoutSafeArea 的
+    //   ChatPage 沉浸到状态栏）。采集 topAvoidHeight 供 ChatPage List 首项占位。照搬 berry EntryAbility:340-370。
+    //   放 ThemeService.init 之后（用 isDark 设状态栏图标色）。
+    try {
+      const win = await windowStage.getMainWindow();
+      setMainWindow(win);
+      win.setWindowLayoutFullScreen(true);
+      const sysArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const navArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      const layout = getLayoutState();
+      layout.topAvoidHeight = pxToVp(sysArea.topRect.height);
+      layout.bottomAvoidHeight = pxToVp(navArea.bottomRect.height);
+      // 全屏后状态栏图标色不再自动随 setColorMode → 显式设初始值（明暗切换由 ThemeService 重设）
+      applyStatusBarColor(getThemeState().isDark);
+      // 折叠屏展开/旋转 → 安全区高度变化，同步更新（ChatPage 占位随之刷新）。
+      //   回调参类型由 on('avoidAreaChange',…) 签名推断（无显式导出名 AvoidAreaInfo，照搬 berry EntryAbility:373 不标注）
+      win.on('avoidAreaChange', (data) => {
+        if (data.type === window.AvoidAreaType.TYPE_SYSTEM) {
+          const h = pxToVp(data.area.topRect.height);
+          if (h > 0 && layout.topAvoidHeight !== h) {
+            layout.topAvoidHeight = h;
+          }
+        } else if (data.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+          const h = pxToVp(data.area.bottomRect.height);
+          if (layout.bottomAvoidHeight !== h) {
+            layout.bottomAvoidHeight = h;
+          }
+        }
+      });
+    } catch (e) {
+      // 窗口配置失败不阻塞首屏（非沉浸态降级可用）
+    }
     // 按登录态选首屏
     const pagePath: string = getConnectionService().isLoggedIn() ? 'pages/Index' : 'pages/LoginPage';
     windowStage.loadContent(pagePath, (err: BusinessError) => {
