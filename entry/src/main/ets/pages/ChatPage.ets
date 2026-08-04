@@ -57,6 +57,7 @@ import { common } from '@kit.AbilityKit';
 import { SymbolGlyphModifier, LengthMetrics } from '@kit.ArkUI';
 import { HdsNavDestination, HdsNavDestinationTitleMode, ScrollEffectType, hdsMaterial, DividerShowType, BlurStrategy } from '@kit.UIDesignKit';
 import { getLayoutState } from '../state/LayoutState';
+import { getChatClock } from '../state/ChatClock';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
@@ -105,7 +106,6 @@ struct ChatPage {
   @Local isSending: boolean = false;           // 发送请求进行中
   @Local sessionId: string = '';
   @Local agentState: AgentState | null = null; // 会话权限态（pending 请求队列等），SESSION_UPDATED 实时更新
-  @Local nowTick: number = 0;                   // running 卡 elapsed 实时刷新驱动值（ticker 每秒 +1，仅 running 卡收到非 0）
   @Local hasMoreMessages: boolean = false;       // 还有更旧历史可加载（取自响应 page.hasMore）
   @Local isLoadingOlder: boolean = false;        // 加载更旧中（防抖 + 顶部指示器）
   // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
@@ -325,6 +325,7 @@ struct ChatPage {
   }
 
   // messages/agentState 变更统一走 setter，确保每次都重算 blocks（单一职责，避免漏调）
+
   private setMessages(list: ChatMessage[]): void {
     this.messages = list;
     this.recomputeBlocks();
@@ -982,12 +983,15 @@ struct ChatPage {
     }
   }
 
-  // elapsed 实时 ticker：仅当 thinking 或有 running 工具卡时每秒 bump nowTick（否则不 bump，避免无谓 rebuild）
+  // elapsed 实时 ticker：仅当 thinking 或有 running 工具卡时每秒 bump 全局 ChatClock（否则不 bump，避免无谓 rebuild）。
+  //   ★ 不再 bump 页面 @Local：旧 this.nowTick 被 LazyForEach 生成器读取 → 每秒【整页重建】（InputBar 重布局闪）。
+  //   下沉为 @ObservedV2/@Trace 单例后，仅 running 中的 ToolCard 读 clock.nowTick → 仅其按秒重渲（[[arkui-page-local-periodic-update-rebuild]]）。
   private startTicker(): void {
     this.stopTicker();
     this.tickerId = setInterval(() => {
       if (this.isThinking || this.hasRunningBlock()) {
-        this.nowTick = this.nowTick + 1;
+        const clk = getChatClock();
+        clk.nowTick = clk.nowTick + 1;
       }
     }, 1000);
   }
@@ -2642,6 +2646,7 @@ struct ChatPage {
         .height(this.attachmentPanelHeightVp)
         .opacity(this.attachmentPanelOpen ? 1 : 0)
         .backgroundColor(this.c.surface)
+        .borderRadius({ bottomLeft: 24, bottomRight: 24 })
         .clip(true)
         .enabled(this.attachmentPanelOpen)
         .animation({ duration: 260, curve: Curve.FastOutSlowIn })
@@ -2649,7 +2654,7 @@ struct ChatPage {
       .width('100%')
     }
     .width('100%')
-    .padding({ left: 12, right: 12 })
+    .padding({ left: 12, right: 12, bottom: getLayoutState().bottomAvoidHeight })
     .backgroundColor(this.c.bg)
   }
 
@@ -3242,7 +3247,6 @@ struct ChatPage {
                           block: b,
                           sessionId: this.sessionId,
                           flavor: this.flavor,
-                          nowTick: this.isRunningBlock(b) ? this.nowTick : 0,
                           actionState: this.toolActionStateOf(b.id),
                           detailOpenInit: this.detailOpenSigs[b.id] !== undefined,
                           onAction: (kind: string): void => { this.handleToolAction(b, kind); },
@@ -3375,7 +3379,8 @@ struct ChatPage {
     //   - titleBar(stackBuilder 渲染 ChatTopBar) + systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变模糊 +
     //     maskExtraHeight 过渡带（解决「边缘硬线无过渡」）
     //   - bindToScrollable：titleBar 跟随消息列表滚动驱动模糊强度（静止透明/滚动磨砂）
-    //   - ignoreLayoutSafeArea([SYSTEM],[TOP])：页面延伸到状态栏（解决「液态没到状态栏」）
+    //   - ignoreLayoutSafeArea([SYSTEM],[TOP,BOTTOM])：顶延伸状态栏（液态顶栏）+ 底自管安全区
+    //     （全屏后底部默认避让失效；InputBar 外层 padding bottom=bottomAvoidHeight 补偿，对齐设置页占位范式）
     //   - systemBarStyle：全屏后状态栏图标色显式设（暗浅/亮深）
     .titleBar({
       content: {
@@ -3420,7 +3425,7 @@ struct ChatPage {
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }
     )
-    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP])
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .backgroundColor(this.c.bg)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

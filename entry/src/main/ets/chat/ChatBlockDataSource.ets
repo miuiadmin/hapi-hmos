@@ -46,72 +46,81 @@ export class ChatBlockDataSource implements IDataSource {
   }
 
   // 整体替换展示集并按 index 增量通知。sigFn(b) 由调用方提供（反映 ChatPage 实例态的变更指纹）。
+  //
+  // ★ typing 占位块（id='__typing__'，恒在末尾、内容不变）须从 prev/next 的前缀比对中【剥离】：
+  //   流式期间新 agent 块到达时 next=[..blocks, newBlock, __typing__]、prev=[..blocks, __typing__]——
+  //   若把 typing 当普通项参与前缀检查，prev 末位 __typing__ vs next 同位 newBlock → 前缀错位 →
+  //   落到 lenDiff 分支 ★notifyReload★ → 整列 ListItem 销毁重建 → c.bg 空白一闪（灰板闪烁根因）。
+  //   剥离后真实块走 append/insert（onDataAdd），typing 由 LazyForEach 按复用自动顺移，不触发 reload。
   setItems(next: ChatBlock[], sigFn: (b: ChatBlock) => string): void {
     const prev: ChatBlock[] = this.items;
+    const oldSigs: string[] = this.sigs;
     const newSigs: string[] = this.computeSigs(next, sigFn);
 
-    // 1) 末尾追加（发消息 optimistic / 流式新 block）：prev 是 next 的前缀 → 增量 onDataAdd，
-    //   不全量 reload。reload 会重建全部可见 ListItem（重新 build+measure）→ 整列闪烁/"消息填充屏"；
-    //   onDataAdd 仅渲染新增项，余者复用 → 发消息平滑无闪烁（对照 web 末条 append）。
-    if (next.length > prev.length) {
+    // 剥离末尾 typing 占位块（仅判态翻转，内容恒定不参与签名比对）
+    const TID: string = '__typing__';
+    const prevTyping: boolean = prev.length > 0 && prev[prev.length - 1].id === TID;
+    const nextTyping: boolean = next.length > 0 && next[next.length - 1].id === TID;
+    const prevRealLen: number = prevTyping ? prev.length - 1 : prev.length;
+    const nextRealLen: number = nextTyping ? next.length - 1 : next.length;
+
+    this.items = next;              // 先更数据源（notify 时 getData/totalCount 返回新数据）
+    this.sigs = newSigs;
+
+    // 1) 真实块末尾追加（发消息 optimistic / 流式新 agent 块）：prev 真实块是 next 真实块前缀 → onDataAdd。
+    //   不全量 reload——reload 会重建全部可见 ListItem（重新 build+measure）→ 整列闪烁/c.bg 灰板一闪。
+    //   onDataAdd 仅渲染新增项，余者复用；尾部 typing 由 LazyForEach 复用顺移，无需单独通知。
+    if (nextRealLen > prevRealLen) {
       let isAppend: boolean = true;
-      for (let i = 0; i < prev.length; i++) {
+      for (let i = 0; i < prevRealLen; i++) {
         if (next[i].id !== prev[i].id) { isAppend = false; break; }
       }
       if (isAppend) {
-        const changed: number[] = [];
-        for (let i = 0; i < prev.length; i++) {
-          if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
+        for (let i = 0; i < prevRealLen; i++) {
+          if (newSigs[i] !== oldSigs[i]) { this.notifyChange(i); }
         }
-        this.items = next;            // 先更数据源（getData/totalCount 通知时返回新数据）
-        this.sigs = newSigs;
-        for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
-        for (let i = prev.length; i < next.length; i++) { this.notifyDataAdd(i); }
+        for (let i = prevRealLen; i < nextRealLen; i++) { this.notifyDataAdd(i); }
+        // typing 仅在态翻转时补通知（真实块 append 已让 typing 顺移）
+        if (nextTyping && !prevTyping) { this.notifyDataAdd(nextRealLen); }
         return;
       }
     }
 
-    // 1b) 末尾删除（TypingIndicator 关闭：isThinking true→false，prev 末尾的 typing 占位块移除）：
-    //   prev 的前 next.length 项 == next（前缀对齐）→ onDataDelete 增量，【不全量 reload】。
-    //   不加本分支则落到下方 branch 2（长度不同→reload）→ 整列重建空白（与发送时同症）。从末尾倒序通知，保 index 稳定。
-    if (next.length < prev.length) {
+    // 1b) 真实块末尾删除：prev 真实块的前 nextRealLen 项 == next 前缀 → 倒序 onDataDelete，不全量 reload。
+    //   从高 index 往低删保 index 稳定；typing 若被删（态翻转）先于真实块删（typing index 更高）。
+    if (nextRealLen < prevRealLen) {
       let isTrailingRemove: boolean = true;
-      for (let i = 0; i < next.length; i++) {
+      for (let i = 0; i < nextRealLen; i++) {
         if (next[i].id !== prev[i].id) { isTrailingRemove = false; break; }
       }
       if (isTrailingRemove) {
-        const changed: number[] = [];
-        for (let i = 0; i < next.length; i++) {
-          if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
+        for (let i = 0; i < nextRealLen; i++) {
+          if (newSigs[i] !== oldSigs[i]) { this.notifyChange(i); }
         }
-        this.items = next;
-        this.sigs = newSigs;
-        for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
-        for (let i = prev.length - 1; i >= next.length; i--) { this.notifyDataDelete(i); }
+        if (prevTyping && !nextTyping) { this.notifyDataDelete(prevRealLen); }
+        for (let i = prevRealLen - 1; i >= nextRealLen; i--) { this.notifyDataDelete(i); }
         return;
       }
     }
 
-    // 2) 长度不同且非末尾追加/删除（头部插入更旧历史 / 序列错位 / 搜索过滤）：真结构变化 → 全量 reload。
-    if (next.length !== prev.length) {
-      this.items = next;
-      this.sigs = newSigs;
+    // 2) 真实块结构变（长度不同且非末尾追加/删除：头部插入更旧历史 / 序列错位 / 搜索过滤）→ 全量 reload
+    //   （typing 随 reload 一起重灌，无需单独通知）。
+    if (prevRealLen !== nextRealLen) {
       this.notifyReload();
       return;
     }
 
-    // 3) 长度相同（含 optimistic→真实消息替换的【同位置 id 漂移】：user-text 块 id 从 local-xxx 变后端
-    //   real-msg-id）：逐 index notifyChange，【不全量 reload】。LazyForEach 按 key(b.id) 复用——id 不变
-    //   的项原地刷新（签名变才刷），id 变的项【单项】重建（LazyForEach 检测 key 变销毁旧 ListItem + 建新，
-    //   仅该 index，非全量）。旧实现把「同长 + 任一 id 变」当 structural→notifyReload，致发消息后 SSE 回推
-    //   真实消息替换 optimistic 时整列重建空白 ~0.5s（"输入框撑大屏幕/消息填充屏"真根因，2026-08-05 修）。
-    const changed: number[] = [];
-    for (let i = 0; i < next.length; i++) {
-      if (next[i].id !== prev[i].id || newSigs[i] !== this.sigs[i]) { changed.push(i); }
+    // 3) 真实块同长（含 optimistic→真实消息替换的【同位 id 漂移】：user-text 块 id 从 local-xxx 变后端 real-id）：
+    //   逐 index notifyChange，不全量 reload。LazyForEach 按 key(b.id) 复用——id 不变的项原地刷新（签名变才刷），
+    //   id 变的项单项重建（LazyForEach 检测 key 变销毁旧 ListItem + 建新，仅该 index，非全量）。再处理 typing 态翻转。
+    for (let i = 0; i < nextRealLen; i++) {
+      if (next[i].id !== prev[i].id || newSigs[i] !== oldSigs[i]) { this.notifyChange(i); }
     }
-    this.items = next;
-    this.sigs = newSigs;
-    for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
+    if (nextTyping && !prevTyping) {
+      this.notifyDataAdd(nextRealLen);
+    } else if (!nextTyping && prevTyping) {
+      this.notifyDataDelete(nextRealLen);
+    }
   }
 
   private computeSigs(arr: ChatBlock[], sigFn: (b: ChatBlock) => string): string[] {

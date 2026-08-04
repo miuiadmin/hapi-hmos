@@ -14,6 +14,7 @@ import { RequestUserInputView } from './RequestUserInputView';
 import { shouldShowInlineToolCardBody, shouldUseCompactTerminalToolCard, TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
 import { getTerminalToolDisplayState } from '../services/TerminalToolDisplayService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
+import { getChatClock } from '../state/ChatClock';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 import { SheetDialog } from './settings/SheetDialog';
@@ -24,7 +25,7 @@ import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactor
 // footer 三选一互斥（仅 permission.status==='pending' 时挂其一）：
 //   通用权限 footer（允许/拒绝）/ AskUserQuestionFooter / RequestUserInputFooter。
 // 已答 AskUserQuestion（status!=='pending'）→ 内联 AskUserQuestionView 高亮回显。
-// V2 状态：@Param block/sessionId/flavor/nowTick/actionState；@Local isDetailOpen（bindSheet 双向绑定用 !!）。
+// V2 状态：@Param block/sessionId/flavor/actionState；@Local isDetailOpen（bindSheet 双向绑定用 !!）。
 //   审批态(actionLoading/decided/actionError)原为本卡 @Local；动态键值(ChatPage.blockKey)致重建丢态 → 双提交风险，
 //   已上提到 ChatPage(ToolActionState 按 block.id 持久)，本卡经 @Param 只读、@Event onAction 回调执行（见 ChatPage.handleToolAction）。
 
@@ -33,7 +34,6 @@ struct ToolCard {
   @Param block: ChatBlock = new ChatBlock();
   @Param sessionId: string = '';
   @Param flavor: string = '';             // 会话 flavor（ChatPage 透传；决定 Codex 系权限页变体）
-  @Param nowTick: number = 0;               // running 卡 elapsed 实时驱动（ChatPage 仅对 running 卡传非 0）
   @Param actionState: ToolActionState = new ToolActionState();   // 审批态（上提自 @Local；ChatPage 按 block.id 注入）
   @Event onAction: (kind: string) => void = () => {};   // 审批动作回调（allow/session/alledits/deny/codexYes/codexSession/abort）→ ChatPage 执行
   @Local isDetailOpen: boolean = false;
@@ -214,7 +214,9 @@ struct ToolCard {
     return this.c.textTertiary;
   }
 
-  // elapsed（仅 running）：读取 this.nowTick 建立 build 刷新依赖 —— ChatPage ticker 每秒对 running 卡 bump → 卡内 build 重跑重算耗时
+  // elapsed（仅 running）：读取全局 ChatClock.nowTick 建立【细粒度】刷新依赖 —— ChatPage ticker 每秒 bump
+  //   clock.nowTick（@ObservedV2/@Trace 单例）→ 仅本卡（running 中读 clock 的）重渲，ChatPage build 不引用 → 不整页重建。
+  //   非 running 卡：下方 state!=='running' 提前 return，不读 clock → 不刷。
   private elapsedText(): string {
     const t = this.tool;
     if (t === null || t.state !== 'running') {
@@ -224,7 +226,7 @@ struct ToolCard {
     if (from <= 0) {
       return '';
     }
-    const ticking: boolean = this.nowTick >= 0;   // 恒真；仅为引用 nowTick 触发刷新
+    const ticking: boolean = getChatClock().nowTick >= 0;   // 恒真；仅为引用 clock.nowTick 触发本卡刷新
     if (!ticking) {
       return '';
     }
