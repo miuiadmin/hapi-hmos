@@ -4,7 +4,7 @@
 // 用途：
 //   - boot：VoicePage.doBoot 把持久化的 voiceLang（locale 串，如 'zh-CN'）映射成 elevenLabsCode
 //     传 voice.html overrides.agent.language（''=自动检测，不覆盖）。
-//   - 设置：SettingsPage 语音分区列出可选项 + 当前值显示名。
+//   - 设置：VoiceSettingsPage 列出可选项 + 当前值显示名。
 //
 // 语义对齐上游 getElevenLabsCodeFromPreference：null/''/不支持 → undefined（此处用 '' 表示，等同不设 language 覆盖）。
 

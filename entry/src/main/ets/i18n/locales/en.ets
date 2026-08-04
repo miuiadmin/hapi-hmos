@@ -28,6 +28,13 @@ export const en: Record<string, string> = {
   'settings.section.connection': 'Connection',
   'settings.section.language': 'Language',
   'settings.section.about': 'About',
+  'settings.section.general': 'General',
+  'settings.searchPlaceholder': 'Search',
+  'settings.searchNoResult': 'No results',
+  'settings.display.title': 'Display',
+  'settings.chat.title': 'Chat',
+  'settings.connection.title': 'Connection',
+  'settings.about.title': 'About',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.system': 'Follow system',
@@ -648,7 +655,7 @@ export const en: Record<string, string> = {
   'toast.task.completed': 'Task completed',
   'toast.task.failed': 'Task failed',
 
-  // —— OTA update sheet strings (OtaController / SettingsPage; {version}/{percent} interpolated via kv) ——
+  // —— OTA update sheet strings (OtaController / AboutPage; {version}/{percent} interpolated via kv) ——
   'ota.newVersion': 'New version {version} available',
   'ota.changelog': 'What\'s new',
   'ota.updateNow': 'Update now',

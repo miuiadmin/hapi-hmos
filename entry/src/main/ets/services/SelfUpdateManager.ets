@@ -330,7 +330,7 @@ export class SelfUpdateManager {
   /**
    * 安全F2：取本地 versionCode，失败返回 null（不 fallback）。
    * OTA 读不到本地版本应返回 error 而非误触发更新，故独立实现不 fallback。
-   * getBundleInfoForSelf 查自身包信息免权限（SettingsPage 已在用 getBundleInfoForSelfSync）。
+   * getBundleInfoForSelf 查自身包信息免权限（SettingsPage/AboutPage 已在用 getBundleInfoForSelfSync）。
    */
   private async getLocalVersionCode(): Promise<number | null> {
     try {

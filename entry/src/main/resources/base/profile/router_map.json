@@ -34,6 +34,31 @@
       "name": "VoicePage",
       "pageSourceFile": "src/main/ets/pages/VoicePage.ets",
       "buildFunction": "VoicePageBuilder"
+    },
+    {
+      "name": "DisplaySettingsPage",
+      "pageSourceFile": "src/main/ets/pages/settings/DisplaySettingsPage.ets",
+      "buildFunction": "DisplaySettingsPageBuilder"
+    },
+    {
+      "name": "ChatSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/settings/ChatSettingsPage.ets",
+      "buildFunction": "ChatSettingsPageBuilder"
+    },
+    {
+      "name": "VoiceSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/settings/VoiceSettingsPage.ets",
+      "buildFunction": "VoiceSettingsPageBuilder"
+    },
+    {
+      "name": "ConnectionSettingsPage",
+      "pageSourceFile": "src/main/ets/pages/settings/ConnectionSettingsPage.ets",
+      "buildFunction": "ConnectionSettingsPageBuilder"
+    },
+    {
+      "name": "AboutPage",
+      "pageSourceFile": "src/main/ets/pages/settings/AboutPage.ets",
+      "buildFunction": "AboutPageBuilder"
     }
   ]
 }

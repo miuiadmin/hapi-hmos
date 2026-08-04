@@ -50,6 +50,7 @@ SCAN_WHITELIST=(
   "entry/src/main/ets/services/UpdateState.ets"
   "entry/src/main/ets/entryability/EntryAbility.ets"
   "entry/src/main/ets/pages/SettingsPage.ets"
+  "entry/src/main/ets/pages/settings/AboutPage.ets"
   "entry/src/main/ets/i18n/locales/en.ets"
   "entry/src/main/ets/i18n/locales/zh-CN.ets"
 )

@@ -29,6 +29,13 @@ export const zhCN: Record<string, string> = {
   'settings.section.connection': '连接',
   'settings.section.language': '语言',
   'settings.section.about': '关于',
+  'settings.section.general': '通用',
+  'settings.searchPlaceholder': '搜索',
+  'settings.searchNoResult': '无匹配结果',
+  'settings.display.title': '显示',
+  'settings.chat.title': '聊天',
+  'settings.connection.title': '连接',
+  'settings.about.title': '关于',
   'settings.theme.light': '浅色',
   'settings.theme.dark': '深色',
   'settings.theme.system': '跟随系统',
@@ -649,7 +656,7 @@ export const zhCN: Record<string, string> = {
   'toast.task.completed': '任务完成',
   'toast.task.failed': '任务失败',
 
-  // —— OTA 更新弹窗文案（OtaController / SettingsPage 用；{version}/{percent} 由 kv 插值）——
+  // —— OTA 更新弹窗文案（OtaController / AboutPage 用；{version}/{percent} 由 kv 插值）——
   'ota.newVersion': '发现新版本 {version}',
   'ota.changelog': '更新日志',
   'ota.updateNow': '立即更新',

@@ -1,7 +1,7 @@
 // OTA 自更新响应式状态 + UI 驱动控制器。
 //
 // 架构（镜像 services/DeviceNetworkService.ets 的「@ObservedV2 state + AppStorageV2.connect 共享单例」范式）：
-//   - UpdateState{@Trace ...} 经 AppStorageV2 应用级共享；SettingsPage 读 getUpdateState() 的 @Trace 字段
+//   - UpdateState{@Trace ...} 经 AppStorageV2 应用级共享；AboutPage 读 getUpdateState() 的 @Trace 字段
 //     建立刷新依赖（弹窗阶段/进度/错误随下载回调即时重渲染）。
 //   - OtaController：纯逻辑 SelfUpdateManager（重 IO/网络/校验）与 UI 状态之间的薄胶水层——
 //     把 checkUpdate 结果 / 下载回调翻译成 UpdateState 突变 + 瞬时 toast。页面只调控制器方法，不直接碰 SelfUpdateManager。
@@ -19,7 +19,7 @@ import { t, kv } from '../i18n/Translate';
 import { showToast } from '../utils/Toast';
 
 /**
- * OTA 弹窗/进度响应式状态。SettingsPage 经 getUpdateState() 读 @Trace 字段驱动 sheet 三态渲染。
+ * OTA 弹窗/进度响应式状态。AboutPage 经 getUpdateState() 读 @Trace 字段驱动 sheet 三态渲染。
  * 字段语义：
  *   sheetOpen    — 更新弹窗是否展开（checking 不开 sheet，只改行内 spinner）
  *   checking     — 手动检查进行中（行内 spinner + 禁用重复点）
@@ -34,7 +34,7 @@ import { showToast } from '../utils/Toast';
 export class UpdateState {
   @Trace sheetOpen: boolean = false;
   @Trace checking: boolean = false;
-  @Trace hasUpdate: boolean = false;   // 静默检查发现新版（设置页「检查更新」行显示红点徽标；不自动弹窗，用户 tap 主动查看）
+  @Trace hasUpdate: boolean = false;   // 静默检查发现新版（关于页「检查更新」行显示红点徽标；不自动弹窗，用户 tap 主动查看）
   @Trace phase: SelfUpdatePhase = 'prompting';
   @Trace info: UpdateInfo | null = null;
   @Trace percent: number = 0;
@@ -56,7 +56,7 @@ export function getUpdateState(): UpdateState {
 }
 
 /**
- * OTA UI 控制器：页面（SettingsPage）←→ SelfUpdateManager 的胶水。
+ * OTA UI 控制器：页面（AboutPage）←→ SelfUpdateManager 的胶水。
  * 所有方法静态、无状态（状态全在 getUpdateState() 共享单例 + SelfUpdateManager 单例）。
  */
 export class OtaController {

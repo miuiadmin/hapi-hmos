@@ -2,10 +2,10 @@
 // 对照 web/src/lib/voices.ts（VOICES/DEFAULT_VOICE_ID/getFallbackVoices 文案逐字移植）。
 //
 // 用途：
-//   - 设置：SettingsPage 语音声音分区列出预置声 + 显示名（zh-CN 取中文名，否则英文名）。
+//   - 设置：VoiceSettingsPage 列出预置声 + 显示名（zh-CN 取中文名，否则英文名）。
 //   - boot：VoicePage.doBoot 读持久化 voiceId 传 fetchVoiceToken（''=默认/Hub 路由）。
 //
-// 设计：预置声固定 10 个；用户克隆声（fetchVoices 拉回）在 SettingsPage 动态并入，不在本表。
+// 设计：预置声固定 10 个；用户克隆声（fetchVoices 拉回）在 VoiceSettingsPage 动态并入，不在本表。
 
 export class VoicePreset {
   id: string = '';          // ElevenLabs voice id

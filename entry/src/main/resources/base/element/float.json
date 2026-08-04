@@ -1,0 +1,9 @@
+{
+  "float": [
+    { "name": "setting_card_radius", "value": "20vp" },
+    { "name": "setting_card_padding_h", "value": "18vp" },
+    { "name": "setting_card_padding_v", "value": "14vp" },
+    { "name": "setting_divider_width", "value": "0.5vp" },
+    { "name": "setting_card_space", "value": "12vp" }
+  ]
+}

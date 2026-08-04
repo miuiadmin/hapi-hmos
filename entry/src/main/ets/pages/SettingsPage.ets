@@ -1,272 +1,52 @@
+// 设置主页（入口列表，对照 berry3 SettingsPage）—— iOS 设置范式。
+// 数据驱动：ALL_ITEMS 三分组（通用 / 连接 / 关于），每行莫兰迪彩色图标方块 + 标题 + chevron。
+// 顶部 SettingSearchBar 受控过滤（标题/副标题模糊匹配，无结果显示空态）。
+// 点击 pushPathByName 跳对应子页（router_map.json 注册）。
+// 底部退出登录 SettingActionButton danger（镜像登录流程：断 SSE + 清连接 + loadContent(LoginPage)）。
+// 颜色走 JS 调色板（paletteOf(isDark)）；图标方块色走莫兰迪 JS 色板（morandiSwatch）。
+import { bundleManager } from '@kit.AbilityKit';
+import { window } from '@kit.ArkUI';
+import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { t } from '../i18n/I18nService';
 import { getConnectionService } from '../services/ConnectionService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getSSEClient } from '../api/SSEClient';
-import { getPreferencesService } from '../services/PreferencesService';
-import { AppStorageKeys, PreferenceKeys } from '../config/Keys';
-import { window } from '@kit.ArkUI';
-import { bundleManager, common, Want } from '@kit.AbilityKit';
-import { fs, paletteOf, PaletteColors, getThemeState, ThemeService, ThemeMode, FontScaleMode } from '../theme/ThemeService';
-import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
-import { TerminalToolDisplayMode } from '../chat/TerminalToolDisplay';
-import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
-import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
-import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
-import { HapticService } from '../services/HapticService';
-import { VALID_TERMINAL_FONT_SIZES } from '../chat/TerminalFontSize';
-import { SessionListStatusMode } from '../chat/SessionListStatusMode';
+import { AppStorageKeys } from '../config/Keys';
 import { showToast } from '../utils/Toast';
-import { t, kv, I18nService, LanguageChoice, getI18nState } from '../i18n/I18nService';
-import { VoiceSettingsService } from '../services/VoiceSettingsService';
-import { VOICE_LANGUAGES, VoiceLanguage, findLanguageByCode, getLanguageDisplayName } from '../chat/VoiceLanguages';
-import { VOICE_PRESETS, VoicePreset, getPresetDisplayName } from '../chat/VoiceVoices';
-import {
-  ChatSurfaceColorPreference,
-  ChatSurfaceColorPreset,
-  getPickerValue,
-  normalizeHexColor,
-  toPresetPreference,
-  toCustomPreference
-} from '../chat/ChatSurfaceColors';
-import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
-import { OtaController, getUpdateState, UpdateState } from '../services/UpdateState';
-import { UpdateInfo } from '../services/SelfUpdateManager';
+import { SettingCard } from '../components/settings/SettingCard';
+import { SettingSectionTitle } from '../components/settings/SettingSectionTitle';
+import { SettingSearchBar } from '../components/settings/SettingSearchBar';
+import { SettingActionButton } from '../components/settings/SettingActionButton';
+import { rowPos } from '../components/settings/RowRadiusUtil';
+import { MorandiKey, morandiSwatch } from '../components/settings/MorandiPalette';
 
-// 设置页（NavDestination）—— 主题/字号/语言/输入 + 连接信息 + 关于 + 退出登录
-// UI 对照 chatcube 设置类页面（NavDestination + 分组信息行 + 危险操作按钮），V2 状态管理
-// 退出登录镜像登录流程：ConnectionService.clear + SSEClient.disconnect + loadContent(LoginPage)
-// 主题：浅色/深色/跟随系统 → ThemeService.setMode(mode, UIAbilityContext)；当前 mode 经 getThemeState().mode（@Trace）高亮
-// 语言：跟随系统/中文/English → I18nService.setChoice(choice)；所有 t() 读 locale @Trace 即时随切换重渲染
-// 关于：版本（bundleManager）+ 开源协议 AGPL-3.0 + GitHub 源代码（外链 startAbility）
-// 通过 router_map.json 注册（SettingsPageBuilder），由 Index 的 NavPathStack.pushPath('SettingsPage') 触发
+// 入口项（具名 interface 标注，满足 ArkTS 严格模式对象字面量规则）
+interface SettingsEntry {
+  key: string;
+  title: string;
+  subtitle: string;
+  symbol: Resource;
+  morandi: MorandiKey;
+  target: string;
+}
+// 入口分组
+interface SettingsGroup {
+  key: string;
+  title: string;
+  items: SettingsEntry[];
+}
 
 @ComponentV2
 struct SettingsPage {
-  @Local hubUrl: string = '';
-  @Local namespace: string = '';
-  @Local tokenMask: string = '';
+  @Local query: string = '';             // 搜索查询（受控，SettingSearchBar 唯一数据源）
   @Local isLoggingOut: boolean = false;
-  @Local enterToSend: boolean = false;       // 回车发送（默认关；设置页 Toggle 改 + 持久化）
-  @Local versionName: string = '';           // 关于：版本号（bundleManager 取）
-  @Local langChoice: LanguageChoice = 'system';   // 语言选择高亮用（与 I18nService.currentChoice 同步）
-  @Local voiceSheetOpen: boolean = false;          // 语音设置选择器 sheet 开关（bindSheet 双向）
-  @Local voiceSheetMode: 'lang' | 'voice' = 'lang'; // 当前 sheet 内容：识别语言 / 声音
-  @Local surfaceSheetOpen: boolean = false;         // 气泡配色选择器 sheet 开关（bindSheet 双向）
-  @Local surfaceSheetMode: 'tool' | 'user' = 'tool'; // 当前 sheet 内容：工具组背景 / 用户消息背景
-  @Local customHex: string = '';                    // 自定义 hex 输入（sheet 内 TextInput 双向）
-  @Local otaEligible: boolean = false;              // 当前包是否支持 OTA 自更新（仅共存版 com.berry.hapi88 显示检查更新行）
-
-  // 主题（读 @Trace isDark/mode 建立刷新依赖；切换即时重渲染）
-  private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
-  private get mode(): ThemeMode { return getThemeState().mode; }
-  private get fontScaleMode(): FontScaleMode { return ThemeService.currentFontScaleMode; }
-
-  // 切字号：纯 JS 调色板无关，无需 context（setFontScale 仅更 state.fontScale @Trace + 持久化）
-  private selectFontScale(scaleMode: FontScaleMode): void {
-    ThemeService.setFontScale(scaleMode);
-  }
-
-  // 切语言：setChoice 改 locale @Trace（全局 t() 重渲染）+ 持久化 choice；本地 langChoice 同步高亮
-  private selectLanguage(choice: LanguageChoice): void {
-    this.langChoice = choice;
-    I18nService.setChoice(choice);
-  }
-
-  // 终端工具卡片显示模式（读 @Trace mode 建立刷新依赖；切换即时重渲染 ✓ 高亮）
-  private get terminalToolMode(): TerminalToolDisplayMode {
-    return TerminalToolDisplayService.currentMode;
-  }
-
-  // 终端字号（读 @Trace fontSize 建立刷新依赖；5 档 radio ✓ 高亮）
-  private get terminalFontSize(): number {
-    return TerminalFontSizeService.currentSize;
-  }
-
-  // —— OTA 自更新状态（读 getUpdateState() 的 @Trace 字段建立刷新依赖；弹窗阶段/进度/错误随下载回调即时重渲染）——
-  private get ota(): UpdateState { return getUpdateState(); }
-  private get otaVersionName(): string {
-    const i: UpdateInfo | null = this.ota.info;
-    return i !== null ? i.versionName : '';
-  }
-  // 弹窗标题：安装中=「拉起安装器」/ 下载中=「下载中 X%」/ 否则=「发现新版本 vX」
-  private get otaSheetTitle(): string {
-    if (this.ota.installing) { return t('ota.installing'); }
-    if (this.ota.phase === 'downloading') { return OtaController.downloadingText(this.ota.percent); }
-    return t('ota.newVersion', kv('version', this.otaVersionName));
-  }
-  // 「版本号 · 大小」（prompting 态横幅）
-  private get otaVersionMeta(): string {
-    const i: UpdateInfo | null = this.ota.info;
-    return i !== null ? `${i.versionName} · ${OtaController.formatSize(i.size)}` : '';
-  }
-  // 下载进度文本：「X% · 已下 / 总」
-  private get otaProgressText(): string {
-    const pct: string = `${this.ota.percent}%`;
-    const received: number = this.ota.received;
-    const total: number = this.ota.total;
-    if (total > 0) {
-      return `${pct} · ${OtaController.formatSize(received)} / ${OtaController.formatSize(total)}`;
-    }
-    return `${pct} · ${OtaController.formatSize(received)}`;
-  }
-  private get otaChangelog(): string[] {
-    const i: UpdateInfo | null = this.ota.info;
-    return i !== null ? i.changelog : [];
-  }
-
-  // 会话列表每组预览行数（读 @Trace limit；TextInput 双向绑定 localInput，onChange clamp 1–99）
-  private get sessionPreviewLimit(): number {
-    return SessionPreviewLimitService.currentLimit;
-  }
-
-  // 会话列表状态模式（读 @Trace mode；standard/detailed radio ✓ 高亮）
-  private get sessionListStatusMode(): SessionListStatusMode {
-    return SessionListStatusModeService.currentMode;
-  }
-
-  // 触感反馈（读 @Trace enabled；Toggle 即时反映）
-  private get hapticsEnabled(): boolean {
-    return HapticService.currentEnabled;
-  }
-
-  // 切终端字号：setSize 改 fontSize @Trace（TerminalPage @Monitor 实时 applyFontSize）+ 持久化
-  private selectTerminalFontSize(size: number): void {
-    TerminalFontSizeService.setSize(size);
-  }
-  // 切会话列表状态模式：setMode 改 mode @Trace（Index SessionItem 即时重渲染）+ 持久化
-  private selectSessionListStatusMode(mode: SessionListStatusMode): void {
-    SessionListStatusModeService.setMode(mode);
-  }
-  // 切触感反馈：setEnabled 改 enabled @Trace（各 tap 即用）+ 持久化
-  private setHapticsEnabled(isOn: boolean): void {
-    HapticService.setEnabled(isOn);
-  }
-  // 预览行数输入：onChange 解析整数（非数字忽略）→ setLimit clamp 1–99（@Trace 改即重算 sessionRows）+ 持久化
-  private onPreviewLimitChange(value: string): void {
-    const n: number = parseInt(value, 10);
-    if (isNaN(n)) { return; }
-    SessionPreviewLimitService.setLimit(n);
-  }
-
-  // —— 语音设置（读 VoiceSettingsService @Trace；切换即时重渲染，下次进语音页生效）——
-  // 当前识别语言显示名（''=自动检测）
-  private get voiceLangLabel(): string {
-    const lang: VoiceLanguage | null = findLanguageByCode(VoiceSettingsService.currentLang);
-    if (lang === null) { return t('settings.voice.autoDetect'); }
-    return getLanguageDisplayName(lang);
-  }
-  // 当前声音显示名（''=Hub 默认；预设 id 取本地化名）
-  private get voiceIdLabel(): string {
-    const id: string = VoiceSettingsService.currentVoiceId;
-    if (id === '') { return t('settings.voice.hubDefault'); }
-    return getPresetDisplayName(id, getI18nState().locale);
-  }
-  // 打开选择器（mode 区分语言/声音）
-  private openVoiceSheet(mode: 'lang' | 'voice'): void {
-    this.voiceSheetMode = mode;
-    this.voiceSheetOpen = true;
-  }
-  // 选识别语言：持久化 + 关 sheet（@Trace 改 → voiceLangLabel 即时刷新）
-  private pickLang(code: string): void {
-    VoiceSettingsService.setLang(code);
-    this.voiceSheetOpen = false;
-  }
-  // 选声音：持久化 + 关 sheet
-  private pickVoice(id: string): void {
-    VoiceSettingsService.setVoice(id);
-    this.voiceSheetOpen = false;
-  }
-
-  // —— 气泡配色（读 ChatSurfaceColorsService @Trace；切换即时重渲染，reapply 同步重 mix）——
-  // 取色器显示色（swatch 用；default→中性灰，preset/custom→其强调色）
-  private pickerColorOf(pref: ChatSurfaceColorPreference): string {
-    return getPickerValue(pref);
-  }
-  // 偏好 → 行内短名（default→「默认」/ preset→预设名 / custom→hex 串）
-  private prefDisplayName(pref: ChatSurfaceColorPreference): string {
-    if (pref === 'default') { return t('settings.chat.surfaceColor.default'); }
-    if (pref === 'preset:soft-blue') { return t('settings.chat.surfaceColor.softBlue'); }
-    if (pref === 'preset:soft-green') { return t('settings.chat.surfaceColor.softGreen'); }
-    if (pref === 'preset:soft-yellow') { return t('settings.chat.surfaceColor.softYellow'); }
-    if (pref.startsWith('custom:')) { return pref.substring('custom:'.length); }
-    return t('settings.chat.surfaceColor.default');
-  }
-  // 打开选择器（mode 区分工具组/用户消息）；customHex 预填当前 custom 值
-  private openSurfaceSheet(mode: 'tool' | 'user'): void {
-    this.surfaceSheetMode = mode;
-    const pref: ChatSurfaceColorPreference = mode === 'tool'
-      ? ChatSurfaceColorsService.currentToolGroupPref
-      : ChatSurfaceColorsService.currentUserMessagePref;
-    this.customHex = pref.startsWith('custom:') ? pref.substring('custom:'.length) : '#';
-    this.surfaceSheetOpen = true;
-  }
-  // 选预设：setXxx 改 @Trace（reapply 同步重 mix + 持久化）+ 关 sheet
-  private pickSurfacePreset(preset: ChatSurfaceColorPreset): void {
-    const pref: ChatSurfaceColorPreference = toPresetPreference(preset);
-    if (this.surfaceSheetMode === 'tool') {
-      ChatSurfaceColorsService.setToolGroupBg(pref);
-    } else {
-      ChatSurfaceColorsService.setUserMessageBg(pref);
-    }
-    this.surfaceSheetOpen = false;
-  }
-  // 自定义 hex 输入：合法（#rrggbb）即应用 toCustomPreference（每键校验，完整 7 字符时生效一次）
-  private onCustomHexChange(hex: string): void {
-    this.customHex = hex;
-    const normalized: string | null = normalizeHexColor(hex);
-    if (normalized === null) { return; }
-    const pref: ChatSurfaceColorPreference = toCustomPreference(hex);
-    if (this.surfaceSheetMode === 'tool') {
-      ChatSurfaceColorsService.setToolGroupBg(pref);
-    } else {
-      ChatSurfaceColorsService.setUserMessageBg(pref);
-    }
-  }
-  // 当前选项是否选中（对照 sheet 内 PickerOptionRow 高亮）
-  private isSurfacePrefSelected(pref: ChatSurfaceColorPreference): boolean {
-    const current: ChatSurfaceColorPreference = this.surfaceSheetMode === 'tool'
-      ? ChatSurfaceColorsService.currentToolGroupPref
-      : ChatSurfaceColorsService.currentUserMessagePref;
-    return current === pref;
-  }
-
-  // 切终端工具卡片显示：setMode 改 mode @Trace（全量 ToolCard 重渲染）+ 持久化
-  private selectTerminalToolDisplay(mode: TerminalToolDisplayMode): void {
-    TerminalToolDisplayService.setMode(mode);
-  }
-
+  @Local versionName: string = '';       // 关于副标题动态版本号（bundleManager 取）
   private navPathStack: NavPathStack | null = null;
 
+  private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+
   aboutToAppear(): void {
-    const conn = getConnectionService();
-    this.hubUrl = conn.hubUrl;
-    this.namespace = conn.namespace;
-    this.tokenMask = this.maskToken(conn.apiToken);
-    this.loadEnterToSend();
-    this.langChoice = I18nService.currentChoice;
     this.loadVersionName();
-    // 共存版（com.berry.hapi88）才显示「检查更新」行；正式版无后缀 → 隐藏
-    this.otaEligible = OtaController.isEligible();
-  }
-
-  // OTA sheet 关闭（用户下滑/系统关闭）：下载中视为取消（静默收尾），否则仅关 sheet
-  private closeOtaSheet(): void {
-    const s: UpdateState = getUpdateState();
-    if (s.downloading) {
-      OtaController.cancelDownload();   // onCancel 回调会清 sheetOpen
-    } else {
-      s.sheetOpen = false;
-    }
-  }
-
-  private loadEnterToSend(): void {
-    getPreferencesService().getBoolean(PreferenceKeys.ENTER_TO_SEND, false)
-      .then((v: boolean) => { this.enterToSend = v; })
-      .catch(() => {});
-  }
-
-  private saveEnterToSend(isOn: boolean): void {
-    this.enterToSend = isOn;
-    getPreferencesService().putBoolean(PreferenceKeys.ENTER_TO_SEND, isOn).catch(() => {});
   }
 
   // 版本号（bundleManager 同步取 versionName；失败留空）
@@ -279,27 +59,66 @@ struct SettingsPage {
     }
   }
 
-  // Token 脱敏：仅显示末 4 位
-  private maskToken(token: string): string {
-    if (token.length === 0) {
-      return t('settings.tokenNotSet');
-    }
-    if (token.length <= 4) {
-      return '••••';
-    }
-    return `••••••••${token.substring(token.length - 4)}`;
+  // 全部分组数据（symbol/morandi/target 驱动入口列表；$r 在组件上下文求值）。
+  // ⚠️ ArkTS 严格模式：对象字面量须用具名 interface 标注的 const 承接（传参/返回裸字面量会失败）。
+  private allGroups(): SettingsGroup[] {
+    const display: SettingsEntry = {
+      key: 'display', title: t('settings.display.title'), subtitle: '',
+      symbol: $r('sys.symbol.paintpalette'), morandi: 'purple', target: 'DisplaySettingsPage'
+    };
+    const chat: SettingsEntry = {
+      key: 'chat', title: t('settings.chat.title'), subtitle: '',
+      symbol: $r('sys.symbol.message'), morandi: 'green', target: 'ChatSettingsPage'
+    };
+    const voice: SettingsEntry = {
+      key: 'voice', title: t('settings.voice.title'), subtitle: '',
+      symbol: $r('sys.symbol.mic'), morandi: 'orange', target: 'VoiceSettingsPage'
+    };
+    const connection: SettingsEntry = {
+      key: 'connection', title: t('settings.connection.title'), subtitle: '',
+      symbol: $r('sys.symbol.link'), morandi: 'blueDeep', target: 'ConnectionSettingsPage'
+    };
+    const about: SettingsEntry = {
+      key: 'about', title: t('settings.about.title'), subtitle: this.versionName,
+      symbol: $r('sys.symbol.info_circle'), morandi: 'teal', target: 'AboutPage'
+    };
+    const general: SettingsGroup = {
+      key: 'general', title: t('settings.section.general'), items: [display, chat, voice]
+    };
+    const connGroup: SettingsGroup = {
+      key: 'connection', title: t('settings.section.connection'), items: [connection]
+    };
+    const aboutGroup: SettingsGroup = {
+      key: 'about', title: t('settings.section.about'), items: [about]
+    };
+    const all: SettingsGroup[] = [general, connGroup, aboutGroup];
+    return all;
   }
 
-  // 切主题：取宿主 UIAbilityContext 调 ThemeService.setMode（同步更新 state + setColorMode + 持久化）
-  private selectTheme(mode: ThemeMode): void {
-    const ctx = this.getUIContext().getHostContext();
-    if (ctx === undefined || ctx === null) {
-      return;
+  // 按查询过滤：小写模糊匹配标题/副标题；剔除无命中项的空分组（查询空时返回全量）
+  private filteredGroups(): SettingsGroup[] {
+    const q: string = this.query.trim().toLowerCase();
+    const groups: SettingsGroup[] = this.allGroups();
+    if (q.length === 0) {
+      return groups;
     }
-    ThemeService.setMode(mode, ctx as common.UIAbilityContext);
+    const result: SettingsGroup[] = [];
+    for (const g of groups) {
+      const kept: SettingsEntry[] = [];
+      for (const it of g.items) {
+        if (it.title.toLowerCase().indexOf(q) >= 0 || it.subtitle.toLowerCase().indexOf(q) >= 0) {
+          kept.push(it);
+        }
+      }
+      if (kept.length > 0) {
+        const filtered: SettingsGroup = { key: g.key, title: g.title, items: kept };
+        result.push(filtered);
+      }
+    }
+    return result;
   }
 
-  // 退出登录确认弹窗（UIContext.showAlertDialog，对照官方 ts-methods-alert-dialog-box）
+  // 退出登录确认弹窗（UIContext.showAlertDialog）
   private confirmLogout(): void {
     this.getUIContext().showAlertDialog({
       title: t('settings.logout'),
@@ -338,754 +157,88 @@ struct SettingsPage {
     }
   }
 
-  // 打开 GitHub 源代码（https 走 viewData + browsable 唤浏览器；对照 MarkdownText.openSafeLink）
-  private openGitHub(): void {
-    const hostContext = this.getUIContext().getHostContext();
-    if (hostContext === undefined || hostContext === null) {
-      showToast(t('common.cannotOpenLink'));
-      return;
-    }
-    const want: Want = {
-      action: 'ohos.want.action.viewData',
-      entities: ['entity.system.browsable'],
-      uri: 'https://github.com/miuiadmin/hapi-hmos'
-    };
-    (hostContext as common.UIAbilityContext).startAbility(want)
-      .catch((): void => { showToast(t('common.noAppToOpen')); });
-  }
-
-  // 分组标题（对照 chatcube 设置分组小标题）
-  @Builder
-  private SectionHeader(title: string) {
-    Text(title)
-      .fontSize(fs(13))
-      .fontColor(this.c.textTertiary)
-      .width('100%')
-      .padding({ left: 16, top: 22, bottom: 8 })
-  }
-
-  // OTA 全宽按钮（primary=主色填充白字；secondary=bg 底主色字）
-  @Builder
-  private OtaButton(label: string, primary: boolean, onTap: () => void) {
-    Button(label)
-      .width('100%')
-      .height(46)
-      .backgroundColor(primary ? this.c.primary : this.c.bg)
-      .fontColor(primary ? '#FFFFFFFF' : this.c.textPrimary)
-      .borderRadius(12)
-      .onClick(() => { onTap(); })
-  }
-
-  // 「检查更新」行（共存版才渲染）：checking 时显示 spinner，否则 ›；tap 触发手动检查
-  @Builder
-  private OtaCheckRow() {
-    Row() {
-      Text(t('settings.about.checkUpdate'))
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      if (this.ota.checking) {
-        LoadingProgress().width(18).height(18).color(this.c.textTertiary)
-      } else {
-        if (this.ota.hasUpdate) {
-          Circle({ width: 7, height: 7 }).fill(this.c.error).margin({ right: 8 })
-        }
-        Text('›')
-          .fontSize(fs(16))
-          .fontColor(this.c.textTertiary)
-          .margin({ left: 6 })
-      }
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { OtaController.checkForUpdates(true, false); })
-  }
-
-  // OTA 更新弹窗 sheet（阶段驱动：prompting 展示日志 / downloading 进度条 / failed 重试 / installing 拉起中）
-  @Builder
-  private OtaSheet() {
-    Column() {
-      // 标题（随阶段变化）
-      Text(this.otaSheetTitle)
-        .fontSize(fs(17))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textPrimary)
-        .width('100%')
-        .padding({ left: 20, right: 20, top: 24, bottom: 14 })
-
-      if (this.ota.installing) {
-        // 拉起安装器中
-        Row() {
-          LoadingProgress().width(24).height(24).color(this.c.primary)
-          Text(t('ota.installing'))
-            .fontSize(fs(14))
-            .fontColor(this.c.textSecondary)
-            .margin({ left: 10 })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 28 })
-        .alignItems(VerticalAlign.Center)
-      } else if (this.ota.phase === 'downloading') {
-        // 下载进度
-        Column() {
-          Progress({ value: this.ota.percent, total: 100, type: ProgressType.Linear })
-            .width('100%')
-            .color(this.c.primary)
-            .backgroundColor(this.c.border)
-          Text(this.otaProgressText)
-            .fontSize(fs(13))
-            .fontColor(this.c.textTertiary)
-            .width('100%')
-            .margin({ top: 8 })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 28 })
-        .alignItems(HorizontalAlign.Start)
-      } else if (this.ota.phase === 'failed') {
-        // 校验失败
-        Text(this.ota.error.length > 0 ? this.ota.error : t('ota.downloadFailed'))
-          .fontSize(fs(14))
-          .fontColor(this.c.error)
-          .width('100%')
-          .padding({ left: 20, right: 20, bottom: 28 })
-      } else {
-        // prompting：版本 + 大小 + 更新日志（可滚动）
-        Scroll() {
-          Column() {
-            Text(this.otaVersionMeta)
-              .fontSize(fs(14))
-              .fontColor(this.c.textSecondary)
-              .width('100%')
-            Text(t('ota.changelog'))
-              .fontSize(fs(13))
-              .fontColor(this.c.textTertiary)
-              .width('100%')
-              .margin({ top: 16, bottom: 8 })
-            if (this.otaChangelog.length === 0) {
-              Text('—')
-                .fontSize(fs(14))
-                .fontColor(this.c.textTertiary)
-            } else {
-              ForEach(this.otaChangelog, (item: string, idx: number) => {
-                Row() {
-                  Text('•')
-                    .fontSize(fs(13))
-                    .fontColor(this.c.textTertiary)
-                    .margin({ right: 8 })
-                  Text(item)
-                    .fontSize(fs(14))
-                    .fontColor(this.c.textSecondary)
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Top)
-                .margin({ bottom: 6 })
-              }, (item: string, idx: number) => `${idx}`)
-            }
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .align(Alignment.TopStart)
-        .padding({ left: 20, right: 20, bottom: 16 })
-      }
-
-      // 操作区（随阶段）
-      if (this.ota.installing) {
-        // 安装器接管中：无操作
-      } else if (this.ota.phase === 'downloading') {
-        this.OtaButton(t('ota.cancel'), false, (): void => { OtaController.cancelDownload(); })
-      } else if (this.ota.phase === 'failed') {
-        Row() {
-          Button(t('ota.retry'))
-            .layoutWeight(1)
-            .height(46)
-            .backgroundColor(this.c.primary)
-            .fontColor('#FFFFFFFF')
-            .borderRadius(12)
-            .onClick(() => { OtaController.retry(); })
-          Button(t('ota.close'))
-            .layoutWeight(1)
-            .height(46)
-            .margin({ left: 12 })
-            .backgroundColor(this.c.bg)
-            .fontColor(this.c.textPrimary)
-            .borderRadius(12)
-            .onClick(() => { this.closeOtaSheet(); })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 28 })
-      } else {
-        // prompting：立即更新（主）+ 跳过此版本（次）
-        Column() {
-          this.OtaButton(t('ota.updateNow'), true, (): void => { OtaController.startDownload(); })
-          Text(t('ota.skipVersion'))
-            .fontSize(fs(14))
-            .fontColor(this.c.textSecondary)
-            .margin({ top: 14 })
-            .onClick(() => { OtaController.skipVersion(); })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 28 })
-        .alignItems(HorizontalAlign.Center)
-      }
-    }
-    .width('100%')
-    .backgroundColor(this.c.bg)
-  }
-
-  // 信息行（标签 + 值，对照 chatcube 设置项 Row）
-  @Builder
-  private InfoRow(label: string, value: string) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      Text(value)
-        .fontSize(fs(14))
-        .fontColor(this.c.textSecondary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: '60%' })
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  // 单选行（label + 当前选中 ✓；主题/字号/语言共用）
-  @Builder
-  private SelectRow(label: string, selected: boolean, onSelect: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(fs(16))
-          .fontColor([this.c.primary])
-      }
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onSelect(); })
-  }
-
-  // 字号选项行（label + 样例预览 + 当前选中 ✓；小/默认/大三档）
-  @Builder
-  private FontRow(label: string, sample: string, scaleMode: FontScaleMode) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      Text(sample)
-        .fontSize(fs(13))
-        .fontColor(this.c.textTertiary)
-        .margin({ right: 12 })
-      if (this.fontScaleMode === scaleMode) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(fs(16))
-          .fontColor([this.c.primary])
-      }
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { this.selectFontScale(scaleMode); })
-  }
-
-  // 开关行（label + Toggle Switch；回车发送等布尔偏好）
-  @Builder
-  private ToggleRow(label: string, isOn: boolean, onToggle: (isOn: boolean) => void) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: isOn })
-        .selectedColor(this.c.primary)
-        .onChange((value: boolean) => { onToggle(value); })
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  // 语音设置项行（label + 当前值 + ›；tap 开选择器 sheet）
-  @Builder
-  private VoicePickerRow(label: string, value: string, onTap: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      Text(value)
-        .fontSize(fs(14))
-        .fontColor(this.c.textSecondary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: '55%' })
-      Text('›')
-        .fontSize(fs(16))
-        .fontColor(this.c.textTertiary)
-        .margin({ left: 6 })
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onTap(); })
-  }
-
-  // 选择器选项行（label + 当前选中 ✓）
-  @Builder
-  private PickerOptionRow(label: string, selected: boolean, onSelect: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(fs(16))
-          .fontColor([this.c.primary])
-      }
-    }
-    .width('100%')
-    .height(52)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onSelect(); })
-  }
-
-  // 语音设置选择器 sheet（语言/声音两态；Scroll 承载长列表，对照 ImagePreviewSheet bindSheet 范式）
-  @Builder
-  private VoicePickerSheet() {
-    Column() {
-      Row() {
-        Text(this.voiceSheetMode === 'lang' ? t('settings.voice.language') : t('settings.voice.voice'))
-          .fontSize(fs(16))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .layoutWeight(1)
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textSecondary])
-          .onClick(() => { this.voiceSheetOpen = false; })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 12 })
-      .backgroundColor(this.c.bg)
-
-      Scroll() {
-        Column() {
-          if (this.voiceSheetMode === 'lang') {
-            ForEach(VOICE_LANGUAGES, (lang: VoiceLanguage) => {
-              this.PickerOptionRow(getLanguageDisplayName(lang),
-                VoiceSettingsService.currentLang === lang.code,
-                (): void => { this.pickLang(lang.code); })
-            }, (lang: VoiceLanguage) => lang.code)
-          } else {
-            this.PickerOptionRow(t('settings.voice.hubDefault'),
-              VoiceSettingsService.currentVoiceId === '',
-              (): void => { this.pickVoice(''); })
-            ForEach(VOICE_PRESETS, (v: VoicePreset) => {
-              this.PickerOptionRow(getPresetDisplayName(v.id, getI18nState().locale),
-                VoiceSettingsService.currentVoiceId === v.id,
-                (): void => { this.pickVoice(v.id); })
-            }, (v: VoicePreset) => v.id)
-          }
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-      }
-      .layoutWeight(1)
-      .backgroundColor(this.c.bg)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.c.bg)
-  }
-
-  // 气泡配色项行（label + swatch 圆点 + 当前值短名 + ›；tap 开选择器 sheet）
-  @Builder
-  private SurfaceColorRow(label: string, pref: ChatSurfaceColorPreference, onTap: () => void) {
-    Row() {
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-      Circle({ width: 16, height: 16 })
-        .fill(this.pickerColorOf(pref))
-        .stroke(this.c.border)
-        .strokeWidth(0.5)
-        .margin({ right: 8 })
-      Text(this.prefDisplayName(pref))
-        .fontSize(fs(14))
-        .fontColor(this.c.textSecondary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: '40%' })
-      Text('›')
-        .fontSize(fs(16))
-        .fontColor(this.c.textTertiary)
-        .margin({ left: 6 })
-    }
-    .width('100%')
-    .height(54)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onTap(); })
-  }
-
-  // 选择器选项行（swatch 圆点 + label + 当前选中 ✓）
-  @Builder
-  private SurfaceOptionRow(label: string, swatch: string, selected: boolean, onSelect: () => void) {
-    Row() {
-      Circle({ width: 18, height: 18 })
-        .fill(swatch)
-        .stroke(this.c.border)
-        .strokeWidth(0.5)
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-        .margin({ left: 12 })
-      if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(fs(16))
-          .fontColor([this.c.primary])
-      }
-    }
-    .width('100%')
-    .height(52)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onSelect(); })
-  }
-
-  // 自定义 hex 输入行（swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
-  @Builder
-  private SurfaceCustomRow() {
-    Row() {
-      Circle({ width: 18, height: 18 })
-        .fill(this.customSwatch())
-        .stroke(this.c.border)
-        .strokeWidth(0.5)
-      Text(t('settings.chat.surfaceColor.custom'))
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .margin({ left: 12 })
-      TextInput({ text: this.customHex, placeholder: '#rrggbb' })
-        .fontSize(fs(14))
-        .fontColor(this.c.textPrimary)
-        .backgroundColor(this.c.surface)
-        .borderRadius(8)
-        .height(40)
-        .margin({ left: 12 })
-        .layoutWeight(1)
-        .onChange((value: string) => { this.onCustomHexChange(value); })
-    }
-    .width('100%')
-    .height(64)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  // 气泡配色选择器 sheet（工具组/用户消息两态；4 预设 + 自定义 hex 输入）
-  @Builder
-  private SurfaceColorSheet() {
-    Column() {
-      Row() {
-        Text(this.surfaceSheetMode === 'tool'
-          ? t('settings.chat.surfaceColor.toolGroup')
-          : t('settings.chat.surfaceColor.userMessage'))
-          .fontSize(fs(16))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .layoutWeight(1)
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textSecondary])
-          .onClick(() => { this.surfaceSheetOpen = false; })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 12 })
-      .backgroundColor(this.c.bg)
-
-      Scroll() {
-        Column() {
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.default'),
-            getPickerValue('default'),
-            this.isSurfacePrefSelected('default'),
-            (): void => { this.pickSurfacePreset('default'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softBlue'),
-            getPickerValue('preset:soft-blue'),
-            this.isSurfacePrefSelected('preset:soft-blue'),
-            (): void => { this.pickSurfacePreset('soft-blue'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softGreen'),
-            getPickerValue('preset:soft-green'),
-            this.isSurfacePrefSelected('preset:soft-green'),
-            (): void => { this.pickSurfacePreset('soft-green'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softYellow'),
-            getPickerValue('preset:soft-yellow'),
-            this.isSurfacePrefSelected('preset:soft-yellow'),
-            (): void => { this.pickSurfacePreset('soft-yellow'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceCustomRow()
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-      }
-      .layoutWeight(1)
-      .backgroundColor(this.c.bg)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.c.bg)
-  }
-
-  // 自定义 hex 预览 swatch（合法→归一化色；非法→中性灰 placeholder）
-  private customSwatch(): string {
-    const normalized: string | null = normalizeHexColor(this.customHex);
-    return normalized !== null ? normalized : getPickerValue('default');
-  }
-
   build() {
     NavDestination() {
-      Scroll() {
-        Column() {
-        // 主题分组（浅色/深色/跟随系统）
-        this.SectionHeader(t('settings.section.theme'))
-        Column() {
-          this.SelectRow(t('settings.theme.light'), this.mode === 'light', (): void => { this.selectTheme('light'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('settings.theme.dark'), this.mode === 'dark', (): void => { this.selectTheme('dark'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('settings.theme.system'), this.mode === 'system', (): void => { this.selectTheme('system'); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
+      List({ space: 12 }) {
+        // 顶部搜索框（受控）
+        ListItem() {
+          SettingSearchBar({
+            query: this.query,
+            placeholder: t('settings.searchPlaceholder'),
+            onQueryChange: (v: string) => { this.query = v; }
+          })
+        }.selectable(false)
 
-        // 字号分组（小/默认/大；全量 fontSize 经 fs() 缩放，切换即时生效）
-        this.SectionHeader(t('settings.section.fontSize'))
-        Column() {
-          this.FontRow(t('settings.fontSize.small'), 'Aa', 'small')
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.FontRow(t('settings.fontSize.default'), 'Aa', 'default')
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.FontRow(t('settings.fontSize.large'), 'Aa', 'large')
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 语言分组（跟随系统/中文/English）
-        this.SectionHeader(t('settings.section.language'))
-        Column() {
-          this.SelectRow(t('settings.language.system'), this.langChoice === 'system', (): void => { this.selectLanguage('system'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('settings.language.zhCN'), this.langChoice === 'zh-CN', (): void => { this.selectLanguage('zh-CN'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('settings.language.en'), this.langChoice === 'en', (): void => { this.selectLanguage('en'); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 输入分组（回车发送开关，默认关：Enter=换行多行输入；开=Enter 直接发送）
-        this.SectionHeader(t('settings.section.input'))
-        Column() {
-          this.ToggleRow(t('settings.enterToSend'), this.enterToSend, (v: boolean): void => { this.saveEnterToSend(v); })
-          // 触感反馈（移动端：发送/删除/长按/错误短震动；默认开；读 HapticService @Trace 即时重渲染）
-          this.ToggleRow(t('settings.haptics'), this.hapticsEnabled, (v: boolean): void => { this.setHapticsEnabled(v); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 终端工具卡片分组（compact 仅 header 降噪 / detailed 内联命令预览；对照上游 settings.chat.terminalToolDisplay）
-        this.SectionHeader(t('settings.chat.terminalToolDisplay'))
-        Column() {
-          this.SelectRow(t('settings.chat.terminalToolDisplay.compact'), this.terminalToolMode === 'compact', (): void => { this.selectTerminalToolDisplay('compact'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('settings.chat.terminalToolDisplay.detailed'), this.terminalToolMode === 'detailed', (): void => { this.selectTerminalToolDisplay('detailed'); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 终端字号分组（5 档离散；boot 用 + 设置页改即时 applyFontSize，对照上游 terminal fontSize）
-        this.SectionHeader(t('settings.terminal.fontSize'))
-        Column() {
-          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[0]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[0], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[0]); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[1]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[1], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[1]); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[2]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[2], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[2]); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[3]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[3], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[3]); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(`${VALID_TERMINAL_FONT_SIZES[4]}`, this.terminalFontSize === VALID_TERMINAL_FONT_SIZES[4], (): void => { this.selectTerminalFontSize(VALID_TERMINAL_FONT_SIZES[4]); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 会话列表分组（每组预览行数 + 状态模式 standard/detailed；对照上游 SessionList 偏好）
-        this.SectionHeader(t('settings.chat.sessionList'))
-        Column() {
-          // 预览行数（1–99，默认 8）：超出显示「展开更多」；TextInput 数字输入 onChange clamp
-          Row() {
-            Text(t('settings.chat.sessionPreviewLimit'))
-              .fontSize(fs(15))
-              .fontColor(this.c.textPrimary)
-              .layoutWeight(1)
-            TextInput({
-              text: `${this.sessionPreviewLimit}`,
-              placeholder: '8'
+        if (this.filteredGroups().length === 0) {
+          // 无匹配空态
+          ListItem() {
+            Column() {
+              Text(t('settings.searchNoResult'))
+                .fontSize(fs(14))
+                .fontColor(this.c.textTertiary)
+            }
+            .width('100%')
+            .padding({ top: 48, bottom: 48 })
+            .alignItems(HorizontalAlign.Center)
+          }.selectable(false)
+        } else {
+          ForEach(this.filteredGroups(), (group: SettingsGroup) => {
+            // 分组小标题
+            ListItem() {
+              SettingSectionTitle({ text: group.title })
+            }.selectable(false)
+            // 分组白卡（连续圆角咬合）
+            ListItemGroup() {
+              ForEach(group.items, (item: SettingsEntry, idx: number) => {
+                ListItem() {
+                  SettingCard({
+                    primaryText: item.title, secondaryText: item.subtitle,
+                    suffixType: 'arrow',
+                    iconSymbol: item.symbol,
+                    iconBgColor: morandiSwatch(item.morandi, getThemeState().isDark),
+                    rowPosition: rowPos(idx, group.items.length),
+                    onItemClick: () => {
+                      if (this.navPathStack !== null) {
+                        this.navPathStack.pushPathByName(item.target, null);
+                      }
+                    }
+                  })
+                }
+              }, (item: SettingsEntry) => item.key)
+            }
+            .divider({
+              strokeWidth: $r('app.float.setting_divider_width'), color: this.c.border,
+              startMargin: $r('app.float.setting_card_padding_h'), endMargin: $r('app.float.setting_card_padding_h')
             })
-              .type(InputType.Number)
-              .width(72)
-              .height(40)
-              .fontSize(fs(15))
-              .fontColor(this.c.textPrimary)
-              .backgroundColor(this.c.surface)
-              .borderRadius(8)
-              .textAlign(TextAlign.Center)
-              .onChange((value: string) => { this.onPreviewLimitChange(value); })
-          }
-          .width('100%')
-          .height(54)
-          .padding({ left: 16, right: 16 })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('statusMode.standard'), this.sessionListStatusMode === 'standard', (): void => { this.selectSessionListStatusMode('standard'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SelectRow(t('statusMode.detailed'), this.sessionListStatusMode === 'detailed', (): void => { this.selectSessionListStatusMode('detailed'); })
+            .backgroundColor(this.c.bg)
+            .borderRadius($r('app.float.setting_card_radius'))
+            .clip(true)
+          }, (group: SettingsGroup) => group.key)
         }
-        .width('100%')
-        .backgroundColor(this.c.bg)
 
-        // 语音分组（识别语言 + 声音；tap 开 sheet 选择器，对照上游 voice 设置。下次进语音页生效）
-        this.SectionHeader(t('settings.voice.title'))
-        Column() {
-          this.VoicePickerRow(t('settings.voice.language'), this.voiceLangLabel, (): void => { this.openVoiceSheet('lang'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.VoicePickerRow(t('settings.voice.voice'), this.voiceIdLabel, (): void => { this.openVoiceSheet('voice'); })
+        // 底部退出登录（危险操作）
+        ListItem() {
+          SettingActionButton({
+            label: this.isLoggingOut ? t('settings.loggingOut') : t('settings.logout'),
+            style: 'danger',
+            isEnabled: !this.isLoggingOut,
+            onPress: () => { this.confirmLogout(); }
+          })
         }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-        .bindSheet(this.voiceSheetOpen!!, this.VoicePickerSheet(), {
-          height: SheetSize.LARGE,
-          detents: [SheetSize.LARGE],
-          backgroundColor: this.c.bg,
-          onDisappear: () => { this.voiceSheetOpen = false; }
-        })
+        .selectable(false)
+        .padding({ top: 8 })
 
-        // 气泡配色分组（工具组背景 + 用户消息背景；tap 开 sheet 选择器，对照上游 useChatSurfaceColors）
-        this.SectionHeader(t('settings.chat.surfaceColor'))
-        Column() {
-          this.SurfaceColorRow(t('settings.chat.surfaceColor.toolGroup'),
-            ChatSurfaceColorsService.currentToolGroupPref,
-            (): void => { this.openSurfaceSheet('tool'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceColorRow(t('settings.chat.surfaceColor.userMessage'),
-            ChatSurfaceColorsService.currentUserMessagePref,
-            (): void => { this.openSurfaceSheet('user'); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-        .bindSheet(this.surfaceSheetOpen!!, this.SurfaceColorSheet(), {
-          height: SheetSize.LARGE,
-          detents: [SheetSize.LARGE],
-          backgroundColor: this.c.bg,
-          onDisappear: () => { this.surfaceSheetOpen = false; }
-        })
-
-        // 连接信息分组
-        this.SectionHeader(t('settings.section.connection'))
-        Column() {
-          this.InfoRow(t('settings.hubUrl'), this.hubUrl)
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.InfoRow(t('settings.namespace'), this.namespace)
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.InfoRow(t('settings.accessToken'), this.tokenMask)
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-
-        // 说明
-        Text(t('settings.connectionHint'))
-          .fontSize(fs(12))
-          .fontColor(this.c.textTertiary)
-          .width('100%')
-          .padding({ left: 16, top: 10 })
-
-        // 关于分组（版本 + 开源协议 + GitHub 源代码）
-        this.SectionHeader(t('settings.section.about'))
-        Column() {
-          this.InfoRow(t('settings.about.version'), this.versionName)
-          if (this.otaEligible) {
-            Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-            this.OtaCheckRow()
-          }
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.InfoRow(t('settings.about.license'), t('settings.about.licenseValue'))
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          Row() {
-            Text(t('settings.about.sourceCode'))
-              .fontSize(fs(15))
-              .fontColor(this.c.textPrimary)
-              .layoutWeight(1)
-            Text(t('settings.about.sourceCodeValue'))
-              .fontSize(fs(14))
-              .fontColor(this.c.primary)
-          }
-          .width('100%')
-          .height(54)
-          .padding({ left: 16, right: 16 })
-          .alignItems(VerticalAlign.Center)
-          .onClick(() => { this.openGitHub(); })
-        }
-        .width('100%')
-        .backgroundColor(this.c.bg)
-        .bindSheet(this.ota.sheetOpen!!, this.OtaSheet(), {
-          height: SheetSize.LARGE,
-          detents: [SheetSize.LARGE],
-          backgroundColor: this.c.bg,
-          onDisappear: () => { this.closeOtaSheet(); }
-        })
-
-        // 退出登录（危险操作，线框红字）
-        Button(this.isLoggingOut ? t('settings.loggingOut') : t('settings.logout'))
-          .width('100%')
-          .height(50)
-          .margin({ top: 32, left: 16, right: 16 })
-          .backgroundColor(this.c.bg)
-          .fontColor(this.c.error)
-          .borderRadius(12)
-          .enabled(!this.isLoggingOut)
-          .onClick(() => this.confirmLogout())
-        }
-        .width('100%')
-        .backgroundColor(this.c.surface)
+        ListItem() { Row().height(16) }.selectable(false)
       }
       .scrollBar(BarState.Off)
-      .align(Alignment.TopStart)
       .edgeEffect(EdgeEffect.Spring)
-      .backgroundColor(this.c.surface)
+      .padding({
+        top: 8, bottom: 0,
+        left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
+      })
     }
     .title(t('settings.title'))
+    .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
     })
