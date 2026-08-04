@@ -24,6 +24,7 @@ import {
   EFFORT_OPTIONS, effortDisplayName, reasoningEffortsForFlavor, reasoningEffortDisplayName
 } from '../models/Types';
 import { t } from '../i18n/I18nService';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 
 @ComponentV2
 export struct ComposerToolbar {
@@ -278,7 +279,7 @@ export struct ComposerToolbar {
   @Builder
   ThinkingItem(label: string, value: string, currentValue: string, kind: string) {
     if (value === currentValue) {
-      MenuItem({ startIcon: $r('sys.symbol.checkmark'), content: label })
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.checkmark')).fontSize(16), content: label })
         .contentFont({ size: fs(14) })
         .onClick(() => { this.dispatchThinking(value, kind); })
     } else {
