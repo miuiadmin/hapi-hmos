@@ -393,17 +393,35 @@ struct Index {
     return n;
   }
 
+  // 半透明色（对照 ComposerToolbar.withAlpha / chatcube withColorAlpha：#RRGGBB → #AA{{RRGGBB}}，八位色 alpha 在前）。
+  private withAlpha(color: string, alphaHex: string): string {
+    if (color.startsWith('#') && color.length === 7) {
+      return `#${alphaHex}${color.substring(1)}`;
+    }
+    return color;
+  }
+
   // 列表筛选 Tab（全部/活跃/已归档，附计数；archived=非活跃）
+  //   胶囊样式对照 chatcube IndexFilterBar.FilterChip：borderRadius14 / h28 / padding12；
+  //   选中=主色浅底（withAlpha primary：亮 1A / 暗 14）+ 主色 1vp 描边 + Medium 主色字；
+  //   未选中=surface 底 + 无描边 + Regular 二级字（旧实现是纯 Text + 下划线，不符合胶囊 chip 原生样式）。
   @Builder
   private FilterTab(label: string, mode: 'all' | 'active' | 'archived', count: number) {
-    Text(`${label} ${count}`)
-      .fontSize(fs(13))
-      .fontWeight(this.sessionFilter === mode ? FontWeight.Medium : FontWeight.Regular)
-      .fontColor(this.sessionFilter === mode ? this.c.primary : this.c.textTertiary)
-      .decoration({ type: this.sessionFilter === mode ? TextDecorationType.Underline : TextDecorationType.None })
-      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .margin({ right: 8 })
-      .onClick(() => { this.sessionFilter = mode; })
+    Row() {
+      Text(`${label} ${count}`)
+        .fontSize(fs(13))
+        .fontWeight(this.sessionFilter === mode ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.sessionFilter === mode ? this.c.primary : this.c.textSecondary)
+    }
+    .height(28)
+    .padding({ left: 12, right: 12 })
+    .margin({ right: 8 })
+    .borderRadius(14)
+    .backgroundColor(this.sessionFilter === mode
+      ? this.withAlpha(this.c.primary, getThemeState().isDark ? '14' : '1A')
+      : this.c.surface)
+    .border({ width: this.sessionFilter === mode ? 1 : 0, color: this.c.primary })
+    .onClick(() => { this.sessionFilter = mode; })
   }
   @Builder
   private FilterTabs() {
