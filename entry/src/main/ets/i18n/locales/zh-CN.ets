@@ -511,6 +511,11 @@ export const zhCN: Record<string, string> = {
   'statusBar.goalLimited': '目标受限',
   'statusBar.goalPaused': '目标已暂停',
   'statusBar.goalComplete': '目标完成',
+  // —— Composer（输入框上方工具条 / 附件面板；对照 chatcube ChatToolbar + AttachmentPicker）——
+  'composer.attach.camera': '拍照',
+  'composer.attach.photo': '照片',
+  'composer.attach.file': '上传文件',
+  'composer.schedule': '定时',
   'event.apiError': 'API 错误',
   'event.apiErrorRetrying': 'API 错误：重试中（{n}/{m}）',
   'event.apiErrorRetryingSimple': 'API 错误：重试中…',

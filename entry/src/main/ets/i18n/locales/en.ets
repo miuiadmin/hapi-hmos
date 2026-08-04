@@ -510,6 +510,11 @@ export const en: Record<string, string> = {
   'statusBar.goalLimited': 'goal limited',
   'statusBar.goalPaused': 'goal paused',
   'statusBar.goalComplete': 'goal complete',
+  // —— Composer（输入框上方工具条 / 附件面板；对照 chatcube ChatToolbar + AttachmentPicker）——
+  'composer.attach.camera': 'Camera',
+  'composer.attach.photo': 'Photo',
+  'composer.attach.file': 'Upload file',
+  'composer.schedule': 'Schedule',
   'event.apiError': 'API error',
   'event.apiErrorRetrying': 'API error: Retrying ({n}/{m})',
   'event.apiErrorRetryingSimple': 'API error: Retrying...',

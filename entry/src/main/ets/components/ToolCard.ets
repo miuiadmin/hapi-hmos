@@ -1,11 +1,10 @@
 import { ChatBlock, ChatToolCall, ToolPermission } from '../chat/ChatBlock';
 import { ToolPresentation, getToolPresentation, isEditToolName, isAskToolName } from '../chat/Presentation';
 import { toolGlyph, stateGlyph } from './IconGlyphs';
-import { getInputStrAny } from '../chat/ToolInputUtils';
 import { isAskUserQuestionToolName } from '../chat/AskUserQuestion';
 import { isRequestUserInputToolName } from '../chat/RequestUserInput';
 import { isCodexSessionByFlavor } from '../chat/AgentFlavor';
-import { getHubClient, ApproveOptions } from '../api/HubClient';
+import { ToolActionState } from '../chat/ToolActionState';
 import { ToolInputView, ToolResultView } from './ToolCardViews';
 import { TraceSection } from './TraceSection';
 import { AskUserQuestionFooter } from './AskUserQuestionFooter';
@@ -23,11 +22,9 @@ import { t } from '../i18n/I18nService';
 // footer 三选一互斥（仅 permission.status==='pending' 时挂其一）：
 //   通用权限 footer（允许/拒绝）/ AskUserQuestionFooter / RequestUserInputFooter。
 // 已答 AskUserQuestion（status!=='pending'）→ 内联 AskUserQuestionView 高亮回显。
-// V2 状态：@Param block/sessionId；@Local isDetailOpen（bindSheet 双向绑定用 !!）/actionLoading/actionError。
-
-function errMsg(e: Object, fallback: string): string {
-  return e instanceof Error ? e.message : fallback;
-}
+// V2 状态：@Param block/sessionId/flavor/nowTick/actionState；@Local isDetailOpen（bindSheet 双向绑定用 !!）。
+//   审批态(actionLoading/decided/actionError)原为本卡 @Local；动态键值(ChatPage.blockKey)致重建丢态 → 双提交风险，
+//   已上提到 ChatPage(ToolActionState 按 block.id 持久)，本卡经 @Param 只读、@Event onAction 回调执行（见 ChatPage.handleToolAction）。
 
 @ComponentV2
 struct ToolCard {
@@ -35,11 +32,23 @@ struct ToolCard {
   @Param sessionId: string = '';
   @Param flavor: string = '';             // 会话 flavor（ChatPage 透传；决定 Codex 系权限页变体）
   @Param nowTick: number = 0;               // running 卡 elapsed 实时驱动（ChatPage 仅对 running 卡传非 0）
-  @Event onDecided: () => void = () => {};   // 审批/拒绝成功后通知父页刷新 agentState（防 SSE 漏事件导致卡不翻转）
+  @Param actionState: ToolActionState = new ToolActionState();   // 审批态（上提自 @Local；ChatPage 按 block.id 注入）
+  @Event onAction: (kind: string) => void = () => {};   // 审批动作回调（allow/session/alledits/deny/codexYes/codexSession/abort）→ ChatPage 执行
   @Local isDetailOpen: boolean = false;
-  @Local actionLoading: string = '';     // ''|'allow'|'session'|'alledits'|'deny'|'abort'
-  @Local actionError: string = '';
-  @Local decided: boolean = false;       // 任一审批动作成功后置位：防 SSE 翻转前重复点击（对齐答题 footer 的 done）
+  @Param detailOpenInit: boolean = false;   // 详情 sheet 展开态（ChatPage detailOpenSigs 注入；父卡重建时 aboutToAppear 据此恢复 isDetailOpen）
+  @Event onDetailOpenChange: (open: boolean) => void = () => {};   // sheet 开/关同步 ChatPage（冻结/解冻 childSig → 控父卡键值是否随 children 变）
+
+  aboutToAppear(): void {
+    // 父卡重建（如子代理完成致 own-key 变）时恢复 sheet 展开态：detailOpenInit 来自 ChatPage detailOpenSigs。
+    this.isDetailOpen = this.detailOpenInit;
+  }
+
+  // isDetailOpen 开/关均同步 ChatPage：开启→冻结 childSig（父卡键值不变→不重建→sheet 稳定无闪烁）；
+  //   关闭→解冻（取实时 children→下次展开最新）。@Monitor 不在组件销毁时触发 → 重建瞬间无伪解冻（安全）。
+  @Monitor('isDetailOpen')
+  onIsDetailOpenChange(monitor: IMonitor): void {
+    this.onDetailOpenChange(this.isDetailOpen);
+  }
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -231,152 +240,7 @@ struct ToolCard {
     return t !== null && t.description !== '' ? truncateSafe(t.description, 160) : '';
   }
 
-  // ===== 审批动作 =====
-  private async doAllow(): Promise<void> {
-    const p = this.permission;
-    if (p === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = 'allow';
-    try {
-      const ok = await getHubClient().approvePermission(this.sessionId, p.id);
-      if (!ok) {
-        this.actionError = t('tool.approveFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.approveFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
-
-  private async doAllowForSession(): Promise<void> {
-    const p = this.permission;
-    const tool = this.tool;
-    if (p === null || tool === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = 'session';
-    try {
-      const opts: ApproveOptions = new ApproveOptions();
-      let ident: string = tool.name;
-      if (tool.name === 'Bash') {
-        const cmd: string = getInputStrAny(tool.input, ['command', 'cmd']);
-        ident = cmd !== '' ? `Bash(${cmd})` : 'Bash';
-      }
-      opts.allowTools = [ident];
-      const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
-      if (!ok) {
-        this.actionError = t('tool.approveFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.approveFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
-
-  private async doAllowAllEdits(): Promise<void> {
-    const p = this.permission;
-    if (p === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = 'alledits';
-    try {
-      const opts: ApproveOptions = new ApproveOptions();
-      opts.mode = 'acceptEdits';
-      const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
-      if (!ok) {
-        this.actionError = t('tool.approveFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.approveFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
-
-  private async doDeny(): Promise<void> {
-    const p = this.permission;
-    if (p === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = 'deny';
-    try {
-      const ok = await getHubClient().denyPermission(this.sessionId, p.id);
-      if (!ok) {
-        this.actionError = t('tool.denyFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.denyFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
-
-  // Codex 系：Yes（approved，单次）/ Yes-for-session（approved_for_session）。复用 actionLoading 'allow'/'session' 标志。
-  private async doCodexApprove(decision: string): Promise<void> {
-    const p = this.permission;
-    if (p === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = decision === 'approved' ? 'allow' : 'session';
-    try {
-      const opts: ApproveOptions = new ApproveOptions();
-      opts.decision = decision;
-      const ok = await getHubClient().approvePermission(this.sessionId, p.id, opts);
-      if (!ok) {
-        this.actionError = t('tool.approveFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.approveFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
-
-  // Codex 系：Abort（deny，decision='abort'）。走 denyPermission 带决策串。
-  private async doCodexAbort(): Promise<void> {
-    const p = this.permission;
-    if (p === null || this.actionLoading !== '') {
-      return;
-    }
-    this.actionError = '';
-    this.actionLoading = 'abort';
-    try {
-      const ok = await getHubClient().denyPermission(this.sessionId, p.id, 'abort');
-      if (!ok) {
-        this.actionError = t('tool.denyFailed');
-      } else {
-        this.decided = true;
-        this.onDecided();
-      }
-    } catch (e) {
-      this.actionError = errMsg(e, t('tool.denyFailed'));
-    } finally {
-      this.actionLoading = '';
-    }
-  }
+  // ===== 审批动作（已上提到 ChatPage.handleToolAction：动态键值致本卡重建，@Local 审批态丢失 → 双提交风险） =====
 
   // ===== Builders =====
   @Builder
@@ -472,37 +336,23 @@ struct ToolCard {
   }
 
   private dispatchAction(key: string): void {
-    if (this.decided) {
+    if (this.actionState.decided) {
       return;
     }
-    if (key === 'allow') {
-      this.doAllow();
-    } else if (key === 'session') {
-      this.doAllowForSession();
-    } else if (key === 'alledits') {
-      this.doAllowAllEdits();
-    } else if (key === 'deny') {
-      this.doDeny();
-    } else if (key === 'codexYes') {
-      this.doCodexApprove('approved');
-    } else if (key === 'codexSession') {
-      this.doCodexApprove('approved_for_session');
-    } else if (key === 'abort') {
-      this.doCodexAbort();
-    }
+    this.onAction(key);
   }
 
   @Builder
   private PermissionFooter() {
     if (this.isPending) {
       Column() {
-        Text(this.decided ? t('tool.decided') : t('tool.waitingForApproval'))
+        Text(this.actionState.decided ? t('tool.decided') : t('tool.waitingForApproval'))
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .width('100%')
 
-        if (this.actionError !== '') {
-          Text(this.actionError)
+        if (this.actionState.actionError !== '') {
+          Text(this.actionState.actionError)
             .fontSize(fs(11))
             .fontColor(this.c.error)
             .width('100%')
@@ -514,20 +364,20 @@ struct ToolCard {
 
         // Codex 系权限页变体：Yes / Yes-for-session / Abort（三键恒显，无 canAllow 门控；对照上游 PermissionFooter Codex 分支）
         if (this.isCodexSession) {
-          this.ActionRow(t('tool.yes'), this.c.success, this.actionLoading === 'allow', 'codexYes', this.decided)
-          this.ActionRow(t('tool.yesForSession'), this.c.textSecondary, this.actionLoading === 'session', 'codexSession', this.decided)
-          this.ActionRow(t('tool.abortLabel'), this.c.error, this.actionLoading === 'abort', 'abort', this.decided)
+          this.ActionRow(t('tool.yes'), this.c.success, this.actionState.actionLoading === 'allow', 'codexYes', this.actionState.decided)
+          this.ActionRow(t('tool.yesForSession'), this.c.textSecondary, this.actionState.actionLoading === 'session', 'codexSession', this.actionState.decided)
+          this.ActionRow(t('tool.abortLabel'), this.c.error, this.actionState.actionLoading === 'abort', 'abort', this.actionState.decided)
         } else {
-          this.ActionRow(t('tool.allow'), this.c.success, this.actionLoading === 'allow', 'allow', this.decided)
+          this.ActionRow(t('tool.allow'), this.c.success, this.actionState.actionLoading === 'allow', 'allow', this.actionState.decided)
 
           if (this.canAllowForSession) {
-            this.ActionRow(t('tool.allowForSession'), this.c.textSecondary, this.actionLoading === 'session', 'session', this.decided)
+            this.ActionRow(t('tool.allowForSession'), this.c.textSecondary, this.actionState.actionLoading === 'session', 'session', this.actionState.decided)
           }
           if (this.canAllowAllEdits) {
-            this.ActionRow(t('tool.allowAll'), this.c.textSecondary, this.actionLoading === 'alledits', 'alledits', this.decided)
+            this.ActionRow(t('tool.allowAll'), this.c.textSecondary, this.actionState.actionLoading === 'alledits', 'alledits', this.actionState.decided)
           }
 
-          this.ActionRow(t('tool.deny'), this.c.error, this.actionLoading === 'deny', 'deny', this.decided)
+          this.ActionRow(t('tool.deny'), this.c.error, this.actionState.actionLoading === 'deny', 'deny', this.actionState.decided)
         }
       }
       .width('100%')

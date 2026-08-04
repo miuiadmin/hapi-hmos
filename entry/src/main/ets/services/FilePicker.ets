@@ -6,6 +6,8 @@
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { camera, cameraPicker } from '@kit.CameraKit';
 
 // 选取并读完的文件（base64Content 为整文件 base64，size 为字节数）
 export class PickedFile {
@@ -79,6 +81,12 @@ export function fileNameFromUri(uri: string): string {
 // 从单个 URI 读字节 + base64 → PickedFile（单/多选取共用；读失败 → null）。
 function readPickedFile(uri: string): PickedFile | null {
   const filename: string = fileNameFromUri(uri);
+  return readPickedFileExplicit(uri, filename, guessMime(filename));
+}
+
+// 从单个 URI 读字节 + base64，文件名/MIME 由调用方显式指定（相册/拍照 URI 末段未必带扩展名，
+//   guessMime 会落 octet-stream，故相册/拍照走本入口强制 image/jpeg）。读失败 → null。
+function readPickedFileExplicit(uri: string, filename: string, mimeType: string): PickedFile | null {
   try {
     const file: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
     const stat: fileIo.Stat = fileIo.statSync(file.fd);
@@ -90,7 +98,7 @@ function readPickedFile(uri: string): PickedFile | null {
     const base64Data: string = base64Helper.encodeToStringSync(u8);
     const out: PickedFile = new PickedFile();
     out.filename = filename;
-    out.mimeType = guessMime(filename);
+    out.mimeType = mimeType;
     out.size = stat.size;
     out.base64Content = base64Data;
     return out;
@@ -135,4 +143,48 @@ export async function pickAndReadDocuments(context: common.UIAbilityContext, max
     if (pf !== null) { out.push(pf); }
   }
   return out;
+}
+
+// 相册多选（对照 chatcube AttachmentPicker.openPhotoPicker；PhotoViewPicker 系统 picker，免权限）。
+//   MIME 锁 IMAGE_TYPE，逐 URI 读 base64（文件名合成 image_N.jpg、强制 image/jpeg）。用户取消/全失败 → 空数组。
+export async function pickAndReadPhotos(context: common.UIAbilityContext, maxNumber: number = 5): Promise<PickedFile[]> {
+  let uris: string[];
+  try {
+    const options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
+    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    options.maxSelectNumber = maxNumber;
+    const photoPicker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
+    const result: photoAccessHelper.PhotoSelectResult = await photoPicker.select(options);
+    if (result.photoUris.length === 0) { return []; }
+    uris = result.photoUris;
+  } catch (e) {
+    return [];   // 用户取消或 picker 不可用
+  }
+  const out: PickedFile[] = [];
+  for (let i = 0; i < uris.length; i++) {
+    const pf: PickedFile | null = readPickedFileExplicit(uris[i], `image_${i + 1}.jpg`, 'image/jpeg');
+    if (pf !== null) { out.push(pf); }
+  }
+  return out;
+}
+
+// 拍照（对照 chatcube AttachmentPicker.openCamera；cameraPicker.pick 系统 picker，免权限，返回结果 URI）。
+//   拍完读 base64（文件名 camera_photo.jpg、image/jpeg）。用户取消/读失败 → null。
+export async function pickAndReadCameraPhoto(context: common.UIAbilityContext): Promise<PickedFile | null> {
+  let uri: string;
+  try {
+    const profile: cameraPicker.PickerProfile = {
+      cameraPosition: camera.CameraPosition.CAMERA_POSITION_BACK
+    };
+    const result: cameraPicker.PickerResult = await cameraPicker.pick(
+      context,
+      [cameraPicker.PickerMediaType.PHOTO],
+      profile
+    );
+    if (result.resultCode !== 0 || result.resultUri === '') { return null; }
+    uri = result.resultUri;
+  } catch (e) {
+    return null;   // 用户取消或相机不可用
+  }
+  return readPickedFileExplicit(uri, 'camera_photo.jpg', 'image/jpeg');
 }

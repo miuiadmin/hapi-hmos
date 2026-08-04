@@ -2,7 +2,7 @@
 //
 // 架构（镜像 ThemeService/TerminalToolDisplayService，简化版）：
 //   @ObservedV2 HapticsState{@Trace enabled} 经 AppStorageV2 应用级共享单例；
-//   SettingsPage 读 getHapticsState().enabled 建立刷新依赖；切换 setEnabled → 改 @Trace → 即时重渲染。
+//   ChatSettingsPage 读 getHapticsState().enabled 建立刷新依赖；切换 setEnabled → 改 @Trace → 即时重渲染。
 //   tap(event)：enabled 门控 → 读纯层 hapticEffectFor → 调 @ohos.vibrator（@kit.SensorServiceKit）。
 //   fire-and-forget（.then 双空回调 + try/catch），失败静默不炸 UI。
 //   init 在 EntryAbility.bootstrap（loadContent 前）从 Preferences 读回；无 context（纯 state + 持久化）。
