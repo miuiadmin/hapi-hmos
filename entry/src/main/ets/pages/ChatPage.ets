@@ -1296,10 +1296,15 @@ struct ChatPage {
     this.inputCursorStart = 0;
     this.inputCursorEnd = 0;
     this.isSending = true;
-    if (schedule <= 0) {
-      this.isThinking = true;                // 即时发送才显生成中（定时未触发，agent 未跑）
-    }
-    // 用户主动发送 → 显然要看回复：强制贴底 + 开启流式跟随 + 清新消息浮标。optimistic 是 leading 同步进 blocks，
+    // ★ 不再乐观置 isThinking=true：thinking 状态【只】由 session-updated 事件驱动（applySession 读
+    //   session.thinking，line 1173；Task #26 已加 session-updated 重拉兜底）。旧实现这里乐观置真，两个症：
+    //   1) Hub 无在线机器（machines=[]）时发送后永不收 session-updated.thinking → 乐观 true 永不翻 false →
+    //      卡死「思考中」、灰板长驻（用户实测：排队没发出去的消息，那个板一直不消）。
+    //   2) isThinking 翻转触发整页 rebuild + @Monitor 延迟追加 typing 占位块（二次刷新）→ 发送瞬间灰色重绘一闪。
+    //   对齐 web：web 的 thread.isRunning（HappyComposer.tsx:363 / useAuiState）是 assistant-ui 事件态，发送时
+    //   【不】乐观置真；thinking 字段源自 session-updated（shared/src/socket.ts:207）。有在线机器时 agent 一启动
+    //   即推 session-updated.thinking=true → typing 指示自然出现（仅晚一个事件往返，optimistic 气泡已给即时反馈）。
+    // 用户主动发送 → 显然要看回复：强制贴底 + 开启流式跟随 + 清新消息浮标。
     //   doRecomputeBlocks 末尾的 followScroll 会滚到含本条的位置；此处 scrollToBottom 作即时反馈（双保险）。
     this.isPinnedToBottom = true;
     this.newMessagesCount = 0;
@@ -1793,7 +1798,7 @@ struct ChatPage {
     }
     this.updateOptimisticStatus(b.id, 'sending');
     this.isSending = true;
-    this.isThinking = true;
+    // 不乐观置 isThinking（同 handleSend，见 line ~1299 注）：由 session-updated 事件驱动，免无在线机器时卡死。
     try {
       const ok: boolean = await getHubClient().sendMessage(this.sessionId, b.text, b.id);
       this.updateOptimisticStatus(b.id, ok ? 'queued' : 'failed');
