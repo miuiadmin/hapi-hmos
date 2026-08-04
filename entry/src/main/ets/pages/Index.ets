@@ -155,14 +155,23 @@ struct Index {
     }
   }
 
-  // 连接 SSE（全局订阅，不带 sessionId，收所有可见会话事件），注册本页监听者
+  // 连接 SSE（全局订阅 all=true，收本 namespace 所有会话的 message-received / session-updated 等事件）。
+  //   ★ 根因（2026-08-04 真机实测定位）：hub sseManager.shouldSend 对 message-received / session-updated 等
+  //     按 `connection.all || connection.sessionId === event.sessionId` 过滤——**仅 visibility=visible 不够**
+  //     （visibility 只控已读回执/通知，不控事件投递范围）。旧实现 new SSESubscription()（all=false、无 sessionId）
+  //     → message-received 全被 hub 丢弃 → 流式回复「一动不动」、必须退出重进才见（重进走 GET /messages 直拉，
+  //     故能见）。curl 对照验证：all=false 时 hub 只回 connection-changed+toast；all=true 才回 message-received。
+  //     对照 web useSSE 会话列表也是 subscription.all=true。各页监听者自带 sessionId 过滤（ChatPage 按
+  //     event.sessionId === this.sessionId 收），all=true 仅放大投递面、不致重复处理。
   private connectSSE(): void {
     const sse = getSSEClient();
     this.sseListenerId = sse.addListener({
       onEvent: (event: SyncEvent) => { this.onSSEEvent(event); },
       onStateChange: (state: SSEConnectionState) => { this.sseState = state; }
     });
-    sse.connect(new SSESubscription());
+    const sub: SSESubscription = new SSESubscription();
+    sub.all = true;
+    sse.connect(sub);
   }
 
   // SSE 事件：会话结构性变更 → 重新拉列表（低频）。
