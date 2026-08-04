@@ -204,6 +204,9 @@ struct ChatPage {
   // LazyForEach 数据源（流式渲染根治，对照 chatcube ChatMessageListDataSource）：单项原地重渲染、不销毁、
   //   MarkdownText/CJMarkdown 保活 → 流式逐字实时增长、无冻结。refreshDataSource() 把 filteredBlocks 灌入并按签名 diff 通知。
   private dataSource: ChatBlockDataSource = new ChatBlockDataSource();
+  // 思考中占位块（单例；id='__typing__' 恒定，内容不变故不需 @Trace）。isThinking 时由 refreshDataSource
+  //   追加到展示集末尾，随 LazyForEach onDataAdd/onDataDelete 增删（非 List 条件子节点，免发送时整列重布局空白）。
+  private readonly typingBlock: ChatBlock = ChatBlock.typingIndicator();
   private isPinnedToBottom: boolean = true;
   private settlingCancelled: boolean = false;          // 初始滚动定锚：用户上滑即放弃后续重试（对照上游 shouldCancelInitialScrollSettling）
   private settlingTimerIds: number[] = [];             // 初始定锚重试 timer 句柄簇（进会话按延迟数组排多个 scrollEdge）
@@ -445,8 +448,18 @@ struct ChatPage {
   // 把当前展示集（filteredBlocks）灌入 LazyForEach 数据源。sigFn=blockSignature（含 toolActionStates/
   //   detailOpenSigs 等实例态）→ DataSource 据此 diff，仅对变化 index 调 onDataChange → 单项原地刷新。
   //   流式只改末块 text → 仅刷新末块（MarkdownText 保活、CJMarkdown 不重建）。
+  //   isThinking 时追加 typing 占位块到末尾（onDataAdd；isThinking 翻 false → onDataDelete，见 setItems 末尾删除分支）——
+  //   同流式 agent-text 追加机制，不改 List 子节点数（旧实现把 TypingIndicator 当 List if 条件子节点 → 发送时整列空白）。
   private refreshDataSource(): void {
-    this.dataSource.setItems(this.filteredBlocks, (b: ChatBlock): string => this.blockSignature(b));
+    const base: ChatBlock[] = this.filteredBlocks;
+    if (this.isThinking) {
+      const arr: ChatBlock[] = [];
+      for (let i = 0; i < base.length; i++) { arr.push(base[i]); }
+      arr.push(this.typingBlock);
+      this.dataSource.setItems(arr, (b: ChatBlock): string => this.blockSignature(b));
+    } else {
+      this.dataSource.setItems(base, (b: ChatBlock): string => this.blockSignature(b));
+    }
   }
 
   // 搜索过滤变化（显隐/查询）→ 展示集结构变 → reload 数据源（filteredBlocks 已读新 searchMode/searchQuery）。
@@ -2403,6 +2416,9 @@ struct ChatPage {
   onThinkingChanged(): void {
     setTimeout((): void => {
       if (this.isDisposed) { return; }
+      // 思考中占位块的增删随 isThinking 翻转：发送(false→true)→onDataAdd 追加 typing；回复完成/停止(true→false)→onDataDelete。
+      //   延后到下一事件循环（与下方派生态同因：避 isThinking 翻转那帧 build 期内改 LazyForEach 触发「UINode added during re-render」）。
+      this.refreshDataSource();
       this.sendIconTrigger++;
       this.lastHasContent = this.composerHasContent();
       this.updateBreathing();
@@ -3235,7 +3251,10 @@ struct ChatPage {
                       if (b.unreadDividerBefore && !this.isFiltering()) {
                         this.UnreadDivider()
                       }
-                      if (b.kind === 'user-text') {
+                      if (b.kind === 'typing-indicator') {
+                        // 思考中占位（dataSource 末尾追加，非 List 条件子节点）→ 发送时不再触发整列重布局空白
+                        this.TypingIndicator()
+                      } else if (b.kind === 'user-text') {
                         this.UserBubble(b)
                       } else if (b.kind === 'agent-text') {
                         this.AgentBubble(b)
@@ -3278,12 +3297,9 @@ struct ChatPage {
                     }
                   }
                 }, (b: ChatBlock): string => b.id)
-
-              if (this.isThinking) {
-                ListItem() {
-                  this.TypingIndicator()
-                }
-              }
+              // TypingIndicator 不再作为 List 的 if 条件子节点（已移入上方 LazyForEach 作 typing-indicator 块）：
+              //   旧实现此处 `if(isThinking){ListItem{TypingIndicator}}` → isThinking 翻转改 List 子节点数(2↔3) →
+              //   List 重算整棵子树 → 发送瞬间整列空白 ~300ms。改由 dataSource 驱动 onDataAdd/onDataDelete 后无此症。
             }
             .width('100%')
             .height('100%')

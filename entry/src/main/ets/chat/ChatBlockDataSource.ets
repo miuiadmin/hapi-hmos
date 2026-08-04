@@ -71,7 +71,28 @@ export class ChatBlockDataSource implements IDataSource {
       }
     }
 
-    // 2) 长度不同且非末尾追加（头部插入更旧历史 / 删除 / 序列错位 / 搜索过滤）：真结构变化 → 全量 reload。
+    // 1b) 末尾删除（TypingIndicator 关闭：isThinking true→false，prev 末尾的 typing 占位块移除）：
+    //   prev 的前 next.length 项 == next（前缀对齐）→ onDataDelete 增量，【不全量 reload】。
+    //   不加本分支则落到下方 branch 2（长度不同→reload）→ 整列重建空白（与发送时同症）。从末尾倒序通知，保 index 稳定。
+    if (next.length < prev.length) {
+      let isTrailingRemove: boolean = true;
+      for (let i = 0; i < next.length; i++) {
+        if (next[i].id !== prev[i].id) { isTrailingRemove = false; break; }
+      }
+      if (isTrailingRemove) {
+        const changed: number[] = [];
+        for (let i = 0; i < next.length; i++) {
+          if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
+        }
+        this.items = next;
+        this.sigs = newSigs;
+        for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
+        for (let i = prev.length - 1; i >= next.length; i--) { this.notifyDataDelete(i); }
+        return;
+      }
+    }
+
+    // 2) 长度不同且非末尾追加/删除（头部插入更旧历史 / 序列错位 / 搜索过滤）：真结构变化 → 全量 reload。
     if (next.length !== prev.length) {
       this.items = next;
       this.sigs = newSigs;
@@ -116,6 +137,12 @@ export class ChatBlockDataSource implements IDataSource {
   private notifyDataAdd(index: number): void {
     for (let i = 0; i < this.listeners.length; i++) {
       this.listeners[i].onDataAdd(index);
+    }
+  }
+
+  private notifyDataDelete(index: number): void {
+    for (let i = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataDelete(index);
     }
   }
 }

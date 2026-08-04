@@ -8,7 +8,7 @@ import { UsageData } from '../models/Message';
 import { AttachmentMetadata, AgentEvent } from '../models/Types';
 import { CodexReview } from './CodexReview';
 
-export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review' | 'agent-event' | 'tool-group';
+export type ChatBlockKind = 'user-text' | 'agent-text' | 'tool-call' | 'reasoning' | 'generated-image' | 'cli-output' | 'codex-review' | 'agent-event' | 'tool-group' | 'typing-indicator';
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
@@ -249,6 +249,18 @@ export class ChatBlock {
     b.id = id;
     b.createdAt = createdAt;
     b.event = event;
+    return b;
+  }
+
+  // 思考中占位块（非消息，UI 驱动）：isThinking 时由 ChatPage.refreshDataSource 追加到展示集【末尾】，
+  //   随 LazyForEach onDataAdd/onDataDelete 增删——同流式 agent-text 追加机制（不改 List 子节点数）。
+  //   旧实现把 TypingIndicator 作为 List 的 `if(isThinking)` 条件子节点：isThinking 翻转改 List 子节点数(2↔3)
+  //   → List 重算整棵子树（含 LazyForEach）→ 发送瞬间整列空白 ~300ms（"输入框撑大屏幕闪一下"残留根因，2026-08-05 修）。
+  //   id 恒定 '__typing__'，无 reducer 产出、无日期/未读分隔盖戳（dividerBefore/unreadDividerBefore 默认 false）。
+  static typingIndicator(): ChatBlock {
+    const b: ChatBlock = new ChatBlock();
+    b.kind = 'typing-indicator';
+    b.id = '__typing__';
     return b;
   }
 
