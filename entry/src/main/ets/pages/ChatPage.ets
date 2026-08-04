@@ -328,6 +328,11 @@ struct ChatPage {
   private blocksRecomputeInWindow: boolean = false;   // 窗口内（leading 已用，后续合并）
   private blocksRecomputePending: boolean = false;    // 窗口内有新调用 → 末次兜底
   private isDisposed: boolean = false;                // aboutToDisappear 置位，防销毁后回调跑重算
+  // 输入框补全重算（slash/mention/skill）合并延迟标记。TextArea 的 onChange/onTextSelectionChange 在其【自身构建周期内】
+  //   触发——若此时同步改 slashSuggestions/mentionItems/skillSuggestionItems（构建中条件渲染的联想浮层），会触发
+  //   ArkUI「New UINode added while re-render」（build-phase state change），且TextArea 的 maxHeight 约束可能不生效→输入框撑大。
+  //   延到 setTimeout(0)：等 TextArea 构建结束、在独立帧改 @Local → 浮层在正常渲染周期挂载。inputText/inputCursor 仍同步赋值。
+  private suggestionRecomputeScheduled: boolean = false;
   private recomputeBlocks(): void {
     if (this.isDisposed) {
       return;
@@ -1409,6 +1414,26 @@ struct ChatPage {
   // —— 斜杠命令补全（对照 web useActiveWord + useSlashCommands.getSuggestions）——
   //   onTextSelectionChange / onChange 触发：以光标选区在 inputText 回溯找 '/' 前缀活动词，
   //   命中则按 flavor 取内置命令评分（精确/前缀/包含/Levenshtein），取前 6 条；否则清空。
+  // 把 slash/mention/skill 三项补全重算合并到下一帧执行（TextArea 回调期外）。
+  //   TextArea 的 onChange/onTextSelectionChange 在组件自身构建周期内触发，同步改联想 @Local 会触发
+  //   「New UINode added while re-render」→ 延到 setTimeout(0) 在构建结束后跑。inputText/光标已同步赋值，
+  //   延迟仅影响联想浮层显隐一帧（不可察）。多次连续输入（快速打字）合并为一次重算（去抖合并，非节流）。
+  private scheduleSuggestionRecompute(): void {
+    if (this.suggestionRecomputeScheduled) {
+      return;
+    }
+    this.suggestionRecomputeScheduled = true;
+    setTimeout((): void => {
+      this.suggestionRecomputeScheduled = false;
+      if (this.isDisposed) {
+        return;
+      }
+      this.recomputeSlash();
+      this.recomputeMention();
+      this.recomputeSkill();
+    }, 0);
+  }
+
   private recomputeSlash(): void {
     const aw = findActiveWord(this.inputText, this.inputCursorStart, this.inputCursorEnd, ['/']);
     if (aw === null || !aw.activeWord.startsWith('/')) {
@@ -2343,12 +2368,18 @@ struct ChatPage {
   private sendOpacity(): number { return 1; }
 
   // —— 发送键动效驱动（对照 chatcube ChatInputBar:651-753 的 @Monitor + 呼吸 + animateSendButton）——
+  // @Monitor 回调若同步改 @Local（sendIconTrigger/breathOpacity/sendBtnScale），其变更会与 isThinking 翻转触发的
+  //   那次 build 批进同一 render pass → ArkUI 报「New UINode added during re-render」（build 期改状态）。
+  //   故整体延后到下一事件循环（setTimeout 0）：让 think 翻转的 build 先提交完，再改这些派生态 → 无 build 期争抢。
   @Monitor('isThinking')
   onThinkingChanged(): void {
-    this.sendIconTrigger++;
-    this.lastHasContent = this.composerHasContent();
-    this.updateBreathing();
-    this.animateSendButton();
+    setTimeout((): void => {
+      if (this.isDisposed) { return; }
+      this.sendIconTrigger++;
+      this.lastHasContent = this.composerHasContent();
+      this.updateBreathing();
+      this.animateSendButton();
+    }, 0);
   }
   // 内容态翻转才 bump 触发器（省冗余变形；生成中 pause↔paperplane 切换亦由此驱动）+ 同步呼吸。
   @Monitor('inputText', 'pendingAttachments')
@@ -2381,21 +2412,18 @@ struct ChatPage {
   }
 
   // 呼吸仅在「生成中且无新内容」(pause 态) 跑；内容出现或停止即停（对照 chatcube updateBreathing）。
+  // ⚠️ 暂关呼吸动画：breathOpacity 是 ChatPage @Local、被 build 读 → setInterval 每 850ms 翻转它会【整体重建
+  //   ChatPage】（全 List/bindSheet/InputBar 重算）→ 生成中持续卡顿、输入框布局被饿死撑大（用户报告症状）。
+  //   chatcube 里 InputBar 是独立子组件、呼吸只重建按钮；本页 InputBar 是内联 @Builder、无此隔离。
+  //   正解后续：把 InputBar 抽成独立 @ComponentV2 子组件、breathOpacity 下沉其内部 → 仅按钮重渲。届时再开呼吸。
   private updateBreathing(): void {
-    if (this.isThinking && !this.composerHasContent()) { this.startBreathing(); return; }
-    this.stopBreathing();
+    this.breathOpacity = 1;   // 恒不透明（呼吸关停）；保留方法以免动 onThinkingChanged/aboutToAppear 调用点
   }
   private startBreathing(): void {
-    if (this.breatheTimerId >= 0) { return; }
-    this.breathOpacity = 1;
-    this.breatheTimerId = setInterval((): void => {
-      this.breathOpacity = this.breathOpacity > 0.8 ? 0.35 : 1;
-    }, 850);
+    this.breathOpacity = 1;   // 呼吸关停：不启 setInterval（避全页 850ms 重建风暴）
   }
   private stopBreathing(): void {
-    if (this.breatheTimerId < 0) { this.breathOpacity = 1; return; }
-    clearInterval(this.breatheTimerId);
-    this.breatheTimerId = -1;
+    if (this.breatheTimerId >= 0) { clearInterval(this.breatheTimerId); this.breatheTimerId = -1; }
     this.breathOpacity = 1;
   }
   // 发送键状态切换弹跳（isThinking 起 0.9 回弹到 1，对照 chatcube animateSendButton）。
@@ -2506,9 +2534,7 @@ struct ChatPage {
               .padding({ left: 12, right: 12, top: 10, bottom: 10 })
               .onChange((v: string) => {
                 this.inputText = v;
-                this.recomputeSlash();
-                this.recomputeMention();
-                this.recomputeSkill();
+                this.scheduleSuggestionRecompute();
                 this.scheduleDraftSave();
               })
               .onSubmit(() => {
@@ -2522,9 +2548,7 @@ struct ChatPage {
               .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
                 this.inputCursorStart = selectionStart;
                 this.inputCursorEnd = selectionEnd;
-                this.recomputeSlash();
-                this.recomputeMention();
-                this.recomputeSkill();
+                this.scheduleSuggestionRecompute();
               })
               .onFocus(() => { this.closeAttachmentPanel(); })
 
@@ -3084,71 +3108,68 @@ struct ChatPage {
             // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
             Stack({ alignContent: Alignment.Bottom }) {
             List({ scroller: this.scroller, space: 8 }) {
-              // Repeat + virtualScroll（V2 原生循环渲染，对照 chatcube/berry3 + 官方「循环渲染迁移」）：
-              //   根因：旧 LazyForEach+IDataSource 是 V1 已废弃 API，在 @ComponentV2 页里即便手动 onDataChange
-              //   也无法把变更下发给 item 内部（chatcube ChatSendFlow:529 注释亲证：即使模型 @ObservedV2+@Trace，
-              //   LazyForEach 嵌套场景下也「不会精确刷新 item 内部 → timeline 看似卡住」）→ 流式一动不动。
-              //   正解：Repeat 直接读 @Local filteredBlocks（V2 观察其变化），数据源变即自动触发更新，无需手动通知。
-              //   key 恒用稳定 b.id（同 key 复用 ListItem、不重建 → MarkdownText/CJMarkdown 保活 → 仅 content @Param
-              //   增量更新 → CJMarkdown 增量重渲、原生组件不重建 → 流式逐字实时增长、无冻结）。
-              Repeat<ChatBlock>(this.filteredBlocks)
-                .each((ri: RepeatItem<ChatBlock>) => {
+              // LazyForEach + IDataSource（对照 chatcube ChatMessageListSection：流式根治）。
+              //   曾试 Repeat(filteredBlocks)+@Trace+内联 @Builder：think 渲染时触发 ArkUI「UINode added during
+              //   re-render」冲突（Repeat 同 key 项管理与 @Trace 精确刷新争抢 item 所有权）→ JS 线程冻结、SSE 不进。
+              //   LazyForEach 由 dataSource 的 onDataChange(index) 显式通知单项重生成——不依赖 @Trace、无所有权冲突。
+              //   生成器重跑时 ArkUI 按 key 复用 ListItem、对同位同型子组件（MarkdownText 等 @ComponentV2）按 @Param
+              //   增量更新而非重建 → CJMarkdown 保活（其内 ForEach 签名不含 content）→ 仅 content 更新 → 流式逐字实时增长、无冻结。
+              //   key 恒用稳定 b.id（同 key 复用 ListItem、不重建）。
+              LazyForEach(this.dataSource, (b: ChatBlock) => {
                   ListItem() {
                     Column() {
                       // 跨日（或首条）日期分隔（dividerBefore 由 recomputeBlocks 盖戳）；
                       //   过滤视图是非连续子集，分隔会误导 → 实际过滤时（非空查询）不显示。
-                      if (ri.item.dividerBefore && !this.isFiltering()) {
-                        DateDivider({ timestamp: ri.item.createdAt })
+                      if (b.dividerBefore && !this.isFiltering()) {
+                        DateDivider({ timestamp: b.createdAt })
                       }
                       // 未读分隔（首条 createdAt>entryLastSeenAt 的块前；上游无对照，客户端自创）
-                      if (ri.item.unreadDividerBefore && !this.isFiltering()) {
+                      if (b.unreadDividerBefore && !this.isFiltering()) {
                         this.UnreadDivider()
                       }
-                      if (ri.item.kind === 'user-text') {
-                        this.UserBubble(ri.item)
-                      } else if (ri.item.kind === 'agent-text') {
-                        this.AgentBubble(ri.item)
-                      } else if (ri.item.kind === 'reasoning') {
+                      if (b.kind === 'user-text') {
+                        this.UserBubble(b)
+                      } else if (b.kind === 'agent-text') {
+                        this.AgentBubble(b)
+                      } else if (b.kind === 'reasoning') {
                         ReasoningBubble({
-                          text: ri.item.text,
-                          isStreaming: this.isReasoningStreaming(ri.item)
+                          text: b.text,
+                          isStreaming: this.isReasoningStreaming(b)
                         })
-                      } else if (ri.item.kind === 'generated-image') {
+                      } else if (b.kind === 'generated-image') {
                         GeneratedImageCard({
-                          block: ri.item,
+                          block: b,
                           sessionId: this.sessionId
                         })
-                      } else if (ri.item.kind === 'cli-output') {
+                      } else if (b.kind === 'cli-output') {
                         CliOutputCard({
-                          block: ri.item
+                          block: b
                         })
-                      } else if (ri.item.kind === 'codex-review' && ri.item.review !== null) {
+                      } else if (b.kind === 'codex-review' && b.review !== null) {
                         CodexReviewCard({
-                          review: ri.item.review
+                          review: b.review
                         })
-                      } else if (ri.item.kind === 'agent-event' && ri.item.event !== null) {
-                        this.EventMessageBar(ri.item)
-                      } else if (ri.item.kind === 'tool-group') {
+                      } else if (b.kind === 'agent-event' && b.event !== null) {
+                        this.EventMessageBar(b)
+                      } else if (b.kind === 'tool-group') {
                         // 连发同质工具折叠卡（对照 web ToolGroupBlock）：头部 + 展开行 + 行详情 sheet。
                         //   纯展示（分组内工具恒非待批），无需 sessionId/flavor/nowTick/onDecided。
-                        ToolGroupCard({ block: ri.item })
+                        ToolGroupCard({ block: b })
                       } else {
                         ToolCard({
-                          block: ri.item,
+                          block: b,
                           sessionId: this.sessionId,
                           flavor: this.flavor,
-                          nowTick: this.isRunningBlock(ri.item) ? this.nowTick : 0,
-                          actionState: this.toolActionStateOf(ri.item.id),
-                          detailOpenInit: this.detailOpenSigs[ri.item.id] !== undefined,
-                          onAction: (kind: string): void => { this.handleToolAction(ri.item, kind); },
-                          onDetailOpenChange: (open: boolean): void => { this.toggleToolDetail(ri.item.id, open); }
+                          nowTick: this.isRunningBlock(b) ? this.nowTick : 0,
+                          actionState: this.toolActionStateOf(b.id),
+                          detailOpenInit: this.detailOpenSigs[b.id] !== undefined,
+                          onAction: (kind: string): void => { this.handleToolAction(b, kind); },
+                          onDetailOpenChange: (open: boolean): void => { this.toggleToolDetail(b.id, open); }
                         })
                       }
                     }
                   }
-                })
-                .key((b: ChatBlock): string => b.id)
-                .virtualScroll({ totalCount: this.filteredBlocks.length })
+                }, (b: ChatBlock): string => b.id)
 
               if (this.isThinking) {
                 ListItem() {
@@ -3238,6 +3259,9 @@ struct ChatPage {
           detents: [SheetSize.MEDIUM, SheetSize.LARGE],
           dragBar: true,
           showClose: true,
+          // sheet 容器（含顶部 dragBar/header 区）统一 c.bg：消除顶部异色条（对照 chatcube themeBackground）。
+          //   SheetOptions 无 backgroundBlurStyle 字段；纯色背板照 ImagePreviewSheet 只设 backgroundColor。
+          backgroundColor: this.c.bg,
           onDisappear: (): void => { this.configSheetOpen = false; }
         })
       Column() {}
