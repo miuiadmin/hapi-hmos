@@ -207,6 +207,12 @@ struct ChatPage {
   // 思考中占位块（单例；id='__typing__' 恒定，内容不变故不需 @Trace）。isThinking 时由 refreshDataSource
   //   追加到展示集末尾，随 LazyForEach onDataAdd/onDataDelete 增删（非 List 条件子节点，免发送时整列重布局空白）。
   private readonly typingBlock: ChatBlock = ChatBlock.typingIndicator();
+  // fly-in 入场标记集：发送时把 optimistic 块的 localId 加入 → 该块挂载时 UserBubble 走 FLY 入场（opacity 0→1 +
+  //   从下方上滑 16vp）；800ms 后清除（动画 200ms + 缓冲）→ 滚动回收重建时已无标记 → 走 IDENTITY 不重播。
+  //   非响应式（plain Set）：仅在 ListItem 创建时被生成器读一次，动画即「烙」进该节点，后续变更无需触发重渲。
+  //   语义：只标记「新发送」这一类节点——不标记 optimistic→真实消息替换后的 msgId（避免同一消息滑入两次）、
+  //   不标记初始载入/加载更旧历史（避免整屏/历史块集体入场）。
+  private flyInIds: Set<string> = new Set<string>();
   private isPinnedToBottom: boolean = true;
   private settlingCancelled: boolean = false;          // 初始滚动定锚：用户上滑即放弃后续重试（对照上游 shouldCancelInitialScrollSettling）
   private settlingTimerIds: number[] = [];             // 初始定锚重试 timer 句柄簇（进会话按延迟数组排多个 scrollEdge）
@@ -467,6 +473,28 @@ struct ChatPage {
   onSearchModeChange(_monitor: IMonitor): void { this.refreshDataSource(); }
   @Monitor('searchQuery')
   onSearchQueryChange(_monitor: IMonitor): void { this.refreshDataSource(); }
+
+  // 标记某块挂载时走 fly-in 入场（发送 optimistic 块用）。加集 + 800ms 后自清——清除后该块若被滚动回收重建，
+  //   flyTransitionFor 返回 IDENTITY → 不重播（解 chatcube 明确记录的「.transition() 在 LazyForEach 项上滚动出
+  //   cachedCount 再回来会重播」问题，见参考 chatcube MessageBubble.ets:634-638）。
+  private flagFlyIn(blockId: string): void {
+    this.flyInIds.add(blockId);
+    const id = blockId;
+    setTimeout((): void => { this.flyInIds.delete(id); }, 800);
+  }
+
+  // 按 blockId 取入场转场：在 flyInIds 中→FLY（opacity+上滑），否则 IDENTITY（无动画，禁用转场）。
+  //   FLY 用 opacity+translate——compositor-only、不改测量尺寸→不触发 List 重布局（berry3 Harmony开发避坑文档.md:
+  //   2908-2910「高度变=布局重算；opacity/translate 不变」），故与 4fc34d7 修复的「发送整列空白」正交、不回归。
+  //   仅在组件【创建】时求值一次（生成器重跑方读新值）→ 幂等，已挂载块不会因 flyInIds 变更而重触发。
+  private flyTransitionFor(blockId: string): TransitionEffect {
+    if (this.flyInIds.has(blockId)) {
+      return TransitionEffect.OPACITY
+        .combine(TransitionEffect.translate({ y: 16 }))
+        .animation({ duration: 200, curve: Curve.EaseOut });
+    }
+    return TransitionEffect.IDENTITY;
+  }
 
   // 块变更指纹（LazyForEach 数据源 diff 用，非 ForEach key——ForEach/LazyForEach key 恒用稳定 b.id）：
   //   反映块的「会变化的内容维度」→ 内容/state/审批态变 → 指纹变 → DataSource 对该项 onDataChange 原地重渲染。
@@ -1262,6 +1290,9 @@ struct ChatPage {
     optimistic.scheduledAt = schedule;       // 定时乐观行：QueuedMessagesBar 显「⏰ X 后发送」
     optimistic.attachments = attachments;    // 乐观携带附件（含图片 previewUrl）→ 历史立即显缩略图
 
+    // 先打 fly-in 标记再灌数据源：setMessages→recompute→onDataAdd 创建 ListItem 时生成器读 flyInIds → 该 user-text
+    //   块（id=localId）走 FLY 入场（从下方滑入+淡入）。乐观→真实消息替换时 msgId 未标记 → IDENTITY 不二次滑入。
+    this.flagFlyIn(localId);
     this.setMessages(this.messages.concat([optimistic]));
     this.inputText = '';
     this.clearDraft();                // 已发文本落进消息流，清掉草稿（防重进误恢复）
@@ -2079,6 +2110,9 @@ struct ChatPage {
     }
     .width('100%')
     .justifyContent(FlexAlign.End)
+    // 入场转场：仅新发送的 optimistic 块（flyInIds 命中）从下方滑入+淡入；其余（初始载入/滚动回收/已替换的真实
+    //   消息）走 IDENTITY 无动画。挂气泡根 Row（同 chatcube MessageBubble.ets:639 挂 build 根）。
+    .transition(this.flyTransitionFor(b.id))
     // priorityGesture 与 agent 气泡保持一致（user 气泡是纯 Text 无内部长按冲突，但统一写法）
     .priorityGesture(LongPressGesture({ duration: 500, repeat: false })
       .onAction(() => { this.openMessageMenu(b); }))
