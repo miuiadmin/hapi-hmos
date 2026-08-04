@@ -429,7 +429,6 @@ export const zhCN: Record<string, string> = {
   'sessionMenu.deleteTitle': '删除会话',
   'sessionMenu.deleteConfirm': '确定要删除「{name}」吗？此操作不可恢复。',
   'sessionMenu.sessionNamePlaceholder': '会话名称',
-  'sessionMenu.renameSheetTitle': '重命名会话',
   'sessionMenu.save': '保存',
   'sessionMenu.saving': '保存中…',
   'sessionMenu.files': '文件',

@@ -428,7 +428,6 @@ export const en: Record<string, string> = {
   'sessionMenu.deleteTitle': 'Delete Session',
   'sessionMenu.deleteConfirm': 'Are you sure you want to delete "{name}"? This action cannot be undone.',
   'sessionMenu.sessionNamePlaceholder': 'Session name',
-  'sessionMenu.renameSheetTitle': 'Rename Session',
   'sessionMenu.save': 'Save',
   'sessionMenu.saving': 'Saving…',
   'sessionMenu.files': 'Files',
