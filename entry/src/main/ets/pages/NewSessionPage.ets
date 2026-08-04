@@ -6,6 +6,9 @@ import { buildDirectorySuggestions } from '../chat/DirectorySuggestions';
 import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
+import { getLayoutState } from '../state/LayoutState';
+import { hdsTitleBarStyle, withAlpha } from '../components/HdsTitleBarStyle';
 import { showToast } from '../utils/Toast';
 import { SettingCard } from '../components/settings/SettingCard';
 import { SheetDialog } from '../components/settings/SheetDialog';
@@ -93,15 +96,11 @@ struct NewSessionPage {
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
   private get isDark(): boolean { return getThemeState().isDark; }
-  // 半透明色（#RRGGBB → #AA{{RRGGBB}}，八位色 alpha 在前）—— picker 选中胶囊底用。
-  private withAlpha(color: string, alphaHex: string): string {
-    if (color.startsWith('#') && color.length === 7) {
-      return `#${alphaHex}${color.substring(1)}`;
-    }
-    return color;
-  }
-  // picker 选中胶囊底（primary 半透明：暗 '28'/亮 '14'，对照 SessionConfigOverlay.selectedBg）。
-  private selectedBg(): string { return this.withAlpha(this.c.primary, this.isDark ? '28' : '14'); }
+  // HDS 液态 titleBar：scroller 联动滚动磨砂 + style 随主题（c.bg）刷新（对照 ChatPage/berry3 设置页范式）
+  private scroller: Scroller = new Scroller();
+  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
+  // picker 选中胶囊底（primary 半透明 withAlpha：暗 '28'/亮 '14'，对照 SessionConfigOverlay.selectedBg）。
+  private selectedBg(): string { return withAlpha(this.c.primary, this.isDark ? '28' : '14'); }
 
   private navPathStack: NavPathStack | null = null;
 
@@ -735,14 +734,17 @@ struct NewSessionPage {
     }
     .width('100%')
     .height('100%')
+    .padding({ bottom: getLayoutState().bottomAvoidHeight })   // 全屏沉浸后 sheet 底部避让手势条（按钮不再被压变形）
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Stack() {
       // 机器拉取失败兜底（无机器则无法继续）—— berry3 卡片风：单张 danger 白卡 + 重试胶囊，与主表单同款 List 结构。
       if (this.loadError !== '' && this.machines.length === 0) {
-        List({ space: 12 }) {
+        List({ space: 12, scroller: this.scroller }) {
+          // 顶部安全区占位（HdsNavDestination ignoreLayoutSafeArea 后内容从 y=0 起；+56 titleBar 高 +8 间距）
+          ListItem() { Row().height(getLayoutState().topAvoidHeight + 56 + 8) }.selectable(false)
           ListItemGroup() {
             ListItem() {
               SettingCard({
@@ -765,14 +767,17 @@ struct NewSessionPage {
           }.selectable(false)
 
           ListItem() { Row().height(24) }.selectable(false)
+          // 底部安全区占位（手势导航条）
+          ListItem() { Row().height(getLayoutState().bottomAvoidHeight) }.selectable(false)
         }
         .scrollBar(BarState.Off)
         .padding({
-          top: 12, bottom: 0,
           left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
         })
       } else {
-        List({ space: 12 }) {
+        List({ space: 12, scroller: this.scroller }) {
+          // 顶部安全区占位（HdsNavDestination ignoreLayoutSafeArea 后内容从 y=0 起；+56 titleBar 高 +8 间距）
+          ListItem() { Row().height(getLayoutState().topAvoidHeight + 56 + 8) }.selectable(false)
           // —— 分组 1：环境（机器 + Agent）——
           ListItem() {
             SettingSectionTitle({ text: t('newSession.sectionEnvironment') })
@@ -969,11 +974,12 @@ struct NewSessionPage {
           }.selectable(false)
 
           ListItem() { Row().height(24) }.selectable(false)
+          // 底部安全区占位（手势导航条）
+          ListItem() { Row().height(getLayoutState().bottomAvoidHeight) }.selectable(false)
         }
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
         .padding({
-          top: 12, bottom: 0,
           left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
         })
       }
@@ -986,7 +992,18 @@ struct NewSessionPage {
       .width('100%')
       .height('100%')
     }
-    .title(t('newSession.title'))
+    .titleBar({
+      content: {
+        title: { mainTitle: t('newSession.title') },
+        divider: { showType: DividerShowType.OFF }
+      },
+      style: this.titleBarStyle,
+      avoidLayoutSafeArea: true
+    })
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

@@ -7,6 +7,9 @@
 import { bundleManager } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
+import { getLayoutState } from '../state/LayoutState';
+import { hdsTitleBarStyle } from '../components/HdsTitleBarStyle';
 import { t } from '../i18n/I18nService';
 import { getConnectionService } from '../services/ConnectionService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
@@ -47,6 +50,9 @@ struct SettingsPage {
   private navPathStack: NavPathStack | null = null;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  // HDS 液态顶栏（全屏沉浸后回归 berry3 范式）：scroller 驱动滚动联动；titleBarStyle 随主题（c.bg）刷新。
+  private scroller: Scroller = new Scroller();
+  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
 
   aboutToAppear(): void {
     this.loadVersionName();
@@ -174,8 +180,10 @@ struct SettingsPage {
   }
 
   build() {
-    NavDestination() {
-      List({ space: 12 }) {
+    HdsNavDestination() {
+      List({ space: 12, scroller: this.scroller }) {
+        // 顶部安全区占位（HdsNavDestination ignoreLayoutSafeArea 后内容从 y=0 起；+56 titleBar 高 +8 间距）
+        ListItem() { Row().height(getLayoutState().topAvoidHeight + 56 + 8) }.selectable(false)
         // 顶部搜索框（受控）
         ListItem() {
           SettingSearchBar({
@@ -245,15 +253,27 @@ struct SettingsPage {
         .padding({ top: 8 })
 
         ListItem() { Row().height(16) }.selectable(false)
+        // 底部安全区占位（手势导航条）
+        ListItem() { Row().height(getLayoutState().bottomAvoidHeight) }.selectable(false)
       }
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
       .padding({
-        top: 8, bottom: 0,
         left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
       })
     }
-    .title(t('settings.title'))
+    .titleBar({
+      content: {
+        title: { mainTitle: t('settings.title') },
+        divider: { showType: DividerShowType.OFF }
+      },
+      style: this.titleBarStyle,
+      avoidLayoutSafeArea: true
+    })
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;

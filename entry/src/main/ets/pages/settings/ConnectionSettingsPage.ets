@@ -7,6 +7,9 @@ import { getConnectionService } from '../../services/ConnectionService';
 import { SettingCard } from '../../components/settings/SettingCard';
 import { SettingSectionTitle } from '../../components/settings/SettingSectionTitle';
 import { SettingFooter } from '../../components/settings/SettingFooter';
+import { HdsNavDestination, HdsNavDestinationTitleMode, TitleBarStyleOptions, DividerShowType } from '@kit.UIDesignKit';
+import { getLayoutState } from '../../state/LayoutState';
+import { hdsTitleBarStyle } from '../../components/HdsTitleBarStyle';
 
 @Builder
 export function ConnectionSettingsPageBuilder(name: string, param: Object) {
@@ -21,6 +24,9 @@ struct ConnectionSettingsPage {
   private navPathStack: NavPathStack | null = null;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  // HDS 液态 titleBar：scroller 联动滚动磨砂 + style 随主题（c.bg）刷新（对照 ChatPage/berry3 设置页范式）
+  private scroller: Scroller = new Scroller();
+  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
 
   aboutToAppear(): void {
     const conn = getConnectionService();
@@ -41,8 +47,10 @@ struct ConnectionSettingsPage {
   }
 
   build() {
-    NavDestination() {
-      List({ space: 12 }) {
+    HdsNavDestination() {
+      List({ space: 12, scroller: this.scroller }) {
+        // 顶部安全区占位（HdsNavDestination ignoreLayoutSafeArea 后内容从 y=0 起；+56 titleBar 高 +8 间距）
+        ListItem() { Row().height(getLayoutState().topAvoidHeight + 56 + 8) }.selectable(false)
         // ── 连接信息 ──
         ListItem() {
           SettingSectionTitle({ text: t('settings.section.connection') })
@@ -80,15 +88,26 @@ struct ConnectionSettingsPage {
           SettingFooter({ text: t('settings.connectionHint') })
         }
 
-        ListItem() { Row().height(24) }.selectable(false)
+        // 底部安全区占位（手势导航条）
+        ListItem() { Row().height(getLayoutState().bottomAvoidHeight) }.selectable(false)
       }
       .scrollBar(BarState.Off)
       .padding({
-        top: 4, bottom: 0,
         left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
       })
     }
-    .title(t('settings.connection.title'))
+    .titleBar({
+      content: {
+        title: { mainTitle: t('settings.connection.title') },
+        divider: { showType: DividerShowType.OFF }
+      },
+      style: this.titleBarStyle,
+      avoidLayoutSafeArea: true
+    })
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => { this.navPathStack = context.pathStack; })
     .onBackPressed(() => { this.navPathStack?.pop(); return true; })

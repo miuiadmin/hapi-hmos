@@ -4,6 +4,9 @@
 // OtaCheckRow 单独自定义行（berry3 可点击行尺寸 + 按压态 + resolveRowRadius 咬合）；OtaSheet 阶段驱动。
 import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../../theme/ThemeService';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
+import { getLayoutState } from '../../state/LayoutState';
+import { hdsTitleBarStyle } from '../../components/HdsTitleBarStyle';
 import { t } from '../../i18n/I18nService';
 import { showToast } from '../../utils/Toast';
 import { OtaController, getUpdateState, UpdateState } from '../../services/UpdateState';
@@ -25,6 +28,9 @@ struct AboutPage {
   private navPathStack: NavPathStack | null = null;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  // HDS 液态顶栏（全屏沉浸后回归 berry3 范式）：scroller 驱动滚动联动；titleBarStyle 随主题（c.bg）刷新。
+  private scroller: Scroller = new Scroller();
+  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
 
   // —— OTA 自更新状态（读 getUpdateState() 的 @Trace 字段建立刷新依赖；弹窗阶段/进度/错误随下载回调即时重渲染）——
   private get ota(): UpdateState { return getUpdateState(); }
@@ -80,8 +86,10 @@ struct AboutPage {
   }
 
   build() {
-    NavDestination() {
-      List({ space: 12 }) {
+    HdsNavDestination() {
+      List({ space: 12, scroller: this.scroller }) {
+        // 顶部安全区占位（HdsNavDestination ignoreLayoutSafeArea 后内容从 y=0 起；+56 titleBar 高 +8 间距）
+        ListItem() { Row().height(getLayoutState().topAvoidHeight + 56 + 8) }.selectable(false)
         // ── 关于 ──
         ListItem() {
           SettingSectionTitle({ text: t('settings.section.about') })
@@ -120,15 +128,27 @@ struct AboutPage {
         .clip(true)
 
         ListItem() { Row().height(24) }.selectable(false)
+        // 底部安全区占位（手势导航条）
+        ListItem() { Row().height(getLayoutState().bottomAvoidHeight) }.selectable(false)
       }
       .scrollBar(BarState.Off)
       .padding({
-        top: 4, bottom: 0,
         left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
       })
       .bindSheet(this.ota.sheetOpen && this.ota.sheetOwner === 'about', this.OtaSheet(), this.otaSheetOpts)
     }
-    .title(t('settings.about.title'))
+    .titleBar({
+      content: {
+        title: { mainTitle: t('settings.about.title') },
+        divider: { showType: DividerShowType.OFF }
+      },
+      style: this.titleBarStyle,
+      avoidLayoutSafeArea: true
+    })
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => { this.navPathStack = context.pathStack; })
     .onBackPressed(() => { this.navPathStack?.pop(); return true; })
