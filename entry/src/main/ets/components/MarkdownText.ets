@@ -36,8 +36,12 @@ import { scanFilePaths, decodeFilePathHref } from '../utils/FilePathScanner';
 @ComponentV2
 export struct MarkdownText {
   @Param content: string = '';
-  // hapi 消息均为完整消息，默认已完成（无需流式增量分析）
+  // 流式态：末块 agent-text/reasoning 在 thinking 中时由上层传 false（CJMarkdown 流式增量渲染）；
+  //   历史/已完成块恒 true（默认，向后兼容）。isInputEnded 入 config 签名 → 翻转时 CJMarkdown 一次性重建做最终解析。
   @Param isInputEnded: boolean = true;
+  // 流式增量分析：流式块传 true（配合 content @Param 原地更新做增量解析）；历史块 false（默认）。
+  //   修「incrementalAnalysis:false + content 变化 → CJMarkdown 不重渲流式增量」根因。
+  @Param incrementalAnalysis: boolean = false;
 
   // 裸文件路径 → hapi-file: 链接（喂 CJMarkdown 前预处理；对照上游 remarkFilePathLinks MDAST 插件）。
   //   opt-in：仅当上层接了 onOpenFilePath 并显式 linkFilePaths=true 才扫描——避免工具卡 / reasoning 等无 nav
@@ -343,6 +347,15 @@ export struct MarkdownText {
     return this.cachedConfig;
   }
 
+  // CJMarkdown 重建指纹（config 签名 ForEach 的键，对照 chatcube ChatMarkdownHybridRenderer:62-86）：
+  //   content【不入】→ content 流式变化时键不变 → CJMarkdown 复用、仅 content @Param 更新 →
+  //   incrementalAnalysis:true 增量重渲、原生组件不重建（防每 token 重建冻结根因）。
+  //   isDark / isInputEnded 入 → 翻转时 CJMarkdown 一次性重建（主题切换 / 流式→完成最终解析，非 per-token，可接受）。
+  private buildConfigSignature(): string {
+    const isDark: boolean = getThemeState().isDark;
+    return `${isDark ? 'd' : 'l'}|${this.isInputEnded ? 'end' : 'stream'}`;
+  }
+
   private getPlugin(): MarkdownPlugin {
     if (this.cachedPlugin === null) {
       this.cachedPlugin = this.buildPlugin();
@@ -355,14 +368,19 @@ export struct MarkdownText {
     // （延续 SessionActionMenu 两节点模式——规避同节点 bindSheet 叠加疑问）
     Column() {
       Column() {
-        CJMarkdown({
-          content: this.renderedContent,
-          isInputEnded: this.isInputEnded,
-          incrementalAnalysis: false,
-          useCangjieComponent: true,
-          config: this.getConfig(),
-          plugin: this.getPlugin()
-        })
+        // config 签名 ForEach 包裹 CJMarkdown（对照 chatcube ChatMarkdownHybridRenderer:317-332）：
+        //   签名含 isDark/isInputEnded、【不含 content】→ content 流式变化时键不变 → CJMarkdown 复用、
+        //   仅 content @Param 更新 → incrementalAnalysis:true 增量重渲、原生组件不重建（防每 token 重建冻结根因）。
+        ForEach([this.buildConfigSignature()], (_sig: string) => {
+          CJMarkdown({
+            content: this.renderedContent,
+            isInputEnded: this.isInputEnded,
+            incrementalAnalysis: this.incrementalAnalysis,
+            useCangjieComponent: true,
+            config: this.getConfig(),
+            plugin: this.getPlugin()
+          })
+        }, (sig: string): string => sig)
       }
       .width('100%')
       .backgroundColor(Color.Transparent)

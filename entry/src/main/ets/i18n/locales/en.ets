@@ -185,6 +185,7 @@ export const en: Record<string, string> = {
   'chat.shareFailed': 'Share failed',
   'chat.noMessagesToExport': 'No messages to export',
   'chat.exportTitle': 'Export conversation',
+  'chat.config': 'Configure',
   'chat.defaultTitle': 'Conversation',
   'session.item.worktree': 'Worktree',
   'chat.exportUser': '{time} User',

@@ -186,6 +186,7 @@ export const zhCN: Record<string, string> = {
   'chat.shareFailed': '分享失败',
   'chat.noMessagesToExport': '暂无可导出的消息',
   'chat.exportTitle': '导出对话',
+  'chat.config': '配置',
   'chat.defaultTitle': '对话',
   'session.item.worktree': '工作树',
   'chat.exportUser': '{time} 用户',

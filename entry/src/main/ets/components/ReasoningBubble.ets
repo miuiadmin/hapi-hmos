@@ -52,7 +52,12 @@ export struct ReasoningBubble {
       // 展开体（含流式中）：markdown 正文，顶部分隔线
       if (this.expanded || this.isStreaming) {
         Column() {
-          MarkdownText({ content: this.text })
+          // 流式增量：isStreaming 时 isInputEnded=false + incrementalAnalysis=true → CJMarkdown 增量重渲（防冻结根因）
+          MarkdownText({
+            content: this.text,
+            isInputEnded: !this.isStreaming,
+            incrementalAnalysis: this.isStreaming
+          })
         }
         .width('100%')
         .padding({ left: 12, right: 12, bottom: 10 })

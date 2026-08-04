@@ -10,7 +10,6 @@ import { GeneratedImageCard } from '../components/GeneratedImageCard';
 import { ImagePreviewSheet } from '../components/ImagePreviewSheet';
 import { CliOutputCard } from '../components/CliOutputCard';
 import { CodexReviewCard } from '../components/CodexReviewCard';
-import { SessionActionMenu } from '../components/SessionActionMenu';
 import { TeamPanel } from '../components/TeamPanel';
 import { TodoPanel } from '../components/TodoPanel';
 import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
@@ -23,6 +22,7 @@ import { DateDivider } from '../components/DateDivider';
 import { ChatBlock, ChatToolCall, ToolPermission } from '../chat/ChatBlock';
 import { reduceChatBlocks } from '../chat/Reducer';
 import { buildVisibleChatBlocks } from '../chat/ToolGroups';
+import { ChatBlockDataSource } from '../chat/ChatBlockDataSource';
 import { getInputStrAny } from '../chat/ToolInputUtils';
 import { ToolActionState } from '../chat/ToolActionState';
 import { buildConversationOutline, ConversationOutlineItem } from '../chat/Outline';
@@ -51,10 +51,12 @@ import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeServi
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { getShareService } from '../services/ShareService';
 import { getPreferencesService } from '../services/PreferencesService';
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { HapticService } from '../services/HapticService';
+import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { flavorLabel, flavorColorHex } from '../chat/AgentFlavor';
 import { isImageMimeType, formatFileSize } from '../chat/AttachmentFormat';
 import { PreferenceKeys } from '../config/Keys';
@@ -87,7 +89,7 @@ struct ChatPage {
   @Local messages: ChatMessage[] = [];
   @Local blocks: ChatBlock[] = [];            // 由 messages+agentState 派生的渲染单元（reducer 产出）
   @Local toolActionStates: Record<string, ToolActionState> = {} as Record<string, ToolActionState>;  // 审批态（上提自 ToolCard，按 block.id 索引；V2 整体替换触发刷新）
-  @Local detailOpenSigs: Record<string, string> = {} as Record<string, string>;  // tool 详情 sheet 展开态：key=block.id、value=展开瞬间冻结的 childSig（存在=开；冻结→blockKey 不变→父卡不重建→sheet/滚动稳定无闪烁）
+  @Local detailOpenSigs: Record<string, string> = {} as Record<string, string>;  // tool 详情 sheet 展开态：key=block.id、value=展开瞬间冻结的 childSig（存在=开；冻结→blockSignature 不变→父卡不刷新→sheet/滚动稳定无闪烁）
   @Local inputText: string = '';
   @Local enterToSend: boolean = false;     // 回车发送（设置开关，默认关；关时 Enter=换行多行输入）
   @Local isLoading: boolean = false;
@@ -103,7 +105,7 @@ struct ChatPage {
   // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
   @Local sync: SyncState = getSyncState();
 
-  // 会话生命周期（标题栏 ⋯ 菜单：重命名 / 归档 / 删除；委托 SessionActionMenu 组件，与 Index 长按菜单复用）
+  // 会话生命周期（⋯ 下拉：重命名/归档/删除 + 文件/终端/语音/导出/大纲/配置；ChatPage 自洽，不再依赖 SessionActionMenu 组件）
   @Local sessionTitle: string = '';              // 标题栏显示标题（aboutToAppear 取种子，重命名/SSE 更新）
   @Local isActive: boolean = true;               // 会话活跃态（归档/删除二选一：active→归档，否则→删除）
   @Local teamState: TeamState | null = null;     // 会话内多 agent 团队态（agent 自治上报；非 null 时消息列表上方渲染 TeamPanel）
@@ -115,8 +117,7 @@ struct ChatPage {
   @Local modelReasoningEffort: string = '';      // codex/opencode 推理努力（/model-reasoning-effort；首屏/SSE 播种）
   @Local permissionMode: string = '';            // 权限模式（/permission-mode；首屏/SSE 播种）
   @Local collaborationMode: string = '';         // codex 协作模式（/collaboration-mode；首屏/SSE 播种）
-  @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改）
-  @Local menuOpen: boolean = false;              // ⋯ 动作面板显隐（组件 @Param open；逻辑全在 SessionActionMenu）
+  @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改；⋯ 下拉「配置」开）
   @Local outlineOpen: boolean = false;           // 对话大纲抽屉显隐（📋 用户提问列表，tap 跳转）
   @Local outlineItems: ConversationOutlineItem[] = [];  // 大纲项（recomputeBlocks 随 blocks 重算）
   @Local entryLastSeenAt: number = 0;            // 进入会话时的「上次已看」时间戳（markSeen 前捕获；滚到首条未读 + 未读分隔依据）
@@ -126,6 +127,12 @@ struct ChatPage {
   // 消息长按菜单（复制 / 重发[仅失败] / 分享）——底部动作 sheet，复用 SessionActionMenu 的 bindSheet 模式
   @Local messageMenuBlock: ChatBlock | null = null;   // 长按目标块（复制/重发/分享读其 text/userStatus）
   @Local messageMenuOpen: boolean = false;            // 动作 sheet 显隐
+  // 重命名（⋯ 菜单「重命名」开；逻辑镜像 SessionActionMenu，ChatPage 自洽 ⋯ 下拉后不再依赖该组件）
+  @Local showRename: boolean = false;                 // 重命名 sheet 显隐
+  @Local renameText: string = '';                      // 重命名输入（预填当前标题）
+  @Local renameActing: boolean = false;                // 重命名请求中（防重入 + 保存键置灰）
+  @Local sessionActing: boolean = false;               // 归档/删除/切换远程请求中（防重入）
+  private renameInputController: TextInputController = new TextInputController();
   @Local searchMode: boolean = false;                 // 🔍 对话内搜索栏显隐（标题栏 🔍/✕ 切换）
   @Local searchQuery: string = '';                     // 搜索查询（纯客户端过滤，对照 Index filteredSessions）
   @Local pendingSchedule: number = 0;                  // 待发定时（0=无/>0=epoch-ms；发送时拼 scheduledAt，对照 PendingSchedule）
@@ -149,7 +156,10 @@ struct ChatPage {
   @Local mentionSelectedIndex: number = 0;             // 联想高亮项（tap 即选）
   @Local pendingAttachments: AttachmentMetadata[] = [];   // 待发附件（📎 选文件→upload→入列；发送随消息带走）
   @Local isUploading: boolean = false;                 // 附件上传中（📎 按钮 disabled，防重复选）
-  @Local attachmentPanelOpen: boolean = false;          // 输入卡「+」附件面板显隐（拍照/照片/文件；聚焦输入即收起）
+  @Local attachmentPanelOpen: boolean = false;          // 附件「+」展开态（animateTo 驱动开合，非声明式 .animation）
+  // 附件面板绝对叠层（硬复刻 chatcube ChatPage:185/3735-3754）：高度由 animateTo 驱动 0↔attachPanelHeight，
+  //   opacity/enabled 随 attachmentPanelOpen 翻转；card 走流式（自然撑 wrapper 高），panel 绝对底锚覆盖 card 底 padding 留白条。
+  @Local attachmentPanelHeightVp: number = 0;             // 附件面板当前高度（0=收起；animateTo 驱动 0↔attachPanelHeight）
   // 发送/附件键动效（对照 chatcube ChatInputBar：图标变形触发器 + pause 呼吸 + 按下态 + 弹跳缩放）
   @Local sendIconTrigger: number = 0;                   // 发送键 ReplaceSymbolEffect 触发器（hasContent/isThinking 翻转 bump）
   @Local attachIconTrigger: number = 0;                 // 附件键 plus↔xmark 变形触发器
@@ -159,17 +169,36 @@ struct ChatPage {
   @Local modelBtnPressed: boolean = false;              // 模型键按下态（0.95 缩放 + 浅底）
   private breatheTimerId: number = -1;                  // 呼吸 setInterval 句柄
   private lastHasContent: boolean = false;              // 上次 hasContent（仅翻转时 bump 触发器，省冗余变形）
-  // 附件面板固定高度（3 项 64 圆角块 + 文案 + 内边距；对照 chatcube attachmentPanelHeightVp 量得 ≈118）
-  private readonly attachPanelHeight: number = 118;
+  // 附件面板展开高度（3 项 64 圆角块 + 文案 + 内边距；≈118 实测，+6 余量防文案裁切 → 124；= attachmentPanelHeightVp 展开目标值）
+  private readonly attachPanelHeight: number = 124;
   private mentionQueryId: number = 0;                  // 联想查询竞态保护：每次发起递增，仅最新返回生效
   private mentionDebounceId: number = -1;              // 联想查询 debounce 句柄（输入停顿 200ms 再查，省请求）
   private textAreaController: TextAreaController = new TextAreaController();   // 光标定位（applySuggestion 后 caretPosition 复位）
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  private get isDark(): boolean { return getThemeState().isDark; }
+
+  // —— 液态玻璃配方（复刻 ComposerToolbar:50-62 chip，顶栏/按钮共用）——
+  // 半透明色：#RRGGBB → #AA{{RRGGBB}}（HarmonyOS 八位色 alpha 在前）。
+  private withAlpha(color: string, alphaHex: string): string {
+    if (color.startsWith('#') && color.length === 7) {
+      return `#${alphaHex}${color.substring(1)}`;
+    }
+    return color;
+  }
+  // 玻璃底半透明（surface + 暗 '14'/亮 '1A'）。
+  private glassBg(): string { return this.withAlpha(this.c.surface, this.isDark ? '14' : '1A'); }
+  // 未选中描边（border + 暗 'A6'/亮 '73'）。
+  private glassBorderInactive(): string { return this.withAlpha(this.c.border, this.isDark ? 'A6' : '73'); }
+  // 阴影色（暗 0.18 / 亮 rgba(15,23,42,0.06)）。
+  private glassShadow(): string { return this.isDark ? 'rgba(0, 0, 0, 0.18)' : 'rgba(15, 23, 42, 0.06)'; }
 
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
+  // LazyForEach 数据源（流式渲染根治，对照 chatcube ChatMessageListDataSource）：单项原地重渲染、不销毁、
+  //   MarkdownText/CJMarkdown 保活 → 流式逐字实时增长、无冻结。refreshDataSource() 把 filteredBlocks 灌入并按签名 diff 通知。
+  private dataSource: ChatBlockDataSource = new ChatBlockDataSource();
   private isPinnedToBottom: boolean = true;
   private settlingCancelled: boolean = false;          // 初始滚动定锚：用户上滑即放弃后续重试（对照上游 shouldCancelInitialScrollSettling）
   private settlingTimerIds: number[] = [];             // 初始定锚重试 timer 句柄簇（进会话按延迟数组排多个 scrollEdge）
@@ -356,45 +385,60 @@ struct ChatPage {
     this.blocks = grouped;
     // 大纲项随 blocks 一起重算（只索引 user-text 块；大纲抽屉直接读 outlineItems）
     this.outlineItems = buildConversationOutline(grouped);
+    // 灌入 LazyForEach 数据源：按签名 diff，结构变→全刷、同结构→仅变项 onDataChange 原地重渲染（流式根治）
+    this.refreshDataSource();
   }
 
-  // ForEach 键值生成：内容会流式变化的块键值须随内容变，否则命中 ArkUI「键值不变则数据变化不渲染」
-  //   （ForEach 复用旧 UI 子树、不重跑 itemGenerator → 永远拿首次旧实例 → 流式不刷新）。稳定块仍用 b.id
-  //   保留 ForEach 复用（性能）。agent-text/reasoning 文本追加用 text.length；tool-call 含状态/结果/权限/审批态
-  //   （见内）；其余稳定块用 b.id。详见 plan polished-orbiting-robin。
-  private blockKey(b: ChatBlock): string {
+  // 把当前展示集（filteredBlocks）灌入 LazyForEach 数据源。sigFn=blockSignature（含 toolActionStates/
+  //   detailOpenSigs 等实例态）→ DataSource 据此 diff，仅对变化 index 调 onDataChange → 单项原地刷新。
+  //   流式只改末块 text → 仅刷新末块（MarkdownText 保活、CJMarkdown 不重建）。
+  private refreshDataSource(): void {
+    this.dataSource.setItems(this.filteredBlocks, (b: ChatBlock): string => this.blockSignature(b));
+  }
+
+  // 搜索过滤变化（显隐/查询）→ 展示集结构变 → reload 数据源（filteredBlocks 已读新 searchMode/searchQuery）。
+  @Monitor('searchMode')
+  onSearchModeChange(_monitor: IMonitor): void { this.refreshDataSource(); }
+  @Monitor('searchQuery')
+  onSearchQueryChange(_monitor: IMonitor): void { this.refreshDataSource(); }
+
+  // 块变更指纹（LazyForEach 数据源 diff 用，非 ForEach key——ForEach/LazyForEach key 恒用稳定 b.id）：
+  //   反映块的「会变化的内容维度」→ 内容/state/审批态变 → 指纹变 → DataSource 对该项 onDataChange 原地重渲染。
+  //   agent-text/reasoning/cli-output 用 text.length（流式追加）；tool-call 含 state/result/权限/审批态/子代理 childSig；
+  //   user-text 用 userStatus；tool-group 用组内 sig；generated-image/codex-review/agent-event 稳定用 b.id。
+  private blockSignature(b: ChatBlock): string {
     if (b.kind === 'agent-text' || b.kind === 'reasoning') {
-      return `${b.id}#${b.text.length}`;   // 文本流式追加：length 单调增 → 键值变 → 重建刷新
+      return `${b.id}#${b.text.length}`;   // 文本流式追加：length 单调增 → 签名变 → 该项 onDataChange 原地刷新（MarkdownText 保活）
     }
     if (b.kind === 'user-text') {
-      // 乐观消息发送态翻转(sending→queued/failed；updateOptimisticStatus 原地改 status、id 不变)→ 键值变 → 重建刷新。
-      //   尤其 failed：不修则卡在 sending，用户看不到失败红标/提示。真实消息 status 恒 sent(终态)→ 键稳定不重建。
+      // 乐观消息发送态翻转(sending→queued/failed；updateOptimisticStatus 原地改 status、id 不变)→ 签名变 → 原地刷新。
+      //   尤其 failed：不修则卡在 sending，用户看不到失败红标/提示。真实消息 status 恒 sent(终态)→ 签名稳定不刷新。
       return `${b.id}#${b.userStatus}`;
     }
     if (b.kind === 'tool-call' && b.tool !== null) {
-      // 工具状态翻转(running→completed/error)、结果回填、权限变更、审批态变化 → 键值变 → 重建刷新。
-      //   审批态(actionLoading/decided)入键值 → 点击/成功/失败均触发重建刷新（不走 @ObservedV2+@Trace 原地刷新，
-      //   避 berry3 坑7「@Trace 经 @Param/@Consumer 不触发 build」风险）。actionError 不入键值：其每次变化必伴
-      //   actionLoading 变化（loading mark↔''），故随该次重建一并取最新。
+      // 工具状态翻转(running→completed/error)、结果回填、权限变更、审批态变化 → 签名变 → 该项 onDataChange 原地刷新。
+      //   审批态(actionLoading/decided)入签名 → 点击/成功/失败均触发原地刷新（不走 @ObservedV2+@Trace，
+      //   避 berry3 坑7「@Trace 经 @Param/@Consumer 不触发 build」风险）。actionError 不入签名：其每次变化必伴
+      //   actionLoading 变化（loading mark↔''），故随该次刷新一并取最新。
       const tool: ChatToolCall = b.tool;
       const perm: string = tool.permission !== null ? tool.permission.status : '';
       const act: ToolActionState | undefined = this.toolActionStates[b.id];
       const loading: string = act !== undefined ? act.actionLoading : '';
       const decided: string = (act !== undefined && act.decided) ? '1' : '0';
-      // 子代理 children 内容指纹（childSigOf）：children 流式追加/状态翻转时键值变 → 父卡重建 → block @Param 取最新
+      // 子代理 children 内容指纹（childSigOf）：children 流式追加/状态翻转时签名变 → 父卡原地刷新 → block @Param 取最新
       //   → 展开详情 sheet 时 TraceSection 拿到最新 children（修「子代理轨迹冻结在首次渲染」遗漏）。sheet 展开期间
-      //   childSigOf 取冻结值（见 detailOpenSigs）→ 键值不变 → 父卡不重建 → sheet/滚动稳定无闪烁。
+      //   childSigOf 取冻结值（见 detailOpenSigs）→ 签名不变 → 父卡不刷新 → sheet/滚动稳定无闪烁。
       return `${b.id}#${tool.state}${tool.result !== null ? '1' : '0'}${perm}#${loading}${decided}#${this.childSigOf(b)}`;
     }
     if (b.kind === 'cli-output') {
-      // CLI 输出流式追加（与 agent-text 同源 c.text，SSE delta 累积）→ length 增 → 键值变 → 重建刷新（同类遗漏）
+      // CLI 输出流式追加（与 agent-text 同源 c.text，SSE delta 累积）→ length 增 → 签名变 → 原地刷新（同类遗漏）
       return `${b.id}#${b.text.length}`;
     }
     if (b.kind === 'tool-group') {
-      // 组内工具状态翻转(running→completed/error)、结果回填、成员增减 → 键值变 → 重建刷新。组内 tool-call 被
-      //   buildVisibleChatBlocks 折叠吸收(不透出顶层)→ 其状态只能经本 tool-group 块刷新；b.id(锚 firstId)稳定致
-      //   ForEach 复用冻结(同类遗漏)。open 展开态随翻转重建丢失，但翻转低频(每工具一次)、全完成后稳定，可接受
-      //   （异于 ToolCard 的 sheet+高频子代理流式，故不做冻结 pin / 不上提 open 态）。
+      // 组内工具状态翻转(running→completed/error)、结果回填、成员增减 → 签名变 → 该项原地刷新。组内 tool-call 被
+      //   buildVisibleChatBlocks 折叠吸收(不透出顶层)→ 其状态只能经本 tool-group 块刷新；b.id(锚 firstId)稳定，
+      //   LazyForEach 复用旧实例无变化通知时内容冻结(同类遗漏)。open 展开态随翻转刷新会丢失，但翻转低频(每工具一次)、
+      //   全完成后稳定，可接受（异于 ToolCard 的 sheet+高频子代理流式，故不做冻结 pin / 不上提 open 态）。
       let sig: string = '';
       const tools: ChatBlock[] = b.groupTools;
       for (let i = 0; i < tools.length; i++) {
@@ -409,7 +453,7 @@ struct ChatPage {
   }
 
   // 子代理 children 内容签名（流式块的内容维度）：agent-text/reasoning 取 text.length、tool-call 取 state+result，
-  //   其余取稳定占位。入 blockKey → children 变化时父卡键值变 → 重建刷新（嵌套轨迹同类流式遗漏的根因修复）。
+  //   其余取稳定占位。入父卡签名 → children 变化时父卡签名变 → 该项 onDataChange 原地刷新（嵌套轨迹同类流式遗漏的根因修复）。
   private childSignature(children: ChatBlock[]): string {
     let sig: string = '';
     for (let i = 0; i < children.length; i++) {
@@ -425,8 +469,8 @@ struct ChatPage {
     return sig;
   }
 
-  // 取块的 childSig：详情 sheet 展开时返回冻结值（键值不变→父卡不重建→sheet/滚动/TraceSection 全稳定，无闪烁）；
-  //   关闭时返回实时值（children 变→重建→下次展开取最新）。冻结值由 toggleToolDetail 在展开瞬间写入（=当时实时值→键值不变）。
+  // 取块的 childSig：详情 sheet 展开时返回冻结值（签名不变→父卡不刷新→sheet/滚动/TraceSection 全稳定，无闪烁）；
+  //   关闭时返回实时值（children 变→签名变→原地刷新→下次展开取最新）。冻结值由 toggleToolDetail 在展开瞬间写入（=当时实时值→签名不变）。
   private childSigOf(b: ChatBlock): string {
     const frozen: string | undefined = this.detailOpenSigs[b.id];
     if (frozen !== undefined) {
@@ -442,7 +486,7 @@ struct ChatPage {
     return s !== undefined ? s : this.emptyActionState;
   }
 
-  // 整体替换 toolActionStates（V2 @Local Record 原地改不追踪 → 必整体替换；blockKey 读其字段 → 替换后键值变 → 重建）。
+  // 整体替换 toolActionStates（V2 @Local Record 原地改不追踪 → 必整体替换；blockSignature 读其字段 → 替换后签名变 → 原地刷新）。
   private setToolAction(blockId: string, loading: string, decided: boolean, error: string): void {
     const next: Record<string, ToolActionState> = {} as Record<string, ToolActionState>;
     const keys: string[] = Object.keys(this.toolActionStates);
@@ -461,11 +505,13 @@ struct ChatPage {
     s.actionError = error;
     next[blockId] = s;
     this.toolActionStates = next;
+    // 审批态入 blockSignature → 替换后刷新数据源，单项 onDataChange 原地重渲染（显 loading/decided/error，无重建）
+    this.refreshDataSource();
   }
 
   // tool 详情 sheet 展开/收起同步（ToolCard.isDetailOpen 经 @Monitor→onDetailOpenChange 回调）：
-  //   展开→冻结当前 childSig 入 detailOpenSigs（blockKey 取冻结值→键值不变→父卡不重建→sheet/滚动稳定无闪烁）；
-  //   收起→移除冻结（键值恢复随实时 children→若有变化则重建→下次展开取最新）。V2 @Local Record 原地改不追踪→整体替换。
+  //   展开→冻结当前 childSig 入 detailOpenSigs（blockSignature 取冻结值→签名不变→父卡不刷新→sheet/滚动稳定无闪烁）；
+  //   收起→移除冻结（签名恢复随实时 children→若有变化则刷新→下次展开取最新）。V2 @Local Record 原地改不追踪→整体替换。
   private toggleToolDetail(blockId: string, open: boolean): void {
     const already: boolean = this.detailOpenSigs[blockId] !== undefined;
     if (open === already) {
@@ -481,7 +527,7 @@ struct ChatPage {
       next[k] = this.detailOpenSigs[k];
     }
     if (open) {
-      // 冻结当前 children 签名（=展开瞬间实时值 → blockKey 不变 → 父卡不重建 → sheet 无闪烁展开）
+      // 冻结当前 children 签名（=展开瞬间实时值 → blockSignature 不变 → 父卡不刷新 → sheet 无闪烁展开）
       let children: ChatBlock[] = [];
       for (let i = 0; i < this.blocks.length; i++) {
         if (this.blocks[i].id === blockId) {
@@ -492,6 +538,8 @@ struct ChatPage {
       next[blockId] = this.childSignature(children);
     }
     this.detailOpenSigs = next;
+    // childSigOf 读 detailOpenSigs → 冻结/解冻后刷新数据源（展开态切换时该项原地刷新）
+    this.refreshDataSource();
   }
 
   // 审批动作执行（自 ToolCard doXxx 迁移）：基于块 permission 调 HubClient，更新 toolActionStates。
@@ -652,39 +700,7 @@ struct ChatPage {
     return s;
   }
 
-  // 标题栏（NavDestinationCustomTitle）：flavor 色块徽章 + 标题 + 副标题。
-  //   徽章双字母 label + 背景色来自 AgentFlavor 纯层（逐字移植上游 FLAVOR_BADGES）；
-  //   标题原字号/粗细不变；副标题小字 textSecondary + maxLines 1 + 省略号。
-  //   ChatPage 不用 titleMode（NavDestinationCustomTitle 的 titleMode 失效说明 N/A）。
-  @Builder ChatTitle() {
-    Row({ space: 6 }) {
-      // flavor 徽章：18×18 圆角色块 + 白色双字母
-      Text(flavorLabel(this.flavor))
-        .fontSize(fs(9)).fontWeight(FontWeight.Medium).fontColor('#ffffff')
-        .backgroundColor(flavorColorHex(this.flavor))
-        .borderRadius(2)
-        .width(fs(18)).height(fs(18))
-        .textAlign(TextAlign.Center)
-        .maxLines(1)
-      // 标题 + 副标题列（layoutWeight 占满剩余宽度，左对齐）
-      Column() {
-        Text(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
-          .fontSize(fs(16)).fontWeight(FontWeight.Medium).fontColor(this.c.textPrimary)
-          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.chatSubtitle !== '') {
-          Text(this.chatSubtitle)
-            .fontSize(fs(11)).fontColor(this.c.textSecondary)
-            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 1 })
-        }
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-    }
-    .width('100%')
-    .height('100%')
-    .alignItems(VerticalAlign.Center)
-  }
+  // 标题内容已下沉到 ChatTopBar（hideTitleBar 后自建栏内联 flavor 徽章 + 标题/副标题）。
 
   @Builder ContextStatusBar() {
     Row({ space: 8 }) {
@@ -738,6 +754,146 @@ struct ChatPage {
     const p: VoiceRouteParams = new VoiceRouteParams();
     p.sessionId = this.sessionId;
     this.navPathStack.pushPath({ name: 'VoicePage', param: p });
+  }
+
+  // —— 会话生命周期（⋯ 下拉自带；逐字镜像 SessionActionMenu:90-204，行为对齐上游）——
+  // 重命名：预填当前标题，开重命名 sheet
+  private startRename(): void {
+    this.renameText = this.sessionTitle;
+    this.showRename = true;
+  }
+
+  private closeRename(): void {
+    this.showRename = false;
+    this.renameText = '';
+  }
+
+  // 确认重命名：空或未改不请求；成功回写 sessionTitle + 关面板；失败保留面板（toast）
+  private async confirmRename(): Promise<void> {
+    if (this.renameActing || this.sessionId === '') {
+      return;
+    }
+    const name = this.renameText.trim();
+    if (name.length === 0 || name === this.sessionTitle) {
+      this.closeRename();
+      return;
+    }
+    this.renameActing = true;
+    try {
+      const ok = await getHubClient().renameSession(this.sessionId, name);
+      if (ok) {
+        this.sessionTitle = name;
+        showToast(t('sessionMenu.renamed'));
+        this.closeRename();
+      } else {
+        showToast(t('sessionMenu.renameFailed'));
+      }
+    } catch (e) {
+      showToast(t('sessionMenu.renameFailed'));
+    } finally {
+      this.renameActing = false;
+    }
+  }
+
+  // 切换到远程（仅 active）：关下拉 → POST /switch → toast（无本地态变更，不阻塞）
+  private async startSwitchRemote(): Promise<void> {
+    if (this.sessionActing || this.sessionId === '') {
+      return;
+    }
+    this.sessionActing = true;
+    try {
+      const ok = await getHubClient().switchSession(this.sessionId);
+      showToast(ok ? t('sessionMenu.switchedRemote') : t('sessionMenu.switchRemoteFailed'));
+    } catch (e) {
+      showToast(t('sessionMenu.switchRemoteFailed'));
+    } finally {
+      this.sessionActing = false;
+    }
+  }
+
+  // 归档二次确认（危险操作，confirm 红字）
+  private confirmArchive(): void {
+    this.getUIContext().showAlertDialog({
+      title: t('sessionMenu.archiveTitle'),
+      message: t('sessionMenu.archiveConfirm', kv('name', this.sessionTitle)),
+      autoCancel: true,
+      confirm: {
+        value: t('sessionMenu.archive'),
+        fontColor: this.c.error,
+        action: () => { this.doArchive(); }
+      }
+    });
+  }
+
+  // 删除二次确认（硬删除不可恢复，confirm 红字）
+  private confirmDelete(): void {
+    this.getUIContext().showAlertDialog({
+      title: t('sessionMenu.deleteTitle'),
+      message: t('sessionMenu.deleteConfirm', kv('name', this.sessionTitle)),
+      autoCancel: true,
+      confirm: {
+        value: t('sessionMenu.delete'),
+        fontColor: this.c.error,
+        action: () => { this.doDelete(); }
+      }
+    });
+  }
+
+  // 执行归档：成功 isActive=false（菜单翻删除，不离开页）；失败 toast
+  private async doArchive(): Promise<void> {
+    if (this.sessionActing || this.sessionId === '') {
+      return;
+    }
+    this.sessionActing = true;
+    try {
+      const ok = await getHubClient().archiveSession(this.sessionId);
+      if (ok) {
+        this.isActive = false;
+        showToast(t('sessionMenu.archived'));
+      } else {
+        showToast(t('sessionMenu.archiveFailed'));
+      }
+    } catch (e) {
+      showToast(t('sessionMenu.archiveFailed'));
+    } finally {
+      this.sessionActing = false;
+    }
+  }
+
+  // 执行删除：成功 pop 回列表；失败 toast。清该会话生成图片盘文件 + 索引（hash 不可逆→跨重启孤儿留观察）
+  private async doDelete(): Promise<void> {
+    if (this.sessionActing || this.sessionId === '') {
+      return;
+    }
+    this.sessionActing = true;
+    try {
+      const ok = await getHubClient().deleteSession(this.sessionId);
+      if (ok) {
+        getGeneratedImageCache().clearSession(this.sessionId);
+        showToast(t('sessionMenu.deleted'));
+        HapticService.tap('delete');
+        if (this.navPathStack !== null) {
+          this.navPathStack.pop();
+        }
+      } else {
+        showToast(t('sessionMenu.deleteFailed'));
+        HapticService.tap('error');
+      }
+    } catch (e) {
+      showToast(t('sessionMenu.deleteFailed'));
+      HapticService.tap('error');
+    } finally {
+      this.sessionActing = false;
+    }
+  }
+
+  // ⋯ 下拉「归档/删除」分发：active→归档，否则→删除（永不并存，对照上游 SessionActionMenu）
+  private onDestructiveTap(): void {
+    if (this.isActive) {
+      this.confirmArchive();
+    } else {
+      this.confirmDelete();
+    }
   }
 
   // elapsed 实时 ticker：仅当 thinking 或有 running 工具卡时每秒 bump nowTick（否则不 bump，避免无谓 rebuild）
@@ -1663,6 +1819,21 @@ struct ChatPage {
     return n > 0 && this.blocks[n - 1].id === b.id;
   }
 
+  // 该 agent-text / cli-output 块是否「正在流式」：是当前最后一块 + 会话 thinking 中。
+  //   reasoning 走 isReasoningStreaming；其余文本块（agent-text/cli-output）走本方法。
+  //   决定 MarkdownText 的 isInputEnded / incrementalAnalysis：流式时增量重渲、结束时一次性最终解析。
+  //   末块判定用 id 比较，避免依赖 ForEach 下标。
+  private isBlockStreaming(b: ChatBlock): boolean {
+    if (!this.isThinking) {
+      return false;
+    }
+    const n: number = this.blocks.length;
+    if (n === 0 || this.blocks[n - 1].id !== b.id) {
+      return false;
+    }
+    return b.kind === 'agent-text' || b.kind === 'cli-output';
+  }
+
   // 滚动控制（仅贴底时跟随，上滑读历史不打断，对照 chatcube alignToBottomIfPinned）
   private scrollToBottom(): void {
     setTimeout(() => {
@@ -1942,7 +2113,15 @@ struct ChatPage {
       // 左簇：气泡 + 时间 + 脚注，整体左对齐（时间/脚注贴气泡左下）
       Column() {
         Column() {
-          MarkdownText({ content: b.text, linkFilePaths: true, onOpenFilePath: (path: string): void => { this.openFilePath(path); } })
+          MarkdownText({
+            content: b.text,
+            linkFilePaths: true,
+            // 流式末块：isInputEnded=false + incrementalAnalysis=true → CJMarkdown 增量重渲（防冻结根因）；
+            //   结束翻转时 isInputEnded 变 true → 签名变 → 一次性最终完整解析（非 per-token，可接受）。
+            isInputEnded: !this.isBlockStreaming(b),
+            incrementalAnalysis: this.isBlockStreaming(b),
+            onOpenFilePath: (path: string): void => { this.openFilePath(path); }
+          })
         }
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
         .backgroundColor(this.c.surface)
@@ -2134,14 +2313,6 @@ struct ChatPage {
   // 发送键透明度（对照 chatcube getSendButtonOpacity：恒 1，仅 blocking 附件才 0.45；本项目无该态→恒 1）。
   private sendOpacity(): number { return 1; }
 
-  // 半透明色（对照 chatcube withAlpha：#RRGGBB → #AA{{RRGGBB}}，HarmonyOS 八位色 alpha 在前）。
-  private withAlpha(color: string, alphaHex: string): string {
-    if (color.startsWith('#') && color.length === 7) {
-      return `#${alphaHex}${color.substring(1)}`;
-    }
-    return color;
-  }
-
   // —— 发送键动效驱动（对照 chatcube ChatInputBar:651-753 的 @Monitor + 呼吸 + animateSendButton）——
   @Monitor('isThinking')
   onThinkingChanged(): void {
@@ -2161,6 +2332,24 @@ struct ChatPage {
   }
   @Monitor('attachmentPanelOpen')
   onAttachmentPanelOpenChanged(): void { this.attachIconTrigger++; }
+
+  // 附件面板开合（硬复刻 chatcube openAttachmentPanel/closeAttachmentPanel：animateTo 驱动高度，
+  //   非「声明式 .animation + 三目 height」——后者触发 ArkUI「动态高+绝对定位+clip 不绘制子内容」坑）。
+  private toggleAttachmentPanel(): void {
+    if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); } else { this.openAttachmentPanel(); }
+  }
+  private openAttachmentPanel(): void {
+    this.getUIContext().animateTo({ duration: 260, curve: Curve.FastOutSlowIn }, (): void => {
+      this.attachmentPanelOpen = true;
+      this.attachmentPanelHeightVp = this.attachPanelHeight;
+    });
+  }
+  private closeAttachmentPanel(): void {
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.FastOutSlowIn }, (): void => {
+      this.attachmentPanelHeightVp = 0;
+      this.attachmentPanelOpen = false;
+    });
+  }
 
   // 呼吸仅在「生成中且无新内容」(pause 态) 跑；内容出现或停止即停（对照 chatcube updateBreathing）。
   private updateBreathing(): void {
@@ -2231,8 +2420,13 @@ struct ChatPage {
           onSelect: (skill: SkillItem): void => { this.selectSkill(skill); }
         })
       }
-      // —— 输入卡片 + 附件叠层（对照 chatcube ChatPage:2692-2718：wrapper 底 padding 抬升卡片 + 面板绝对底锚）——
-      Column() {
+      // —— 输入卡片 + 附件面板（chatcube ChatPage:2685-2718 视觉复刻：panel 叠在 card 底 padding 留白条上）。
+      //    根因：chatcube 用 position({y:'100%'}).translate({y:'-100%'}) 绝对底锚——但 ArkUI 中「绝对定位 + 百分比
+      //    偏移」的子节点不参与测量、不绘制内容（dumpLayout 节点消失 + 截图空白双证）。chatcube 可用因其 card+panel
+      //    同锚「全屏父容器」；本项目页根是 Column（非全屏 Stack），绝对底锚失效。改用 Stack({alignContent:Bottom})
+      //    叠层：Stack 正常测量并绘制子节点（card 底层 + panel 顶层贴底），高=attachmentPanelHeightVp 由 animateTo
+      //    驱动，覆盖 card 底 padding 留白条——视觉/动效与 chatcube 一致（面板上滑覆盖、输入行随卡片整体抬升）。
+      Stack({ alignContent: Alignment.Bottom }) {
         // 卡片本体（对照 chatcube ChatInputBar.build：r24 + blur COMPONENT_REGULAR + 0.5vp 边框 + shadow32）
         Column() {
           // 待发附件瓦片栏（置卡片内 InputBarRow 之上，对照 chatcube AttachmentPreview；空时不渲染）
@@ -2303,7 +2497,7 @@ struct ChatPage {
                 this.recomputeMention();
                 this.recomputeSkill();
               })
-              .onFocus(() => { this.attachmentPanelOpen = false; })
+              .onFocus(() => { this.closeAttachmentPanel(); })
 
             // 定时键（40×40；开 ScheduleSheet 选预设；已设定时显警告色）
             Button({ type: ButtonType.Circle, stateEffect: false }) {
@@ -2330,7 +2524,7 @@ struct ChatPage {
             .width(40)
             .height(40)
             .backgroundColor(Color.Transparent)
-            .onClick(() => { this.attachmentPanelOpen = !this.attachmentPanelOpen; })
+            .onClick(() => { this.toggleAttachmentPanel(); })
 
             // 发送键（对照 chatcube SendButton：ReplaceSymbolEffect 变形 + pause 呼吸 + 按下态阴影/缩放 + 品牌色调阴影）
             Button({ type: ButtonType.Circle, stateEffect: false }) {
@@ -2379,27 +2573,28 @@ struct ChatPage {
         .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
         .border({ width: 0.5, color: this.c.border })
         .shadow({ radius: 32, color: 'rgba(0,0,0,0.1)', offsetX: 0, offsetY: 8 })
+        // chatcube 抬升：底 padding=attachmentPanelHeightVp，面板开时卡片内容随 InputBar 上移、底部留出覆盖区。
+        .padding({ bottom: this.attachmentPanelHeightVp })
+        .animation({ duration: 260, curve: Curve.FastOutSlowIn })
 
-        // 附件面板（与卡片分离定位：绝对底锚 + translate -100%；wrapper 底 padding 抬升后此区域露出，260ms 淡入）
+        // 附件面板（Stack 顶层、alignContent.Bottom 贴底：高=attachmentPanelHeightVp 由 animateTo 驱动，clip 随高揭示；
+        //   覆盖 card 底 padding 留白条。弃 position/translate 绝对底锚——ArkUI 不绘制其内容）。
         Column() {
           AttachmentPickerPanel({
             onSelect: (picked: PickedFile[]): void => { this.uploadPickedFiles(picked); },
-            onClose: (): void => { this.attachmentPanelOpen = false; }
+            onClose: (): void => { this.closeAttachmentPanel(); }
           })
         }
         .width('100%')
-        .height(this.attachmentPanelOpen ? this.attachPanelHeight : 0)
+        .alignItems(HorizontalAlign.Center)
+        .height(this.attachmentPanelHeightVp)
         .opacity(this.attachmentPanelOpen ? 1 : 0)
         .backgroundColor(this.c.surface)
         .clip(true)
         .enabled(this.attachmentPanelOpen)
         .animation({ duration: 260, curve: Curve.FastOutSlowIn })
-        .position({ x: 0, y: '100%' })
-        .translate({ y: '-100%' })
       }
       .width('100%')
-      .padding({ bottom: this.attachmentPanelOpen ? this.attachPanelHeight : 0 })
-      .animation({ duration: 260, curve: Curve.FastOutSlowIn })
     }
     .width('100%')
     .padding({ left: 12, right: 12 })
@@ -2553,8 +2748,49 @@ struct ChatPage {
     })
   }
 
+  // 重命名 sheet（⋯ 下拉「重命名」开；TextInput 预填当前标题 + 取消/保存，镜像 SessionActionMenu RenameSheet）
+  @Builder
+  private RenameSheet() {
+    Column() {
+      TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
+        .fontSize(fs(16))
+        .fontColor(this.c.textPrimary)
+        .placeholderColor(this.c.textTertiary)
+        .backgroundColor(this.c.surface)
+        .borderRadius(12)
+        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+        .maxLength(255)
+        .defaultFocus(true)
+        .onChange((v: string) => { this.renameText = v; })
+        .onSubmit(() => { this.confirmRename(); })
+
+      Row({ space: 10 }) {
+        Button(t('common.cancel'))
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.c.surface)
+          .fontColor(this.c.textPrimary)
+          .borderRadius(12)
+          .onClick(() => { this.closeRename(); })
+        Button(this.renameActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.c.primary)
+          .fontColor(this.c.bubbleUserText)
+          .borderRadius(12)
+          .enabled(!this.renameActing && this.renameText.trim().length > 0)
+          .onClick(() => { this.confirmRename(); })
+      }
+      .width('100%')
+      .margin({ top: 16 })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 4, bottom: 20 })
+    .backgroundColor(this.c.bg)
+  }
+
   // 大纲跳转：在 filteredBlocks 内查 blockId 的 index → scrollToIndex(START) → 关抽屉。
-  //   ArkTS List 全量渲染 filteredBlocks，目标必在数组内（大纲即从 blocks 派生），无需上游 load-older 翻页循环。
+  //   LazyForEach 数据源镜像 filteredBlocks → 索引一致；目标必在数组内（大纲即从 blocks 派生），无需上游 load-older 翻页循环。
   private jumpToOutline(blockId: string): void {
     const list: ChatBlock[] = this.filteredBlocks;
     let idx: number = -1;
@@ -2567,41 +2803,136 @@ struct ChatPage {
     setTimeout((): void => { this.scroller.scrollToIndex(idx, true, ScrollAlign.START); }, 120);
   }
 
-  // 标题栏右侧菜单（NavDestination.menus CustomBuilder，对照 chatcube 顶栏密度：仅 3 个尾随图标，避免拥挤）。
-  //   导出/大纲已下沉到「更多」面板（SessionActionMenu，showExport/showOutline）；文件/终端/语音同在此面板。
+  // 液态顶栏（hideTitleBar 后自建，复刻 VoicePage 自建栏模式）。
+  //   全宽毛玻璃片（COMPONENT_ULTRA_THICK + 半透明 surface 底 + 底部发丝线）+ 液态圆钮。
+  //   左返回(导航) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 两液态 chip（3→2 瘦身：config 收进 ⋯）。
   @Builder
-  private HeaderMenu() {
-    Row({ space: 6 }) {
-      // 搜索（开/关切整栏；对照 chatcube sys.symbol）
-      Row() {
+  private ChatTopBar() {
+    Row({ space: 8 }) {
+      // 返回（液态圆钮；hideTitleBar 去掉系统返回，必须有。附件面板开时先收面板）
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(fs(18))
+          .fontColor([this.c.textPrimary])
+      }
+      .width(36)
+      .height(36)
+      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
+      .border({ width: 1, color: this.glassBorderInactive() })
+      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
+      .onClick(() => {
+        if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); return; }
+        if (this.navPathStack !== null) { this.navPathStack.pop(); }
+      })
+
+      // 标题列（flavor 徽章 + 标题 + 副标题；layoutWeight 占满，标题 ellipsis）
+      Row({ space: 6 }) {
+        Text(flavorLabel(this.flavor))
+          .fontSize(fs(9)).fontWeight(FontWeight.Medium).fontColor('#ffffff')
+          .backgroundColor(flavorColorHex(this.flavor))
+          .borderRadius(2)
+          .width(fs(18)).height(fs(18))
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+        Column() {
+          Text(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
+            .fontSize(fs(16)).fontWeight(FontWeight.Medium).fontColor(this.c.textPrimary)
+            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.chatSubtitle !== '') {
+            Text(this.chatSubtitle)
+              .fontSize(fs(11)).fontColor(this.c.textSecondary)
+              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 1 })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+      }
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Center)
+
+      // 搜索（液态 chip；searchMode 时 primary 描边高亮 + xmark）
+      Button({ type: ButtonType.Circle, stateEffect: false }) {
         SymbolGlyph(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
           .fontSize(fs(18))
           .fontColor([this.searchMode ? this.c.primary : this.c.textSecondary])
       }
       .width(36)
-      .height(40)
-      .justifyContent(FlexAlign.Center)
+      .height(36)
+      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
+      .border({ width: 1, color: this.searchMode ? this.c.primary : this.glassBorderInactive() })
+      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
+      .animation({ duration: 200, curve: Curve.EaseOut })
       .onClick(() => { this.toggleSearch(); })
-      // 会话内配置（模型/权限/effort 即时改；对照 web FloatingOverlay）—— 权限切换入口，40×40 命中区
-      Row() {
-        SymbolGlyph($r('sys.symbol.gearshape'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textSecondary])
-      }
-      .width(36)
-      .height(40)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => { this.configSheetOpen = true; })
-      // 更多（重命名/归档/删除 + 文件/终端/语音 + 导出/大纲，全在 SessionActionMenu）
-      Row() {
+
+      // ⋯ 下拉（液态 chip + bindMenu frosted 气泡；替换原 SessionActionMenu 底部 sheet）
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
         SymbolGlyph($r('sys.symbol.ellipsis_message'))
           .fontSize(fs(18))
           .fontColor([this.c.textSecondary])
       }
-      .width(40)
-      .height(40)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => { this.menuOpen = true; })
+      .width(36)
+      .height(36)
+      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
+      .border({ width: 1, color: this.glassBorderInactive() })
+      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
+      .bindMenu(this.ChatTopMenu(), {
+        placement: Placement.BottomRight,
+        offset: { x: 0, y: 8 },
+        backgroundColor: this.c.surface,
+        backgroundBlurStyle: BlurStyle.Regular
+      })
+    }
+    .width('100%')
+    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+    .backgroundColor(this.glassBg())
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK, { scale: 0.5 })
+    .border({ width: { bottom: 0.5 }, color: this.glassBorderInactive() })
+  }
+
+  // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
+  //   active 门控（终端/语音/切换远程仅活跃；归档↔删除二选一）。
+  @Builder
+  private ChatTopMenu() {
+    Menu() {
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')).fontSize(16), content: t('chat.config') })
+        .contentFont({ size: fs(14) })
+        .onClick(() => { this.configSheetOpen = true; })
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.folder')).fontSize(16), content: t('sessionMenu.files') })
+        .contentFont({ size: fs(14) })
+        .onClick(() => { this.openFiles(); })
+      if (this.isActive) {
+        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.keyboard')).fontSize(16), content: t('sessionMenu.terminal') })
+          .contentFont({ size: fs(14) })
+          .onClick(() => { this.openTerminal(); })
+        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.mic')).fontSize(16), content: t('sessionMenu.voice') })
+          .contentFont({ size: fs(14) })
+          .onClick(() => { this.openVoice(); })
+      }
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.share')).fontSize(16), content: t('chat.exportTitle') })
+        .contentFont({ size: fs(14) })
+        .onClick(() => { this.exportConversation(); })
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.list_bullet')).fontSize(16), content: t('outline.title') })
+        .contentFont({ size: fs(14) })
+        .onClick(() => { this.outlineOpen = true; })
+      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')).fontSize(16), content: t('sessionMenu.rename') })
+        .contentFont({ size: fs(14) })
+        .onClick(() => { this.startRename(); })
+      if (this.isActive) {
+        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.swap')).fontSize(16), content: t('sessionMenu.switchRemote') })
+          .contentFont({ size: fs(14) })
+          .onClick(() => { this.startSwitchRemote(); })
+      }
+      MenuItem({
+        symbolStartIcon: new SymbolGlyphModifier(this.isActive ? $r('sys.symbol.archivebox') : $r('sys.symbol.trash')).fontSize(16),
+        content: this.isActive ? t('sessionMenu.archive') : t('sessionMenu.delete')
+      })
+        .contentFont({ size: fs(14) })
+        .contentFontColor(this.c.error)
+        .onClick(() => { this.onDestructiveTap(); })
     }
   }
 
@@ -2675,6 +3006,8 @@ struct ChatPage {
   build() {
     NavDestination() {
       Column() {
+        // 液态顶栏（hideTitleBar 后自建，顶栏首位）
+        this.ChatTopBar()
         // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
         ConnectionBanner()
         // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
@@ -2722,7 +3055,10 @@ struct ChatPage {
             // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
             Stack({ alignContent: Alignment.Bottom }) {
             List({ scroller: this.scroller, space: 8 }) {
-              ForEach(this.filteredBlocks, (b: ChatBlock) => {
+              // LazyForEach + IDataSource（ChatBlockDataSource）：流式时对单项调 onDataChange 原地重渲染——
+              //   组件复用、不销毁、MarkdownText/CJMarkdown 保活、仅 content 更新（对照 chatcube ChatMessageListSection）。
+              //   key 恒用稳定 b.id（revert 动态键——动态键每 token 销毁重建 agent-text → 原生冻结）。
+              LazyForEach(this.dataSource, (b: ChatBlock) => {
                 ListItem() {
                   Column() {
                     // 跨日（或首条）日期分隔（dividerBefore 由 recomputeBlocks 盖戳）；
@@ -2776,7 +3112,7 @@ struct ChatPage {
                     }
                   }
                 }
-              }, (b: ChatBlock) => this.blockKey(b))
+              }, (b: ChatBlock) => b.id)
 
               if (this.isThinking) {
                 ListItem() {
@@ -2842,27 +3178,6 @@ struct ChatPage {
           onDisappear: (): void => { this.scheduleSheetOpen = false; this.scheduleCustomMode = false; }
         })
 
-        // 标题栏 ⋯ 菜单：重命名/归档/删除全委托 SessionActionMenu（与 Index 长按复用同一组件）
-        //   重命名成功 → 更新本页标题；归档成功 → isActive 置 false（菜单翻删除，不离开页）；删除成功 → pop 回列表
-        SessionActionMenu({
-          sessionId: this.sessionId,
-          title: this.sessionTitle,
-          active: this.isActive,
-          open: this.menuOpen,
-          showNavigation: true,
-          showExport: true,
-          showOutline: true,
-          onOpenFiles: () => { this.openFiles(); },
-          onOpenTerminal: () => { this.openTerminal(); },
-          onOpenVoice: () => { this.openVoice(); },
-          onExport: () => { this.exportConversation(); },
-          onOutline: () => { this.outlineOpen = true; },
-          onClose: () => { this.menuOpen = false; },
-          onRenamed: (name: string) => { this.sessionTitle = name; },
-          onArchived: () => { this.isActive = false; },
-          onDeleted: () => { if (this.navPathStack !== null) { this.navPathStack.pop(); } }
-        })
-
         // 用户气泡图片全屏预览（自带 bindSheet + 双指缩放，复用 markdown/生成图片同款；open=false 不渲染）
         ImagePreviewSheet({
           src: this.attachmentPreviewSrc,
@@ -2898,13 +3213,23 @@ struct ChatPage {
           showClose: true,
           onDisappear: (): void => { this.outlineOpen = false; }
         })
+      // 重命名 sheet（⋯ 下拉「重命名」开；独立 0×0 锚点，不与他 sheet 冲突）
+      Column() {}
+        .width(0)
+        .height(0)
+        .bindSheet(this.showRename, this.RenameSheet(), {
+          detents: [SheetSize.FIT_CONTENT],
+          dragBar: true,
+          showClose: true,
+          title: { title: t('sessionMenu.renameSheetTitle') },
+          onDisappear: (): void => { this.closeRename(); }
+        })
       }
       .width('100%')
       .height('100%')
       .backgroundColor(this.c.bg)
     }
-    .title(this.ChatTitle)
-    .menus(this.HeaderMenu)
+    .hideTitleBar(true)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as ChatPageRouteParams;
@@ -2916,9 +3241,13 @@ struct ChatPage {
     })
     .onBackPressed((): boolean => {
       // 附件面板开时 back 先收面板（对照 chatcube ChatPage:2893 onBackPressed）；
-      //   各 bindSheet(config/schedule/messageMenu/outline/imagePreview)原生消费 back，不重复处理。
+      //   各 bindSheet(config/schedule/messageMenu/outline/rename/imagePreview)原生消费 back，不重复处理。
       if (this.attachmentPanelOpen) {
-        this.attachmentPanelOpen = false;
+        this.closeAttachmentPanel();
+        return true;
+      }
+      if (this.searchMode) {       // 搜索栏开 → back 先退搜索
+        this.toggleSearch();
         return true;
       }
       return false;
