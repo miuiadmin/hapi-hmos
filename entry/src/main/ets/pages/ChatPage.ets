@@ -40,13 +40,14 @@ import { MentionMenu } from '../components/MentionMenu';
 import { SkillsMenu } from '../components/SkillsMenu';
 import { getSessionSeenService } from '../services/SessionAttention';
 import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
+import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
 import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
 import { FileViewerRouteParams } from './FileViewerPage';
 import { TerminalRouteParams } from './TerminalPage';
 import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session, TeamState, parseTeamState, TodoItem, parseTodoList, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName, ThreadGoal } from '../models/Types';
+import { Session, TeamState, TodoItem, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName, ThreadGoal } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -94,6 +95,7 @@ struct ChatPage {
   @Local enterToSend: boolean = false;     // 回车发送（设置开关，默认关；关时 Enter=换行多行输入）
   @Local isLoading: boolean = false;
   @Local loadError: string = '';
+  @Local isEntrySettling: boolean = true;   // 进会话滚动定锚中：遮罩消息列表显 loading 星环，揭幕即已就位（消除可见的"先顶后滚"跳动）
   @Local isThinking: boolean = false;          // agent 生成中（session-updated.thinking）
   @Local isAborting: boolean = false;          // 停止生成请求进行中（防重入 + abort 按钮 spinner）
   @Local isSending: boolean = false;           // 发送请求进行中
@@ -257,6 +259,11 @@ struct ChatPage {
       clearTimeout(this.blocksRecomputeTimer);
       this.blocksRecomputeTimer = -1;
     }
+    if (this.sessionRefreshTimer !== -1) {
+      clearTimeout(this.sessionRefreshTimer);
+      this.sessionRefreshTimer = -1;
+    }
+    this.cancelSettling();   // 清进会话定锚重试 timer 簇（含兜底揭幕），防销毁后回调跑 scrollEdge
   }
 
   // 前台重同步触发（EntryAbility.onForeground beginSync → resyncSeq++）：重拉消息 + 结束同步（关横幅）。
@@ -327,6 +334,7 @@ struct ChatPage {
   private blocksRecomputeTimer: number = -1;
   private blocksRecomputeInWindow: boolean = false;   // 窗口内（leading 已用，后续合并）
   private blocksRecomputePending: boolean = false;    // 窗口内有新调用 → 末次兜底
+  private sessionRefreshTimer: number = -1;           // session-updated 重拉去抖句柄（200ms 尾沿合并密集事件）
   private isDisposed: boolean = false;                // aboutToDisappear 置位，防销毁后回调跑重算
   // 输入框补全重算（slash/mention/skill）合并延迟标记。TextArea 的 onChange/onTextSelectionChange 在其【自身构建周期内】
   //   触发——若此时同步改 slashSuggestions/mentionItems/skillSuggestionItems（构建中条件渲染的联想浮层），会触发
@@ -995,17 +1003,7 @@ struct ChatPage {
       // 取初始 agentState（取不到不影响消息展示）
       try {
         const session = await getHubClient().fetchSession(this.sessionId);
-        this.setAgentState(parseAgentState(session.agentStateRaw));
-        this.isActive = session.active;
-        this.isThinking = session.thinking;   // 首屏播种：打开「正在生成」的会话即显停止按钮（对照上游立即 patch thinking）
-        this.teamState = session.teamState;   // 首屏播种团队态（非 null 时消息列表上方渲染 TeamPanel）
-        this.todos = session.todos;           // 首屏播种待办清单（非空时消息列表上方渲染 TodoPanel）
-        this.model = session.model;            // 首屏播种 model/flavor（ContextStatusBar 算预算上限）
-        this.flavor = session.flavor;
-        this.effort = session.effort;
-        this.permissionMode = session.permissionMode;        // 首屏播种会话内配置（SessionConfigOverlay 用）
-        this.collaborationMode = session.collaborationMode;
-        this.modelReasoningEffort = session.modelReasoningEffort;
+        this.applySessionState(session);   // 首屏播种会话全量态（thinking/active/model/teamState/todos/agentState/配置）
       } catch (e) {
         this.agentState = null;
       }
@@ -1111,7 +1109,7 @@ struct ChatPage {
     } else if (t === SyncEventType.MESSAGE_CANCELLED) {
       this.removeCancelledMessage(event);
     } else if (t === SyncEventType.SESSION_UPDATED) {
-      this.handleSessionUpdated(event);
+      this.handleSessionUpdated();
     } else if (t === SyncEventType.MESSAGES_INVALIDATED) {
       this.loadMessages();
     } else if (t === SyncEventType.SCHEDULED_MATURED) {
@@ -1120,77 +1118,56 @@ struct ChatPage {
     }
   }
 
-  // thinking / active / 标题 / agentState（防御性：session 对象内或事件顶层均可；agentState 仅在 session 对象内取）
-  //   active：归档后 patch {active:false} → 翻转菜单（归档→删除）。
-  //   metadata.name：重命名（本端或远端）后 patch → 标题栏即时更新。
-  //   两者须在 agentState 早返回之前处理，否则 agentState 存在时会跳过。
-  private handleSessionUpdated(event: SyncEvent): void {
-    const sessionObj = event.getObject('session');
-    if (sessionObj !== null) {
-      if (sessionObj['thinking'] === true) {
-        this.isThinking = true;
-      } else if (sessionObj['thinking'] === false) {
-        this.isThinking = false;
-      }
-      if (sessionObj['active'] === true) {
-        this.isActive = true;
-      } else if (sessionObj['active'] === false) {
-        this.isActive = false;
-      }
-      const metaVal = sessionObj['metadata'];
-      if (metaVal !== null && metaVal !== undefined && typeof metaVal === 'object') {
-        const meta = metaVal as Record<string, Object>;
-        const nameVal = meta['name'];
-        if (typeof nameVal === 'string' && nameVal !== '') {
-          this.sessionTitle = nameVal;
-        }
-        // flavor 实时同步（ContextStatusBar 算预算上限门控）
-        const flavorVal = meta['flavor'];
-        if (typeof flavorVal === 'string') {
-          this.flavor = flavorVal;
-        }
-      }
-      // model 实时同步（ContextStatusBar 算预算上限：claude-/[1m]/codex 分档）
-      const modelVal = sessionObj['model'];
-      if (typeof modelVal === 'string') {
-        this.model = modelVal;
-      }
-      // 会话内配置实时同步（SessionConfigOverlay 高亮）：本端 set 后服务端回推；null/缺省保留当前。
-      const permVal = sessionObj['permissionMode'];
-      if (typeof permVal === 'string') { this.permissionMode = permVal; }
-      const collabVal = sessionObj['collaborationMode'];
-      if (typeof collabVal === 'string') { this.collaborationMode = collabVal; }
-      const reasoningVal = sessionObj['modelReasoningEffort'];
-      if (typeof reasoningVal === 'string') { this.modelReasoningEffort = reasoningVal; }
-      const effortVal = sessionObj['effort'];
-      if (typeof effortVal === 'string') { this.effort = effortVal; }
-      // teamState：会话内团队态实时更新（agent 自治上报；含 null 显式清除已解散团队）
-      const teamVal = sessionObj['teamState'];
-      if (teamVal !== null && teamVal !== undefined && typeof teamVal === 'object') {
-        this.teamState = parseTeamState(teamVal as Record<string, Object>);
-      } else if (teamVal === null) {
-        this.teamState = null;
-      }
-      // todos：会话内待办清单实时更新（agent TodoWrite 上报；含 [] 显式清空）
-      const todosVal = sessionObj['todos'];
-      if (Array.isArray(todosVal)) {
-        this.todos = parseTodoList(todosVal);
-      } else if (todosVal === null) {
-        this.todos = [];
-      }
-      // agentState：会话态实时更新（权限请求队列）
-      const asVal = sessionObj['agentState'];
-      if (asVal !== null && asVal !== undefined && typeof asVal === 'object') {
-        this.setAgentState(parseAgentState(asVal as Record<string, Object>));
+  // 把 GET /api/sessions/:id 的全量态落到本页 @Local（thinking/active/model/flavor/teamState/todos/agentState/会话内配置）。
+  //   首屏播种（loadMessages）与实时刷新（refreshSessionState）共用——单一来源，字段集合不漂移。
+  private applySessionState(session: Session): void {
+    this.setAgentState(parseAgentState(session.agentStateRaw));
+    this.isActive = session.active;
+    this.isThinking = session.thinking;
+    this.teamState = session.teamState;
+    this.todos = session.todos;
+    this.model = session.model;
+    this.flavor = session.flavor;
+    this.effort = session.effort;
+    this.permissionMode = session.permissionMode;
+    this.collaborationMode = session.collaborationMode;
+    this.modelReasoningEffort = session.modelReasoningEffort;
+  }
+
+  // session-updated 到达 → 尾沿 200ms 去抖后重拉会话全量态。
+  //   ★ 根因（2026-08-04 真机实测定位）：hub 的 session-updated 是【轻量信号】，字段散落两处、且无统一 schema：
+  //     ① thinking/active/model/effort/permissionMode 走 `data` delta（keepAlive / markMessageQueued /
+  //        handleSessionEnd，参考源码 hapi-v0.25.4 sync/sessionCache.ts:234/342/392/499）；
+  //     ② 但 todos / teamState / agentState(权限请求) / metadata(重命名) 走【裸信号】——CLI socket 的
+  //        update-state / update-metadata / handleMessage 里 onWebappEvent({type:'session-updated',sessionId})
+  //        **不带 data**（sessionHandlers.ts:124/135/223/270），只能靠重拉 GET 拿。
+  //     旧实现读 event.getObject('session')（session-updated 无 session 键 → null）+ event.raw['thinking']
+  //     （顶层也无 → null）→ 整个 handler 是空操作 → isThinking 永不翻 false → 「思考中」+ 暂停图标卡死到重进才消。
+  //   对照 web useSSE（useSSE.ts:316-325）：session-updated 一律 invalidateQueries 重拉 GET /api/sessions/:id，
+  //   不解析事件体。本页同款——重拉拿权威全量态，覆盖所有实时字段（含 agent 结束的 thinking→false 翻转）。
+  //   尾沿 200ms：流式期 markMessageQueued/keepAlive/TodoWrite 连发，合并成 1 次拉取；最后一条事件后必触发，
+  //   保证捕获终态（对照 blocksRecomputeTimer 同款去抖范式）。
+  private refreshSessionState(): void {
+    if (this.sessionId === '' || this.isDisposed) {
+      return;
+    }
+    if (this.sessionRefreshTimer !== -1) {
+      clearTimeout(this.sessionRefreshTimer);
+    }
+    this.sessionRefreshTimer = setTimeout(() => {
+      this.sessionRefreshTimer = -1;
+      const sid = this.sessionId;
+      if (sid === '' || this.isDisposed) {
         return;
       }
-    } else {
-      if (event.raw['thinking'] === true) {
-        this.isThinking = true;
-      } else if (event.raw['thinking'] === false) {
-        this.isThinking = false;
-      }
-    }
+      getHubClient().fetchSession(sid)
+        .then((session: Session) => { this.applySessionState(session); })
+        .catch(() => {});
+    }, 200);
+  }
+
+  private handleSessionUpdated(): void {
+    this.refreshSessionState();
   }
 
   // CLI 消费了排队消息：对应 localId 的 user 消息置 sent + invokedAt
@@ -1902,9 +1879,17 @@ struct ChatPage {
       const id: number = setTimeout(() => {
         if (this.settlingCancelled) { return; }
         this.scroller.scrollEdge(Edge.Bottom);
+        // 首次确认已贴底 → 揭幕（后续重试是对已贴底列表的高度微调，不可见）。自适应：短列表首帧即揭、
+        //   长/图片列表等布局稳定后揭。isEntrySettling 仅进会话首屏为 true（init），刷新/重拉不复位 → 不闪。
+        if (this.isEntrySettling && this.scroller.isAtEnd()) {
+          this.isEntrySettling = false;
+        }
       }, delays[i]);
       this.settlingTimerIds.push(id);
     }
+    // 兜底揭幕：防 isAtEnd 因布局异常永不 true 致列表被永久遮罩（最末重试后必揭）
+    const fallback: number = setTimeout(() => { this.isEntrySettling = false; }, 1900);
+    this.settlingTimerIds.push(fallback);
   }
 
   private cancelSettling(): void {
@@ -1935,8 +1920,14 @@ struct ChatPage {
     for (let i = 0; i < this.blocks.length; i++) {
       if (this.blocks[i].unreadDividerBefore) { idx = i; break; }
     }
-    if (idx < 0) { return; }
-    setTimeout((): void => { this.scroller.scrollToIndex(idx, false, ScrollAlign.START); }, 120);
+    if (idx < 0) {
+      this.isEntrySettling = false;   // 无未读（不应到此分支，兜底揭幕）
+      return;
+    }
+    setTimeout((): void => {
+      this.scroller.scrollToIndex(idx, false, ScrollAlign.START);
+      this.isEntrySettling = false;   // 定位首条未读后揭幕（scrollToIndex smooth=false 已就位、无动画）
+    }, 120);
   }
 
   // 「↓N条新消息」浮标点击：贴底 + 清计数 + 滚底。
@@ -2788,7 +2779,8 @@ struct ChatPage {
       onSetEffort: (e: string): void => { this.applyEffort(e); },
       onSetReasoningEffort: (e: string): void => { this.applyReasoningEffort(e); },
       onSetPermissionMode: (m: string): void => { this.applyPermissionMode(m); },
-      onSetCollaborationMode: (m: string): void => { this.applyCollaborationMode(m); }
+      onSetCollaborationMode: (m: string): void => { this.applyCollaborationMode(m); },
+      onClose: (): void => { this.configSheetOpen = false; }
     })
   }
 
@@ -2797,8 +2789,26 @@ struct ChatPage {
   private OutlineSheet() {
     OutlinePanel({
       items: this.outlineItems,
-      onJump: (blockId: string): void => { this.jumpToOutline(blockId); }
+      onJump: (blockId: string): void => { this.jumpToOutline(blockId); },
+      onClose: (): void => { this.outlineOpen = false; }
     })
+  }
+
+  // config/outline sheet 视觉配置：半屏 [MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  //   （关闭走组件内 SheetDialog 标题栏 ✕）。对照 NewSession PickerSheet / 设置页同款 chrome。
+  private get configSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: (): void => { this.configSheetOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+  private get outlineSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: (): void => { this.outlineOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   // 重命名 sheet（⋯ 下拉「重命名」开；TextInput 预填当前标题 + 取消/保存，镜像 SessionActionMenu RenameSheet）
@@ -3197,8 +3207,24 @@ struct ChatPage {
               } else if (!this.settlingCancelled) {
                 // 用户上滑读历史 → 放弃初始滚动定锚重试（对照上游 shouldCancelInitialScrollSettling）
                 this.cancelSettling();
+                this.isEntrySettling = false;   // 用户已介入 → 立即揭幕，勿再遮罩
               }
             })
+
+            // 进会话定锚遮罩：列表在底层滚到位（不可见），揭幕（isEntrySettling→false）即已就位、无可见跳动
+            if (this.isEntrySettling) {
+              Column() {
+                LoadingProgress()
+                  .width(36)
+                  .height(36)
+                  .color(this.c.primary)
+              }
+              .width('100%')
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+              .alignItems(HorizontalAlign.Center)
+              .backgroundColor(this.c.bg)
+            }
 
             if (this.newMessagesCount > 0) {
               this.NewMessagesButton()
@@ -3255,24 +3281,11 @@ struct ChatPage {
       Column() {}
         .width(0)
         .height(0)
-        .bindSheet(this.configSheetOpen, this.ConfigSheet(), {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          dragBar: true,
-          showClose: true,
-          // sheet 容器（含顶部 dragBar/header 区）统一 c.bg：消除顶部异色条（对照 chatcube themeBackground）。
-          //   SheetOptions 无 backgroundBlurStyle 字段；纯色背板照 ImagePreviewSheet 只设 backgroundColor。
-          backgroundColor: this.c.bg,
-          onDisappear: (): void => { this.configSheetOpen = false; }
-        })
+        .bindSheet(this.configSheetOpen, this.ConfigSheet(), this.configSheetOpts)
       Column() {}
         .width(0)
         .height(0)
-        .bindSheet(this.outlineOpen, this.OutlineSheet(), {
-          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-          dragBar: true,
-          showClose: true,
-          onDisappear: (): void => { this.outlineOpen = false; }
-        })
+        .bindSheet(this.outlineOpen, this.OutlineSheet(), this.outlineSheetOpts)
       // 重命名 sheet（⋯ 下拉「重命名」开；独立 0×0 锚点，不与他 sheet 冲突）
       Column() {}
         .width(0)

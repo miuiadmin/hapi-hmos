@@ -400,16 +400,14 @@ struct NewSessionPage {
     if (value !== 'worktree') { this.worktreeName = ''; }   // 非 worktree 清名
   }
 
-  // picker sheet 视觉配置：照齐对话页模型弹窗（ChatPage.ConfigSheet）——
-  //   半屏起 [MEDIUM,LARGE] + 原生把手 dragBar + 原生关闭 showClose（选项少，半屏够，勿占满屏）。
+  // picker sheet 视觉配置：半屏起 [MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  //   （关闭走 SheetDialog 标题栏 ✕）。复用 buildSheetOptions，与设置页/目录浏览器同款 chrome。
   private get pickerSheetOpts(): SheetOptions {
-    const opts: SheetOptions = {
+    const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      dragBar: true,
-      showClose: true,
       onDisappear: () => { this.pickerOpen = false; }
     };
-    return opts;
+    return buildSheetOptions(this.c.surface, ov);
   }
   // 目录浏览器 sheet 视觉配置：MEDIUM/LARGE 双档。
   private get browserSheetOpts(): SheetOptions {
@@ -596,34 +594,37 @@ struct NewSessionPage {
     .onClick(() => { this.enterDir(entry); })
   }
 
-  // 通用 picker sheet（6 选择字段共用）——照齐对话页模型弹窗（SessionConfigOverlay）：
-  //   标题 Text + 胶囊选项行（左 radio 圆点 + 文字，r12/h48，选中 primary 半透明底），非 berry3 卡片形。
-  //   半屏 sheet（MEDIUM 起）+ 原生把手/关闭（pickerSheetOpts），选项少不占满屏。
+  // 通用 picker sheet（6 选择字段共用）：SheetDialog 固定标题栏（白头 + ✕，不随滚动消失，留出顶部高度）
+  //   + 灰身滚动区 + 胶囊选项行（左 radio 圆点 + 文字，r12/h48，选中 primary 半透明底）。半屏 [MEDIUM,LARGE]。
+  //   ⚠️ 第二轮反馈修复：先前误删 SheetDialog 致顶部只剩原生细把手 → 顶栏过窄；恢复固定标题栏。
   @Builder
   private PickerSheet() {
-    Scroll() {
-      Column() {
-        Text(this.pickerTitle())
-          .fontSize(fs(19))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .width('100%')
-          .padding({ left: 4, top: 4, bottom: 12 })
-        ForEach(this.pickerEntries(), (e: PickerEntry) => {
-          this.PickerOptionRow(e.label, e.value, this.pickerSelectedValue())
-        }, (e: PickerEntry) => e.value)
+    Column() {
+      SheetDialog({
+        title: this.pickerTitle(),
+        showCloseButton: true,
+        onClose: () => { this.pickerOpen = false; }
+      })
+      Scroll() {
+        Column({ space: 12 }) {
+          ForEach(this.pickerEntries(), (e: PickerEntry) => {
+            this.PickerOptionRow(e.label, e.value, this.pickerSelectedValue())
+          }, (e: PickerEntry) => e.value)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
       }
+      .layoutWeight(1)
       .width('100%')
-      .padding({ left: 16, right: 16, bottom: 24 })
+      .align(Alignment.TopStart)
+      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.TopStart)
-    .scrollBar(BarState.Off)
-    .backgroundColor(this.c.bg)
   }
   // 胶囊选项行（对照 SessionConfigOverlay.optionRow：左 circle/circle_fill + 文字。
-  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→surface 灰底 + 主文字 + 空心圆。行间 margin 8）。
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→白底(bg) 浮灰身 + 主文字 + 空心圆。
+  //   ⚠️ 行底用 c.bg 而非 c.surface：sheet 灰身已是 c.surface，白胶囊才看得见（对照 SessionConfigOverlay 灰胶囊浮白身的镜像）。
   @Builder
   private PickerOptionRow(label: string, value: string, current: string) {
     Row({ space: 10 }) {
@@ -643,8 +644,7 @@ struct NewSessionPage {
     .height(48)
     .padding({ left: 14, right: 14 })
     .borderRadius(12)
-    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
-    .margin({ bottom: 8 })
+    .backgroundColor(value === current ? this.selectedBg() : this.c.bg)
     .onClick(() => { this.onPickerPick(value); })
   }
 

@@ -9,6 +9,7 @@ import {
 } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { SheetDialog } from './settings/SheetDialog';
 
 // 会话内即时配置 overlay（对照 web FloatingOverlay + SessionChat 配置区）：
 //   分区按 flavor 门控：模型(全)/权限模式(全)/协作模式(仅codex)/努力度(仅claude)/推理努力(codex·opencode)。
@@ -31,6 +32,8 @@ export struct SessionConfigOverlay {
   @Event onSetReasoningEffort: (e: string) => void = (e: string): void => {};
   @Event onSetPermissionMode: (m: string) => void = (m: string): void => {};
   @Event onSetCollaborationMode: (m: string) => void = (m: string): void => {};
+  /** 标题栏 ✕ 关闭（ChatPage 收 configSheetOpen） */
+  @Event onClose: () => void = (): void => {};
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
   private get isDark(): boolean { return getThemeState().isDark; }
@@ -105,8 +108,8 @@ export struct SessionConfigOverlay {
       .padding({ left: 4, top: 16, bottom: 8 })
   }
 
-  // 选项胶囊（对照 chatcube ChatToolPickerSheetContent / ModelPickerSheet：每项一枚 surface 胶囊，
-  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→surface 灰底 + 次要字 + 空心圆。
+  // 选项胶囊（对照 chatcube ChatToolPickerSheetContent / ModelPickerSheet / NewSession PickerSheet：
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→白底(bg) 浮灰身 + 次要字 + 空心圆。
   //   行间 margin 8vp；sectionTitle 顶 16 底 8 → 组内紧(8)/组间松(24) 的近聚分组。
   @Builder
   private optionRow(label: string, value: string, current: string, field: string) {
@@ -127,67 +130,72 @@ export struct SessionConfigOverlay {
     .height(48)
     .padding({ left: 14, right: 14 })
     .borderRadius(12)
-    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
+    .backgroundColor(value === current ? this.selectedBg() : this.c.bg)
     .margin({ bottom: 8 })
     .onClick(() => { this.dispatch(field, value); })
   }
 
   build() {
-    Scroll() {
-      Column() {
-        Text(t('sessionConfig.title'))
-          .fontSize(fs(19))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .width('100%')
-          .padding({ left: 4, top: 4, bottom: 4 })
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 NewSession PickerSheet /
+    //   设置页半窗）。原 title Text 在 Scroll 内随滚动消失 → 顶部只剩原生细把手；现 SheetDialog 常驻。
+    //   ⚠️ 配套：sheet 灰身 c.surface，故未选胶囊翻白底 c.bg（白胶囊浮灰身，与 PickerSheet 一致）。
+    Column() {
+      SheetDialog({
+        title: t('sessionConfig.title'),
+        showCloseButton: true,
+        onClose: () => { this.onClose(); }
+      })
+      Scroll() {
+        Column() {
+          // —— 模型（全 flavor：默认 + modelOptionsForAgent 静态预设 + codex/cursor/opencode 动态拉取）——
+          this.sectionTitle(t('sessionConfig.model'))
+          this.optionRow(modelDisplayName(this.flavor, ''), '', this.modelKey(this.model), 'model')
+          ForEach(modelOptionsForAgent(this.flavor), (m: string) => {
+            this.optionRow(modelDisplayName(this.flavor, m), m, this.modelKey(this.model), 'model')
+          }, (m: string) => m)
+          ForEach(this.dynamicModels, (mo: ModelOption) => {
+            this.optionRow(mo.label, mo.id, this.modelKey(this.model), 'model')
+          }, (mo: ModelOption) => mo.id)
 
-        // —— 模型（全 flavor：默认 + modelOptionsForAgent 静态预设 + codex/cursor/opencode 动态拉取）——
-        this.sectionTitle(t('sessionConfig.model'))
-        this.optionRow(modelDisplayName(this.flavor, ''), '', this.modelKey(this.model), 'model')
-        ForEach(modelOptionsForAgent(this.flavor), (m: string) => {
-          this.optionRow(modelDisplayName(this.flavor, m), m, this.modelKey(this.model), 'model')
-        }, (m: string) => m)
-        ForEach(this.dynamicModels, (mo: ModelOption) => {
-          this.optionRow(mo.label, mo.id, this.modelKey(this.model), 'model')
-        }, (mo: ModelOption) => mo.id)
-
-        // —— 权限模式（全 flavor 子集）——
-        this.sectionTitle(t('sessionConfig.permissionMode'))
-        ForEach(permissionModesForFlavor(this.flavor), (mode: string) => {
-          this.optionRow(permissionModeDisplayName(mode), mode, this.permissionMode, 'permission')
-        }, (mode: string) => mode)
-
-        // —— 协作模式（仅 codex）——
-        if (this.showCollaboration()) {
-          this.sectionTitle(t('sessionConfig.collaborationMode'))
-          ForEach(CODEX_COLLABORATION_MODES, (mode: string) => {
-            this.optionRow(collaborationModeDisplayName(mode), mode, this.collaborationMode, 'collaboration')
+          // —— 权限模式（全 flavor 子集）——
+          this.sectionTitle(t('sessionConfig.permissionMode'))
+          ForEach(permissionModesForFlavor(this.flavor), (mode: string) => {
+            this.optionRow(permissionModeDisplayName(mode), mode, this.permissionMode, 'permission')
           }, (mode: string) => mode)
-        }
 
-        // —— 努力度（仅 claude）——
-        if (this.showEffort()) {
-          this.sectionTitle(t('sessionConfig.effort'))
-          ForEach(EFFORT_OPTIONS, (e: string) => {
-            this.optionRow(effortDisplayName(e), e, this.effort, 'effort')
-          }, (e: string) => e)
-        }
+          // —— 协作模式（仅 codex）——
+          if (this.showCollaboration()) {
+            this.sectionTitle(t('sessionConfig.collaborationMode'))
+            ForEach(CODEX_COLLABORATION_MODES, (mode: string) => {
+              this.optionRow(collaborationModeDisplayName(mode), mode, this.collaborationMode, 'collaboration')
+            }, (mode: string) => mode)
+          }
 
-        // —— 推理努力（codex / opencode）——
-        if (this.showReasoningEffort()) {
-          this.sectionTitle(t('sessionConfig.reasoningEffort'))
-          ForEach(reasoningEffortsForFlavor(this.flavor), (e: string) => {
-            this.optionRow(reasoningEffortDisplayName(e), e, this.modelReasoningEffort, 'reasoning')
-          }, (e: string) => e)
+          // —— 努力度（仅 claude）——
+          if (this.showEffort()) {
+            this.sectionTitle(t('sessionConfig.effort'))
+            ForEach(EFFORT_OPTIONS, (e: string) => {
+              this.optionRow(effortDisplayName(e), e, this.effort, 'effort')
+            }, (e: string) => e)
+          }
+
+          // —— 推理努力（codex / opencode）——
+          if (this.showReasoningEffort()) {
+            this.sectionTitle(t('sessionConfig.reasoningEffort'))
+            ForEach(reasoningEffortsForFlavor(this.flavor), (e: string) => {
+              this.optionRow(reasoningEffortDisplayName(e), e, this.modelReasoningEffort, 'reasoning')
+            }, (e: string) => e)
+          }
         }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 24 })
       }
+      .layoutWeight(1)
       .width('100%')
-      .padding({ left: 16, right: 16, bottom: 24 })
+      .scrollBar(BarState.Off)
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
     .height('100%')
-    .scrollBar(BarState.Off)
-    .backgroundColor(this.c.bg)
   }
 }
