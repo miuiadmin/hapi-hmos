@@ -21,6 +21,8 @@ import {
 import { getPreferencesService } from '../services/PreferencesService';
 import { ImagePreviewSheet } from './ImagePreviewSheet';
 import { scanFilePaths, decodeFilePathHref } from '../utils/FilePathScanner';
+import { SheetDialog } from './settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactory';
 
 // 极简 Markdown 渲染组件：封装 @cangjie-tpc/markdown_hybrid（Apache-2.0）的 CJMarkdown
 // 参考 chatcube ChatMarkdownHybridRenderer（MIT），裁掉其 AppUiState 主题系统 / 排版工具 / 媒体图标依赖：
@@ -300,10 +302,15 @@ export struct MarkdownText {
     this.previewImageSrc = '';
   }
 
-  // 全屏代码预览 sheet：可滚动等宽代码 + 长按可选中复制（dragBar/showClose/title 由 bindSheet 配置提供）
+  // 全屏代码预览 sheet：固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动等宽代码（长按可选中复制）。
   @Builder
   private CodePreviewSheet() {
     Column() {
+      SheetDialog({
+        title: this.previewTitle,
+        showCloseButton: true,
+        onClose: () => { this.closeCodePreview(); }
+      })
       Scroll() {
         Text(this.previewCode)
           .fontSize(fs(13))
@@ -317,10 +324,19 @@ export struct MarkdownText {
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
       .padding({ left: 16, right: 16, top: 8, bottom: 16 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.c.codeBg)
+  }
+
+  // 代码预览 sheet 视觉配置：LARGE + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  private get codePreviewSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.LARGE],
+      onDisappear: (): void => { this.closeCodePreview(); }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   private buildPlugin(): MarkdownPlugin {
@@ -384,14 +400,7 @@ export struct MarkdownText {
       }
       .width('100%')
       .backgroundColor(Color.Transparent)
-      .bindSheet(this.showCodePreview!!, this.CodePreviewSheet(), {
-        height: SheetSize.LARGE,
-        detents: [SheetSize.LARGE],
-        dragBar: true,
-        showClose: true,
-        title: { title: this.previewTitle },
-        onDisappear: (): void => { this.closeCodePreview(); }
-      })
+      .bindSheet(this.showCodePreview!!, this.CodePreviewSheet(), this.codePreviewSheetOpts)
 
       ImagePreviewSheet({
         src: this.previewImageSrc,

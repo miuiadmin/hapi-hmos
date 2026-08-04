@@ -9,6 +9,8 @@ import { buildCliOutput, extractCommandName } from '../chat/CliOutput';
 import { CodeBlock } from './CodeBlock';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { SheetDialog } from './settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactory';
 
 const PREVIEW_LINE_THRESHOLD: number = 14;
 const PREVIEW_CHAR_THRESHOLD: number = 1600;
@@ -76,35 +78,43 @@ export struct CliOutputCard {
     .borderRadius(20)
     .backgroundColor(this.c.surface)
     .border({ width: 0.5, color: this.c.border })
-    .bindSheet(this.isDetailOpen!!, this.DetailSheet(), {
-      height: SheetSize.LARGE,
-      dragBar: true
-    })
+    .bindSheet(this.isDetailOpen!!, this.DetailSheet(), this.detailSheetOpts)
   }
 
   // 详情态：全量不折叠、纵向滚动（对照上游 DialogContent 的全量 CodeBlock）
   @Builder
   DetailSheet() {
+    // 固定标题栏（SheetDialog 白头 + ✕，标题=命令名）+ 灰身（CodeBlock 自带纵向滚动）。
     Column() {
-      Text(this.title)
-        .fontSize(fs(15))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textPrimary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
-      CodeBlock({
-        code: this.content,
-        language: 'shellscript',
-        title: t('terminal.output'),
-        collapseLongContent: false,
-        scrollY: true
+      SheetDialog({
+        title: this.title,
+        showCloseButton: true,
+        onClose: () => { this.isDetailOpen = false; }
       })
-        .padding({ left: 12, right: 12, bottom: 16 })
+      Column() {
+        CodeBlock({
+          code: this.content,
+          language: 'shellscript',
+          title: t('terminal.output'),
+          collapseLongContent: false,
+          scrollY: true
+        })
+          .padding({ left: 12, right: 12, bottom: 16 })
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.c.bg)
+  }
+
+  // 详情 sheet 视觉配置：LARGE + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  private get detailSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.LARGE],
+      onDisappear: (): void => { this.isDetailOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 }

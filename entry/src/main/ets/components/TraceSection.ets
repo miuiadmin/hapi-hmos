@@ -26,6 +26,8 @@ import { ReasoningBubble } from './ReasoningBubble';
 import { CliOutputCard } from './CliOutputCard';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t, kv } from '../i18n/I18nService';
+import { SheetDialog } from './settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactory';
 
 @ComponentV2
 struct TraceSection {
@@ -256,20 +258,41 @@ struct TraceSection {
 
   @Builder
   ChildDetailSheet() {
-    Scroll() {
-      Column() {
-        Text(t('tool.input'))
-          .fontSize(fs(11)).fontColor(this.c.textTertiary).width('100%').margin({ bottom: 6 })
-        ToolInputView({ tool: this.detailTool, surface: 'dialog' })
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay）。
+    Column() {
+      SheetDialog({
+        title: getToolPresentation(this.detailTool).title,
+        showCloseButton: true,
+        onClose: () => { this.isDetailOpen = false; }
+      })
+      Scroll() {
+        Column() {
+          Text(t('tool.input'))
+            .fontSize(fs(11)).fontColor(this.c.textTertiary).width('100%').margin({ bottom: 6 })
+          ToolInputView({ tool: this.detailTool, surface: 'dialog' })
 
-        Text(t('tool.result'))
-          .fontSize(fs(11)).fontColor(this.c.textTertiary).width('100%').margin({ top: 16, bottom: 6 })
-        ToolResultView({ tool: this.detailTool, surface: 'dialog' })
+          Text(t('tool.result'))
+            .fontSize(fs(11)).fontColor(this.c.textTertiary).width('100%').margin({ top: 16, bottom: 6 })
+          ToolResultView({ tool: this.detailTool, surface: 'dialog' })
+        }
+        .width('100%').padding(16).alignItems(HorizontalAlign.Start)
       }
-      .width('100%').padding(16).alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Auto)
+      .backgroundColor(this.c.surface)
     }
-    .width('100%').height('100%').align(Alignment.Top)
-    .scrollBar(BarState.Auto)
+    .width('100%').height('100%')
+  }
+
+  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  private get detailSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: (): void => { this.isDetailOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   build() {
@@ -309,12 +332,7 @@ struct TraceSection {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .bindSheet(this.isDetailOpen!!, this.ChildDetailSheet(), {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      dragBar: true,
-      blurStyle: BlurStyle.Thick,
-      title: { title: getToolPresentation(this.detailTool).title },
-    })
+    .bindSheet(this.isDetailOpen!!, this.ChildDetailSheet(), this.detailSheetOpts)
   }
 }
 

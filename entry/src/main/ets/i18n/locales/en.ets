@@ -188,6 +188,7 @@ export const en: Record<string, string> = {
   'chat.shareFailed': 'Share failed',
   'chat.noMessagesToExport': 'No messages to export',
   'chat.exportTitle': 'Export conversation',
+  'chat.messageActions': 'Message actions',
   'chat.config': 'Configure',
   'chat.defaultTitle': 'Conversation',
   'session.item.worktree': 'Worktree',
@@ -267,6 +268,7 @@ export const en: Record<string, string> = {
   'terminal.paste': 'Paste',
   'terminal.selectAll': 'Select all',
   'terminal.find': 'Find',
+  'terminal.actions': 'Terminal actions',
   'terminal.findPlaceholder': 'Find…',
   'terminal.copySuccess': 'Copied',
   'terminal.copyFailed': 'Copy failed',
@@ -408,6 +410,7 @@ export const en: Record<string, string> = {
   'requestInput.answeredNote': 'Note:',
 
   // —— Session action menu ——
+  'sessionMenu.actions': 'Session actions',
   'sessionMenu.archive': 'Archive',
   'sessionMenu.delete': 'Delete',
   'sessionMenu.rename': 'Rename',

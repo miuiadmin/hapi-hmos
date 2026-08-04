@@ -16,6 +16,8 @@ import { getTerminalToolDisplayState } from '../services/TerminalToolDisplayServ
 import { getChatSurfaceColorsState } from '../services/ChatSurfaceColorsService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { SheetDialog } from './settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactory';
 
 // ToolCard —— 对齐 web/src/components/ToolCard/ToolCard.tsx + PermissionFooter.tsx
 // 工具调用卡：header（emoji+标题+副标题+elapsed+状态符+详情入口）+ 卡片体（特化/已答回显）+ footer（三选一）+ 详情半模态。
@@ -419,40 +421,62 @@ struct ToolCard {
   // 详情半模态：特化输入视图 + 结果视图（dialog surface，完整未截断）。对照上游 ToolDetailDialogContent。
   @Builder
   private DetailSheet() {
-    Scroll() {
-      Column() {
-        Text(t('tool.input'))
-          .fontSize(fs(11))
-          .fontColor(this.c.textTertiary)
-          .width('100%')
-          .margin({ bottom: 6 })
-        ToolInputView({ tool: this.toolNotNull, surface: 'dialog' })
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay /
+    //   NewSession PickerSheet）。原 native title 栏 + dragBar 换为常驻 SheetDialog；灰身 c.surface。
+    Column() {
+      SheetDialog({
+        title: this.presentation.title,
+        showCloseButton: true,
+        onClose: () => { this.isDetailOpen = false; }
+      })
+      Scroll() {
+        Column() {
+          Text(t('tool.input'))
+            .fontSize(fs(11))
+            .fontColor(this.c.textTertiary)
+            .width('100%')
+            .margin({ bottom: 6 })
+          ToolInputView({ tool: this.toolNotNull, surface: 'dialog' })
 
-        // 子代理 children 嵌套追踪（Flow A：Claude Task/Agent sidechain；Flow B：Codex CodexAgent agent-run）。
-        //   block.children 由 Reducer 递归 reduce 产；空则不挂。mode 由发起工具名定（CodexAgent→session）。
-        if (this.block.children.length > 0) {
-          TraceSection({ children: this.block.children, mode: this.childrenMode })
+          // 子代理 children 嵌套追踪（Flow A：Claude Task/Agent sidechain；Flow B：Codex CodexAgent agent-run）。
+          //   block.children 由 Reducer 递归 reduce 产；空则不挂。mode 由发起工具名定（CodexAgent→session）。
+          if (this.block.children.length > 0) {
+            TraceSection({ children: this.block.children, mode: this.childrenMode })
+          }
+
+          Text(t('tool.result'))
+            .fontSize(fs(11))
+            .fontColor(this.c.textTertiary)
+            .width('100%')
+            .margin({ top: 16, bottom: 6 })
+          ToolResultView({ tool: this.toolNotNull, surface: 'dialog' })
         }
-
-        Text(t('tool.result'))
-          .fontSize(fs(11))
-          .fontColor(this.c.textTertiary)
-          .width('100%')
-          .margin({ top: 16, bottom: 6 })
-        ToolResultView({ tool: this.toolNotNull, surface: 'dialog' })
+        .width('100%')
+        .padding(16)
+        .alignItems(HorizontalAlign.Start)
       }
+      .layoutWeight(1)
       .width('100%')
-      .padding(16)
-      .alignItems(HorizontalAlign.Start)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Auto)
+      .nestedScroll({
+        scrollForward: NestedScrollMode.PARENT_FIRST,
+        scrollBackward: NestedScrollMode.SELF_FIRST,
+      })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
-    .scrollBar(BarState.Auto)
-    .nestedScroll({
-      scrollForward: NestedScrollMode.PARENT_FIRST,
-      scrollBackward: NestedScrollMode.SELF_FIRST,
-    })
+  }
+
+  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  //   （关闭走 SheetDialog 标题栏 ✕ / 点遮罩 onDisappear）。对照 SessionConfigOverlay 同款 chrome。
+  private get detailSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: (): void => { this.isDetailOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   build() {
@@ -492,12 +516,7 @@ struct ToolCard {
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
     .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.surface)
     .borderRadius(16)
-    .bindSheet(this.isDetailOpen!!, this.DetailSheet(), {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      dragBar: true,
-      blurStyle: BlurStyle.Thick,
-      title: { title: this.presentation.title },
-    })
+    .bindSheet(this.isDetailOpen!!, this.DetailSheet(), this.detailSheetOpts)
   }
 }
 

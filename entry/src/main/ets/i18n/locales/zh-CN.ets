@@ -189,6 +189,7 @@ export const zhCN: Record<string, string> = {
   'chat.shareFailed': '分享失败',
   'chat.noMessagesToExport': '暂无可导出的消息',
   'chat.exportTitle': '导出对话',
+  'chat.messageActions': '消息操作',
   'chat.config': '配置',
   'chat.defaultTitle': '对话',
   'session.item.worktree': '工作树',
@@ -268,6 +269,7 @@ export const zhCN: Record<string, string> = {
   'terminal.paste': '粘贴',
   'terminal.selectAll': '全选',
   'terminal.find': '查找',
+  'terminal.actions': '终端操作',
   'terminal.findPlaceholder': '查找…',
   'terminal.copySuccess': '已复制',
   'terminal.copyFailed': '复制失败',
@@ -409,6 +411,7 @@ export const zhCN: Record<string, string> = {
   'requestInput.answeredNote': '备注：',
 
   // —— 会话动作菜单（重命名/归档/删除/切换远程）——
+  'sessionMenu.actions': '会话操作',
   'sessionMenu.archive': '归档',
   'sessionMenu.delete': '删除',
   'sessionMenu.rename': '重命名',

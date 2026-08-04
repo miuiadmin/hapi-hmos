@@ -4,6 +4,8 @@ import { HapticService } from '../services/HapticService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
 import { t, kv } from '../i18n/I18nService';
+import { SheetDialog } from './settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactory';
 
 // 会话动作菜单（重命名 / 归档 / 删除）——列表长按（Index）与对话页标题栏 ⋯（ChatPage）复用，去重。
 // 组件自持两 sheet（动作面板 + 重命名面板）+ 全部生命周期逻辑（确认弹窗 / API 调用 / 防重入）。
@@ -204,158 +206,160 @@ export struct SessionActionMenu {
   }
 
   // 动作面板（重命名 / 归档或删除，对照上游 SessionActionMenu）
+  //   固定标题栏（SheetDialog 白头 + ✕）+ 灰身：动作行翻白胶囊浮灰身（对照 SessionConfigOverlay）。
   @Builder
   private ActionMenuSheet() {
     Column() {
-      Text(this.title)
-        .fontSize(fs(13))
-        .fontColor(this.c.textTertiary)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .padding({ left: 20, right: 20, top: 16, bottom: 8 })
+      SheetDialog({
+        title: t('sessionMenu.actions'),
+        showCloseButton: true,
+        onClose: () => { this.onActionDisappear(); }
+      })
+      Column() {
+        // 导航行（仅对话页 showNavigation=true；终端行 inactive 置灰——非活跃会话无可用 CLI）
+        if (this.showNavigation) {
+          Row() {
+            Text(t('sessionMenu.files')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => { this.onClose(); this.onOpenFiles(); })
 
-      // 导航行（仅对话页 showNavigation=true；终端行 inactive 置灰——非活跃会话无可用 CLI）
-      if (this.showNavigation) {
-        Row() {
-          Text(t('sessionMenu.files')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+          Row() {
+            Text(t('sessionMenu.terminal')).fontSize(fs(15))
+              .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .opacity(this.active ? 1 : 0.5)
+          .onClick(() => { if (this.active) { this.onClose(); this.onOpenTerminal(); } })
+
+          Row() {
+            Text(t('sessionMenu.voice')).fontSize(fs(15))
+              .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .opacity(this.active ? 1 : 0.5)
+          .onClick(() => { if (this.active) { this.onClose(); this.onOpenVoice(); } })
         }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.onClose(); this.onOpenFiles(); })
 
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-
-        Row() {
-          Text(t('sessionMenu.terminal')).fontSize(fs(16))
-            .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+        // 顶栏瘦身下沉：导出整段对话（仅对话页 showExport）
+        if (this.showExport) {
+          Row() {
+            Text(t('chat.exportTitle')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => { this.onClose(); this.onExport(); })
         }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .opacity(this.active ? 1 : 0.5)
-        .onClick(() => { if (this.active) { this.onClose(); this.onOpenTerminal(); } })
 
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-
-        Row() {
-          Text(t('sessionMenu.voice')).fontSize(fs(16))
-            .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
+        // 对话大纲（仅对话页 showOutline）
+        if (this.showOutline) {
+          Row() {
+            Text(t('outline.title')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => { this.onClose(); this.onOutline(); })
         }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .opacity(this.active ? 1 : 0.5)
-        .onClick(() => { if (this.active) { this.onClose(); this.onOpenVoice(); } })
-      }
-
-      // 顶栏瘦身下沉：导出整段对话（仅对话页 showExport）
-      if (this.showExport) {
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-        Row() {
-          Text(t('chat.exportTitle')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.onClose(); this.onExport(); })
-      }
-
-      // 对话大纲（仅对话页 showOutline）
-      if (this.showOutline) {
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-        Row() {
-          Text(t('outline.title')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.onClose(); this.onOutline(); })
-      }
-
-      Row() {
-        Text(t('sessionMenu.rename')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => { this.startRename(); })
-
-      if (this.active) {
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
 
         Row() {
-          Text(t('sessionMenu.switchRemote')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+          Text(t('sessionMenu.rename')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
-        .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.startSwitchRemote(); })
-      }
+        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+        .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .onClick(() => { this.startRename(); })
 
-      Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
+        if (this.active) {
+          Row() {
+            Text(t('sessionMenu.switchRemote')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => { this.startSwitchRemote(); })
+        }
 
-      Row() {
-        Text(this.destructiveLabel()).fontSize(fs(16)).fontColor(this.c.error).layoutWeight(1)
+        Row() {
+          Text(this.destructiveLabel()).fontSize(fs(15)).fontColor(this.c.error).layoutWeight(1)
+        }
+        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+        .backgroundColor(this.c.bg).alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onDestructiveTap(); })
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => { this.onDestructiveTap(); })
+      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
-    .backgroundColor(this.c.bg)
-    .padding({ bottom: 20 })
   }
 
-  // 重命名面板：TextInput 预填 + 保存/取消；空或未改不请求，回车提交，失败保留面板（对照上游 RenameSessionDialog）
+  // 重命名面板：固定标题栏（SheetDialog 白头）+ 灰身（TextInput 预填 + 保存/取消）；
+  //   空或未改不请求，回车提交，失败保留面板（对照上游 RenameSessionDialog）。
   @Builder
   private RenameSheet() {
     Column() {
-      TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
-        .fontSize(fs(16))
-        .fontColor(this.c.textPrimary)
-        .placeholderColor(this.c.textTertiary)
-        .backgroundColor(this.c.surface)
-        .borderRadius(12)
-        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-        .maxLength(255)
-        .defaultFocus(true)
-        .onChange((v: string) => { this.renameText = v; })
-        .onSubmit(() => { this.confirmRename(); })
-
-      Row({ space: 10 }) {
-        Button(t('common.cancel'))
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor(this.c.surface)
+      SheetDialog({
+        title: t('sessionMenu.rename'),
+        showCloseButton: true,
+        onClose: () => { this.closeRename(); }
+      })
+      Column() {
+        TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
+          .fontSize(fs(16))
           .fontColor(this.c.textPrimary)
+          .placeholderColor(this.c.textTertiary)
+          .backgroundColor(this.c.bg)
           .borderRadius(12)
-          .onClick(() => { this.closeRename(); })
-        Button(this.isActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor(this.c.primary)
-          .fontColor(this.c.bubbleUserText)
-          .borderRadius(12)
-          .enabled(!this.isActing && this.renameText.trim().length > 0)
-          .onClick(() => { this.confirmRename(); })
+          .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+          .maxLength(255)
+          .defaultFocus(true)
+          .onChange((v: string) => { this.renameText = v; })
+          .onSubmit(() => { this.confirmRename(); })
+
+        Row({ space: 10 }) {
+          Button(t('common.cancel'))
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.c.bg)
+            .fontColor(this.c.textPrimary)
+            .borderRadius(12)
+            .onClick(() => { this.closeRename(); })
+          Button(this.isActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.c.primary)
+            .fontColor(this.c.bubbleUserText)
+            .borderRadius(12)
+            .enabled(!this.isActing && this.renameText.trim().length > 0)
+            .onClick(() => { this.confirmRename(); })
+        }
+        .width('100%')
+        .margin({ top: 16 })
       }
       .width('100%')
-      .margin({ top: 16 })
+      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 4, bottom: 20 })
-    .backgroundColor(this.c.bg)
+  }
+
+  // 重命名 sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（SheetDialog 自带标题栏+✕）。
+  private get renameSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.FIT_CONTENT],
+      onDisappear: (): void => { this.closeRename(); }
+    };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+
+  // 动作面板 sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  private get actionMenuSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.FIT_CONTENT],
+      onDisappear: (): void => { this.onActionDisappear(); }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   build() {
@@ -363,21 +367,10 @@ export struct SessionActionMenu {
     // 双节点规避同节点 bindSheet 叠加疑问（延续 Index 两节点模式）。bindSheet 为模态覆盖，锚点尺寸无关。
     Column() {
       Column() {}
-        .bindSheet(this.showRename, this.RenameSheet(), {
-          detents: [SheetSize.FIT_CONTENT],
-          dragBar: true,
-          showClose: true,
-          title: { title: t('sessionMenu.renameSheetTitle') },
-          onDisappear: (): void => { this.closeRename(); }
-        })
+        .bindSheet(this.showRename, this.RenameSheet(), this.renameSheetOpts)
     }
     .width(0)
     .height(0)
-    .bindSheet(this.open, this.ActionMenuSheet(), {
-      detents: [SheetSize.FIT_CONTENT],
-      dragBar: true,
-      showClose: false,
-      onDisappear: (): void => { this.onActionDisappear(); }
-    })
+    .bindSheet(this.open, this.ActionMenuSheet(), this.actionMenuSheetOpts)
   }
 }

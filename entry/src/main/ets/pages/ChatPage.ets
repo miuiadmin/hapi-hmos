@@ -40,6 +40,7 @@ import { MentionMenu } from '../components/MentionMenu';
 import { SkillsMenu } from '../components/SkillsMenu';
 import { getSessionSeenService } from '../services/SessionAttention';
 import { SessionConfigOverlay } from '../components/SessionConfigOverlay';
+import { SheetDialog } from '../components/settings/SheetDialog';
 import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
 import { OutlinePanel } from '../components/OutlinePanel';
 import { FilesRouteParams } from './FilesPage';
@@ -2656,101 +2657,111 @@ struct ChatPage {
     }
     .width('100%')
     .height(48)
-    .padding({ left: 20, right: 20 })
+    .padding({ left: 14, right: 14 })
+    .borderRadius(12)
+    .backgroundColor(this.c.bg)
+    .margin({ bottom: 8 })
     .onClick(() => { this.chooseSchedule(offsetMs); })
   }
 
   @Builder
   private ScheduleSheet() {
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身：预设/自定义/清除翻白胶囊浮灰身（对照 SessionConfigOverlay）。
     Column() {
-      Text(t('chat.scheduleSend'))
-        .fontSize(fs(16))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textPrimary)
-        .width('100%')
-        .padding({ left: 20, right: 20, top: 16, bottom: 4 })
-
-      if (this.scheduleCustomMode) {
-        // 自定义绝对时间分支：DatePicker 选日期（限定 [now, now+7d]，对齐上游 refine 上限）+ TimePicker 选时分
-        DatePicker({
-          start: new Date(),
-          end: new Date(Date.now() + 7 * 24 * 3600 * 1000),
-          selected: this.pickDate
-        })
-          .selectedTextStyle({ color: this.c.textPrimary, font: { size: 18, weight: FontWeight.Medium } })
-          .textStyle({ color: this.c.textTertiary, font: { size: 16, weight: FontWeight.Regular } })
-          .onDateChange((value: Date) => { this.pickDate = value; })
-
-        TimePicker({ selected: this.pickDate })
-          .selectedTextStyle({ color: this.c.textPrimary, font: { size: 18, weight: FontWeight.Medium } })
-          .textStyle({ color: this.c.textTertiary, font: { size: 16, weight: FontWeight.Regular } })
-          .onChange((value: TimePickerResult) => {
-            this.pickHour = value.hour;
-            this.pickMinute = value.minute;
+      SheetDialog({
+        title: t('chat.scheduleSend'),
+        showCloseButton: true,
+        onClose: () => { this.scheduleSheetOpen = false; this.scheduleCustomMode = false; }
+      })
+      Column() {
+        if (this.scheduleCustomMode) {
+          // 自定义绝对时间分支：DatePicker 选日期（限定 [now, now+7d]，对齐上游 refine 上限）+ TimePicker 选时分
+          DatePicker({
+            start: new Date(),
+            end: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+            selected: this.pickDate
           })
+            .selectedTextStyle({ color: this.c.textPrimary, font: { size: 18, weight: FontWeight.Medium } })
+            .textStyle({ color: this.c.textTertiary, font: { size: 16, weight: FontWeight.Regular } })
+            .onDateChange((value: Date) => { this.pickDate = value; })
 
-        // 当前合成时间预览（用 pendingSchedule 同款格式）
-        Text(this.customSchedulePreview())
-          .fontSize(fs(12))
-          .fontColor(this.c.textTertiary)
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 4, bottom: 8 })
+          TimePicker({ selected: this.pickDate })
+            .selectedTextStyle({ color: this.c.textPrimary, font: { size: 18, weight: FontWeight.Medium } })
+            .textStyle({ color: this.c.textTertiary, font: { size: 16, weight: FontWeight.Regular } })
+            .onChange((value: TimePickerResult) => {
+              this.pickHour = value.hour;
+              this.pickMinute = value.minute;
+            })
 
-        Row({ space: 12 }) {
-          Button(t('common.back'))
-            .layoutWeight(1)
-            .height(42)
-            .backgroundColor(this.c.surface)
-            .fontColor(this.c.textPrimary)
-            .onClick(() => { this.scheduleCustomMode = false; })
-          Button(t('common.confirm'))
-            .layoutWeight(1)
-            .height(42)
-            .backgroundColor(this.c.primary)
-            .fontColor(this.c.bubbleUserText)
-            .onClick(() => { this.confirmCustomSchedule(); })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 20, bottom: 16 })
-      } else {
-        // 预设分支（对照 web ScheduleTimePicker：+5m/+30m/+1h/+4h）
-        this.scheduleOption(t('chat.scheduleIn5m'), 5 * 60 * 1000)
-        this.scheduleOption(t('chat.scheduleIn30m'), 30 * 60 * 1000)
-        this.scheduleOption(t('chat.scheduleIn1h'), 60 * 60 * 1000)
-        this.scheduleOption(t('chat.scheduleIn4h'), 4 * 60 * 60 * 1000)
-
-        // 进自定义绝对时间分支（DatePicker+TimePicker）
-        Row() {
-          Text(t('chat.scheduleCustom'))
-            .fontSize(fs(15))
-            .fontColor(this.c.primary)
-            .layoutWeight(1)
-          Text('›')
-            .fontSize(fs(18))
+          // 当前合成时间预览（用 pendingSchedule 同款格式）
+          Text(this.customSchedulePreview())
+            .fontSize(fs(12))
             .fontColor(this.c.textTertiary)
-        }
-        .width('100%')
-        .height(48)
-        .padding({ left: 20, right: 20 })
-        .onClick(() => { this.openCustomSchedule(); })
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .padding({ top: 4, bottom: 8 })
 
-        if (this.pendingSchedule > 0) {
-          Row() {
-            Text(t('chat.scheduleClear'))
-              .fontSize(fs(15))
-              .fontColor(this.c.error)
+          Row({ space: 12 }) {
+            Button(t('common.back'))
               .layoutWeight(1)
+              .height(42)
+              .backgroundColor(this.c.bg)
+              .fontColor(this.c.textPrimary)
+              .onClick(() => { this.scheduleCustomMode = false; })
+            Button(t('common.confirm'))
+              .layoutWeight(1)
+              .height(42)
+              .backgroundColor(this.c.primary)
+              .fontColor(this.c.bubbleUserText)
+              .onClick(() => { this.confirmCustomSchedule(); })
+          }
+          .width('100%')
+        } else {
+          // 预设分支（对照 web ScheduleTimePicker：+5m/+30m/+1h/+4h）
+          this.scheduleOption(t('chat.scheduleIn5m'), 5 * 60 * 1000)
+          this.scheduleOption(t('chat.scheduleIn30m'), 30 * 60 * 1000)
+          this.scheduleOption(t('chat.scheduleIn1h'), 60 * 60 * 1000)
+          this.scheduleOption(t('chat.scheduleIn4h'), 4 * 60 * 60 * 1000)
+
+          // 进自定义绝对时间分支（白胶囊）
+          Row() {
+            Text(t('chat.scheduleCustom'))
+              .fontSize(fs(15))
+              .fontColor(this.c.primary)
+              .layoutWeight(1)
+            Text('›')
+              .fontSize(fs(18))
+              .fontColor(this.c.textTertiary)
           }
           .width('100%')
           .height(48)
-          .padding({ left: 20, right: 20 })
-          .onClick(() => { this.clearSchedule(); })
+          .padding({ left: 14, right: 14 })
+          .borderRadius(12)
+          .backgroundColor(this.c.bg)
+          .margin({ bottom: 8 })
+          .onClick(() => { this.openCustomSchedule(); })
+
+          if (this.pendingSchedule > 0) {
+            Row() {
+              Text(t('chat.scheduleClear'))
+                .fontSize(fs(15))
+                .fontColor(this.c.error)
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(48)
+            .padding({ left: 14, right: 14 })
+            .borderRadius(12)
+            .backgroundColor(this.c.bg)
+            .onClick(() => { this.clearSchedule(); })
+          }
         }
       }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
-    .backgroundColor(this.c.bg)
   }
 
   // 自定义定时预览文案：合成 Y/M/D + H:m + 相对描述（clamp 前的原值；confirmCustomSchedule 再 clamp）。
@@ -2811,45 +2822,78 @@ struct ChatPage {
     return buildSheetOptions(this.c.surface, ov);
   }
 
+  // rename/schedule/messageMenu sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  //   （关闭走 SheetDialog 标题栏 ✕ / 点遮罩 onDisappear）。对照 configSheetOpts 同款 chrome。
+  private get renameSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.FIT_CONTENT],
+      onDisappear: (): void => { this.closeRename(); }
+    };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+  private get scheduleSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.FIT_CONTENT],
+      onDisappear: (): void => { this.scheduleSheetOpen = false; this.scheduleCustomMode = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+  private get messageMenuSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.FIT_CONTENT],
+      onDisappear: (): void => { this.closeMessageMenu(); }
+    };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+
   // 重命名 sheet（⋯ 下拉「重命名」开；TextInput 预填当前标题 + 取消/保存，镜像 SessionActionMenu RenameSheet）
   @Builder
   private RenameSheet() {
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身：TextInput/按钮翻白卡浮灰身（对照 SessionConfigOverlay）。
     Column() {
-      TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
-        .fontSize(fs(16))
-        .fontColor(this.c.textPrimary)
-        .placeholderColor(this.c.textTertiary)
-        .backgroundColor(this.c.surface)
-        .borderRadius(12)
-        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-        .maxLength(255)
-        .defaultFocus(true)
-        .onChange((v: string) => { this.renameText = v; })
-        .onSubmit(() => { this.confirmRename(); })
-
-      Row({ space: 10 }) {
-        Button(t('common.cancel'))
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor(this.c.surface)
+      SheetDialog({
+        title: t('sessionMenu.rename'),
+        showCloseButton: true,
+        onClose: () => { this.closeRename(); }
+      })
+      Column() {
+        TextInput({ text: this.renameText, placeholder: t('sessionMenu.sessionNamePlaceholder'), controller: this.renameInputController })
+          .fontSize(fs(16))
           .fontColor(this.c.textPrimary)
+          .placeholderColor(this.c.textTertiary)
+          .backgroundColor(this.c.bg)
           .borderRadius(12)
-          .onClick(() => { this.closeRename(); })
-        Button(this.renameActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
-          .layoutWeight(1)
-          .height(44)
-          .backgroundColor(this.c.primary)
-          .fontColor(this.c.bubbleUserText)
-          .borderRadius(12)
-          .enabled(!this.renameActing && this.renameText.trim().length > 0)
-          .onClick(() => { this.confirmRename(); })
+          .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+          .maxLength(255)
+          .defaultFocus(true)
+          .onChange((v: string) => { this.renameText = v; })
+          .onSubmit(() => { this.confirmRename(); })
+
+        Row({ space: 10 }) {
+          Button(t('common.cancel'))
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.c.bg)
+            .fontColor(this.c.textPrimary)
+            .borderRadius(12)
+            .onClick(() => { this.closeRename(); })
+          Button(this.renameActing ? t('sessionMenu.saving') : t('sessionMenu.save'))
+            .layoutWeight(1)
+            .height(44)
+            .backgroundColor(this.c.primary)
+            .fontColor(this.c.bubbleUserText)
+            .borderRadius(12)
+            .enabled(!this.renameActing && this.renameText.trim().length > 0)
+            .onClick(() => { this.confirmRename(); })
+        }
+        .width('100%')
+        .margin({ top: 16 })
       }
       .width('100%')
-      .margin({ top: 16 })
+      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 4, bottom: 20 })
-    .backgroundColor(this.c.bg)
   }
 
   // 大纲跳转：在 filteredBlocks 内查 blockId 的 index → scrollToIndex(START) → 关抽屉。
@@ -2951,9 +2995,12 @@ struct ChatPage {
     }
     .width('100%')
     .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    .backgroundColor(this.glassBg())
-    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK, { scale: 0.5 })
-    .border({ width: { bottom: 0.5 }, color: this.glassBorderInactive() })
+    // 顶栏底色 = 内容区同色（c.bg）+ 薄 blur（COMPONENT_THIN，对齐 chatcube ChatNavigationBar）+ 无底边线。
+    //   流式占位顶栏（非悬浮）下，COMPONENT_ULTRA_THICK 厚毛玻璃会叠系统白色层，把顶栏刷成与 c.bg 不同的
+    //   亮色 → 顶栏底边出现一条色差「小条」（滑动时视线扫过尤其明显）。同色 + 薄 blur（纯色背景 blur
+    //   视觉≈原色）+ 无 border → 顶栏与内容无缝衔接，与 chatcube 内置标题栏一致。
+    .backgroundColor(this.c.bg)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
   }
 
   // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
@@ -3021,49 +3068,61 @@ struct ChatPage {
   }
 
   // 消息长按动作面板：复制 / 重发（仅失败用户消息）/ 分享
-  // （对照 chatcube MessageBubble UserMoreMenu + 上游 copy/retry 语义；FIT_CONTENT 高度自适应）
+  // （对照 chatcube MessageBubble UserMoreMenu + 上游 copy/retry 语义；固定标题栏 + 灰身白胶囊）
   @Builder
   private MessageMenuSheet() {
     Column() {
-      Row() {
-        Text(t('common.copy')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => { this.copyMessageText(); })
-
-      Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-
-      // 重发：仅失败的用户消息（对齐上游 Retry；成功/agent/工具卡不显示）
-      if (this.messageMenuBlock !== null
-        && this.messageMenuBlock.kind === 'user-text'
-        && this.messageMenuBlock.userStatus === 'failed') {
+      SheetDialog({
+        title: t('chat.messageActions'),
+        showCloseButton: true,
+        onClose: () => { this.closeMessageMenu(); }
+      })
+      Column() {
         Row() {
-          Text(t('chat.resend')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+          Text(t('common.copy')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%')
-        .height(52)
-        .padding({ left: 20, right: 20 })
+        .height(48)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(12)
+        .backgroundColor(this.c.bg)
+        .margin({ bottom: 8 })
         .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.retryMessageMenu(); })
+        .onClick(() => { this.copyMessageText(); })
 
-        Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 20, right: 20 })
-      }
+        // 重发：仅失败的用户消息（对齐上游 Retry；成功/agent/工具卡不显示）
+        if (this.messageMenuBlock !== null
+          && this.messageMenuBlock.kind === 'user-text'
+          && this.messageMenuBlock.userStatus === 'failed') {
+          Row() {
+            Text(t('chat.resend')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%')
+          .height(48)
+          .padding({ left: 14, right: 14 })
+          .borderRadius(12)
+          .backgroundColor(this.c.bg)
+          .margin({ bottom: 8 })
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => { this.retryMessageMenu(); })
+        }
 
-      Row() {
-        Text(t('chat.share')).fontSize(fs(16)).fontColor(this.c.textPrimary).layoutWeight(1)
+        Row() {
+          Text(t('chat.share')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+        }
+        .width('100%')
+        .height(48)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(12)
+        .backgroundColor(this.c.bg)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.shareMessageMenu(); })
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => { this.shareMessageMenu(); })
+      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
+      .backgroundColor(this.c.surface)
     }
     .width('100%')
-    .backgroundColor(this.c.bg)
-    .padding({ bottom: 20 })
   }
 
   build() {
@@ -3254,12 +3313,7 @@ struct ChatPage {
         Column() {
           this.InputBar()
         }
-        .bindSheet(this.scheduleSheetOpen, this.ScheduleSheet(), {
-          detents: [SheetSize.FIT_CONTENT],
-          dragBar: true,
-          showClose: true,
-          onDisappear: (): void => { this.scheduleSheetOpen = false; this.scheduleCustomMode = false; }
-        })
+        .bindSheet(this.scheduleSheetOpen, this.ScheduleSheet(), this.scheduleSheetOpts)
 
         // 用户气泡图片全屏预览（自带 bindSheet + 双指缩放，复用 markdown/生成图片同款；open=false 不渲染）
         ImagePreviewSheet({
@@ -3272,12 +3326,7 @@ struct ChatPage {
       Column() {}
         .width(0)
         .height(0)
-        .bindSheet(this.messageMenuOpen, this.MessageMenuSheet(), {
-          detents: [SheetSize.FIT_CONTENT],
-          dragBar: true,
-          showClose: false,
-          onDisappear: (): void => { this.closeMessageMenu(); }
-        })
+        .bindSheet(this.messageMenuOpen, this.MessageMenuSheet(), this.messageMenuSheetOpts)
       Column() {}
         .width(0)
         .height(0)
@@ -3290,13 +3339,7 @@ struct ChatPage {
       Column() {}
         .width(0)
         .height(0)
-        .bindSheet(this.showRename, this.RenameSheet(), {
-          detents: [SheetSize.FIT_CONTENT],
-          dragBar: true,
-          showClose: true,
-          title: { title: t('sessionMenu.renameSheetTitle') },
-          onDisappear: (): void => { this.closeRename(); }
-        })
+        .bindSheet(this.showRename, this.RenameSheet(), this.renameSheetOpts)
       }
       .width('100%')
       .height('100%')
