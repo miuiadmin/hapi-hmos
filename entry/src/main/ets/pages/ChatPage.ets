@@ -3029,11 +3029,12 @@ struct ChatPage {
     }
     .width('100%')
     .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 悬浮液态顶栏：半透明 glassBg 底 + backgroundBlurStyle 透过背后滑过的消息 → 真液态玻璃
-    //   （顶栏悬浮于内容列表之上，见 build 主结构 Stack；消息延伸到顶栏背后被模糊）。
-    //   THICK 厚模糊：悬浮态背后有消息内容，blur 真模糊消息（非流式占位那样背后纯色→叠白层）。
+    // 液态顶栏（实测选定方案）：backdropBlur + 半透明 glassBg，无 border。
+    //   真机：backdropBlur 高斯模糊滑过的消息 → 毛玻璃。模拟器：blur 着色器不渲染（实测 no-op），只剩 glassBg 半透明
+    //   染色透出背后内容（透明感 OK，已实测：滚动后顶栏 std 5→70）。⚠️ 不用 backgroundBlurStyle——它在模拟器只剩
+    //   activeColor 不透明灰叠层（盖住内容、滚动不变=死盖），即「盖一层灰」根因。无 border：底边线会复现「顶栏/内容接缝」。
     .backgroundColor(this.glassBg())
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+    .backdropBlur(30)
   }
 
   // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
