@@ -237,7 +237,11 @@ function reduceTimelineCore(
         blocks.push(ChatBlock.cliOutput(msg.id, msg.createdAt, msg.text, 'user'));
       } else if (msg.text !== '' || msg.attachments.length > 0) {
         // 纯图消息（text 空、有附件）也产出 user-text 块以渲染附件（对照 web：text 可空，附件照常渲染）
-        const ub: ChatBlock = ChatBlock.userText(msg.id, msg.createdAt, msg.text);
+        // id 用 localId 优先：optimistic(localId=local-xxx) 与 SSE 回推的真实消息（回填同 localId）共用同一
+        //   block id → 替换时 id 不变 → setItems 走 notifyChange 原地刷新、不触发全量 reload（否则 local-xxx→
+        //   real-msg-id 的 id 漂移致整列重建空白 ~0.5s，即"发送后输入框撑大/消息填充屏"真根因）。历史 localId='' 走 msg.id。
+        const ubId: string = msg.localId !== '' ? msg.localId : msg.id;
+        const ub: ChatBlock = ChatBlock.userText(ubId, msg.createdAt, msg.text);
         ub.userOptimistic = msg.isOptimistic;
         ub.userStatus = msg.status;
         ub.attachments = msg.attachments;

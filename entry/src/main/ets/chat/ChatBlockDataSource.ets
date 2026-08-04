@@ -48,7 +48,9 @@ export class ChatBlockDataSource implements IDataSource {
   // 整体替换展示集并按 index 增量通知。sigFn(b) 由调用方提供（反映 ChatPage 实例态的变更指纹）。
   setItems(next: ChatBlock[], sigFn: (b: ChatBlock) => string): void {
     const prev: ChatBlock[] = this.items;
-    // 末尾追加（发消息 optimistic / 流式新 block）：prev 是 next 的前缀 → 增量 onDataAdd，
+    const newSigs: string[] = this.computeSigs(next, sigFn);
+
+    // 1) 末尾追加（发消息 optimistic / 流式新 block）：prev 是 next 的前缀 → 增量 onDataAdd，
     //   不全量 reload。reload 会重建全部可见 ListItem（重新 build+measure）→ 整列闪烁/"消息填充屏"；
     //   onDataAdd 仅渲染新增项，余者复用 → 发消息平滑无闪烁（对照 web 末条 append）。
     if (next.length > prev.length) {
@@ -57,7 +59,6 @@ export class ChatBlockDataSource implements IDataSource {
         if (next[i].id !== prev[i].id) { isAppend = false; break; }
       }
       if (isAppend) {
-        const newSigs: string[] = this.computeSigs(next, sigFn);
         const changed: number[] = [];
         for (let i = 0; i < prev.length; i++) {
           if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
@@ -69,32 +70,27 @@ export class ChatBlockDataSource implements IDataSource {
         return;
       }
     }
-    // 其余结构变化（头部插入更旧历史 / 删除 / id 漂移 / 搜索过滤）：全量 reload
-    const structural: boolean = prev.length !== next.length || this.idsMismatch(prev, next);
-    if (structural) {
+
+    // 2) 长度不同且非末尾追加（头部插入更旧历史 / 删除 / 序列错位 / 搜索过滤）：真结构变化 → 全量 reload。
+    if (next.length !== prev.length) {
       this.items = next;
-      this.sigs = this.computeSigs(next, sigFn);
+      this.sigs = newSigs;
       this.notifyReload();
       return;
     }
-    // 同结构：逐 index 比签名，仅变者通知（流式恒命中末块，单项原地刷新）
-    const newSigs: string[] = this.computeSigs(next, sigFn);
+
+    // 3) 长度相同（含 optimistic→真实消息替换的【同位置 id 漂移】：user-text 块 id 从 local-xxx 变后端
+    //   real-msg-id）：逐 index notifyChange，【不全量 reload】。LazyForEach 按 key(b.id) 复用——id 不变
+    //   的项原地刷新（签名变才刷），id 变的项【单项】重建（LazyForEach 检测 key 变销毁旧 ListItem + 建新，
+    //   仅该 index，非全量）。旧实现把「同长 + 任一 id 变」当 structural→notifyReload，致发消息后 SSE 回推
+    //   真实消息替换 optimistic 时整列重建空白 ~0.5s（"输入框撑大屏幕/消息填充屏"真根因，2026-08-05 修）。
     const changed: number[] = [];
     for (let i = 0; i < next.length; i++) {
-      if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
+      if (next[i].id !== prev[i].id || newSigs[i] !== this.sigs[i]) { changed.push(i); }
     }
     this.items = next;
     this.sigs = newSigs;
     for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
-  }
-
-  private idsMismatch(a: ChatBlock[], b: ChatBlock[]): boolean {
-    for (let i = 0; i < a.length; i++) {
-      if (a[i].id !== b[i].id) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private computeSigs(arr: ChatBlock[], sigFn: (b: ChatBlock) => string): string[] {

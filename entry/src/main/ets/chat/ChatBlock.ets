@@ -73,7 +73,7 @@ export class ToolGroupSummary {
 @ObservedV2
 export class ChatBlock {
   kind: ChatBlockKind = 'agent-text';
-  id: string = '';                          // 稳定 key：user-text→msg.id；agent-text→`${msgId}:${idx}`；tool-call→tool_use_id
+  id: string = '';                          // 稳定 key：user-text→localId||msg.id；agent-text→`${msgId}:${idx}`；tool-call→tool_use_id
   createdAt: number = 0;
   @Trace text: string = '';                        // user-text / agent-text 正文
   @Trace tool: ChatToolCall | null = null;          // 仅 tool-call
