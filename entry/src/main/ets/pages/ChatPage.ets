@@ -2995,12 +2995,11 @@ struct ChatPage {
     }
     .width('100%')
     .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 顶栏底色 = 内容区同色（c.bg）+ 薄 blur（COMPONENT_THIN，对齐 chatcube ChatNavigationBar）+ 无底边线。
-    //   流式占位顶栏（非悬浮）下，COMPONENT_ULTRA_THICK 厚毛玻璃会叠系统白色层，把顶栏刷成与 c.bg 不同的
-    //   亮色 → 顶栏底边出现一条色差「小条」（滑动时视线扫过尤其明显）。同色 + 薄 blur（纯色背景 blur
-    //   视觉≈原色）+ 无 border → 顶栏与内容无缝衔接，与 chatcube 内置标题栏一致。
-    .backgroundColor(this.c.bg)
-    .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+    // 悬浮液态顶栏：半透明 glassBg 底 + backgroundBlurStyle 透过背后滑过的消息 → 真液态玻璃
+    //   （顶栏悬浮于内容列表之上，见 build 主结构 Stack；消息延伸到顶栏背后被模糊）。
+    //   THICK 厚模糊：悬浮态背后有消息内容，blur 真模糊消息（非流式占位那样背后纯色→叠白层）。
+    .backgroundColor(this.glassBg())
+    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
   }
 
   // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
@@ -3128,12 +3127,12 @@ struct ChatPage {
   build() {
     NavDestination() {
       Column() {
-        // 液态顶栏（hideTitleBar 后自建，顶栏首位）
-        this.ChatTopBar()
-        // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
-        ConnectionBanner()
-        // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
-        SyncingBanner()
+        // 液态顶栏悬浮：内容列表延伸到顶栏背后，backgroundBlurStyle 透过滑过的消息 → 真液态玻璃。
+        //   流式占位顶栏背后是纯色背景，blur 无内容可模糊 → 厚 blur 叠白层=色差小条，纯色=死板不液态。
+        //   悬浮后顶栏半透明压在消息上，消息滑过背后被模糊（对照 iOS / chatcube 毛玻璃）。
+        Stack({ alignContent: Alignment.TopStart }) {
+          // 内容层：if/else 各态（加载/错误/骨架/空/消息列表）。banners 随顶栏上浮（见悬浮层）。
+          Column() {
         if (this.isLoading && this.messages.length === 0) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
@@ -3250,6 +3249,8 @@ struct ChatPage {
             .height('100%')
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring)
+            // top 8：List 视口从 Stack 顶（0）起，首条消息顶部落在悬浮顶栏背后（被 blur 模糊）→ 首屏即液态；
+            //   滚动时所有消息滑过顶栏背后持续被模糊。代价：首条顶部被半透明顶栏遮（看最新消息在底部，无碍）。
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
             .onReachStart(() => {
               // 过滤中不分页：命中少/空时列表易贴顶，否则会级联拉完全部历史页（搜不到时尤甚）。
@@ -3295,6 +3296,20 @@ struct ChatPage {
           .width('100%')
           .layoutWeight(1)
         }
+          }                                   // 内容层 Column 闭合（包 if/else 各态）
+          .width('100%')
+          .height('100%')
+
+          // 悬浮层（Stack 第二子节点，贴顶浮于内容之上）：液态顶栏 + 状态横幅
+          Column() {
+            this.ChatTopBar()
+            // 连接状态横幅（SSE 重连/断开时显形；常态 Visibility.None 不占位）
+            ConnectionBanner()
+            // 前台重同步横幅（切后台 >30s 回前台 beginSync；resyncSeq++ 触发 loadMessages，完成后 endSync）
+            SyncingBanner()
+          }
+        }
+        .layoutWeight(1)                      // Stack 占据输入栏以上全部空间
 
         // Token / 上下文用量条（对照 web AssistantChat/StatusBar：仅在有可见 usage 时显形）
         if (this.latestUsage !== null) {
