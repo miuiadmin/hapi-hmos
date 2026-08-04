@@ -32,6 +32,7 @@ import { t, kv } from '../i18n/I18nService';
 import { SelfUpdateSheet } from '../components/SelfUpdateSheet';
 import { OtaController, getUpdateState, UpdateState } from '../services/UpdateState';
 import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
+import { getLayoutState } from '../state/LayoutState';
 
 // 会话列表页（已登录首屏）
 // UI 写法/样式对照 chatcube Index（Navigation + 列表 + 列表项 + 空态/加载态/错误态）
@@ -842,6 +843,10 @@ struct Index {
         }
         .width('100%')
         .height('100%')
+        // 全屏沉浸（EntryAbility setWindowLayoutFullScreen）后，普通 @Entry 页面不会自动避让状态栏/手势导航条
+        //   （仅 NavDestination 会）→ 内容列须显式补 top/bottom 安全区高度，否则标题飞到状态栏下、列表压到底栏。
+        //   读 getLayoutState() 的 @Trace 高度（旋转/折叠自动刷新）。照搬 berry3 页面级 safeArea 补偿范式。
+        .padding({ top: getLayoutState().topAvoidHeight, bottom: getLayoutState().bottomAvoidHeight })
       }
       .hideTitleBar(true)
       .mode(NavigationMode.Stack)
