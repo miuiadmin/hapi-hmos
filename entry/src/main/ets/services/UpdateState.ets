@@ -33,6 +33,10 @@ import { showToast } from '../utils/Toast';
 @ObservedV2
 export class UpdateState {
   @Trace sheetOpen: boolean = false;
+  // 弹窗归属页（双挂载互斥）：'index'=主页自动检查触发 / 'about'=关于页手动触发 / ''=未开。
+  //   sheetOpen=true 时仅 owner 对应页的 bindSheet 渲染，避免 Index（常驻 @Entry）与 AboutPage（pushed NavDestination）
+  //   同时存活读同一 sheetOpen 而弹两张 sheet。
+  @Trace sheetOwner: string = '';
   @Trace checking: boolean = false;
   @Trace hasUpdate: boolean = false;   // 静默检查发现新版（关于页「检查更新」行显示红点徽标；不自动弹窗，用户 tap 主动查看）
   @Trace phase: SelfUpdatePhase = 'prompting';
@@ -107,6 +111,9 @@ export class OtaController {
           state.percent = 0;
           state.received = 0;
           state.total = info !== null ? info.size : -1;
+          // 归属页：自动检查(silent，EntryAbility 启动/回前台)→'index' 主页弹；手动(!silent，AboutPage 行)→'about'。
+          //   双挂载按 sheetOwner 互斥，避免 Index+AboutPage 同时弹两张。
+          state.sheetOwner = silent ? 'index' : 'about';
           state.sheetOpen = true;
         }
         break;

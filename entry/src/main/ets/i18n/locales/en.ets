@@ -672,6 +672,10 @@ export const en: Record<string, string> = {
   'ota.close': 'Close',
   'ota.installFailed': 'Could not launch the installer. Please try again later.',
   'ota.installing': 'Download complete, launching installer…',
+  'ota.downloadHint': 'Keep the app open. Progress shows in notifications.',
+  'ota.verifyFailed': 'Update package verification failed',
+  'ota.failedHint': 'Check your network and retry, or download manually.',
+  'ota.noChangelog': 'No release notes',
 
   // —— OTA notification strings (SelfUpdateManager; pure-logic Translate.t) ——
   'ota.notif.title': 'Hapi update',

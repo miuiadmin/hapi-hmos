@@ -673,6 +673,10 @@ export const zhCN: Record<string, string> = {
   'ota.close': '关闭',
   'ota.installFailed': '无法拉起安装器，请稍后重试',
   'ota.installing': '下载完成，正在拉起安装器…',
+  'ota.downloadHint': '请勿关闭应用，可在通知栏查看进度',
+  'ota.verifyFailed': '更新包校验失败',
+  'ota.failedHint': '请检查网络后重试，或前往下载站手动获取',
+  'ota.noChangelog': '暂无更新说明',
 
   // —— OTA 通知栏文案（SelfUpdateManager 用；纯逻辑侧 Translate.t）——
   'ota.notif.title': 'Hapi 更新',

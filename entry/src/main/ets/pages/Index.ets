@@ -29,6 +29,9 @@ import { ToastService } from '../services/ToastService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { localizeToast } from '../chat/ToastLocalize';
 import { t, kv } from '../i18n/I18nService';
+import { SelfUpdateSheet } from '../components/SelfUpdateSheet';
+import { OtaController, getUpdateState, UpdateState } from '../services/UpdateState';
+import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
 
 // 会话列表页（已登录首屏）
 // UI 写法/样式对照 chatcube Index（Navigation + 列表 + 列表项 + 空态/加载态/错误态）
@@ -63,6 +66,43 @@ struct Index {
   @Local actionTarget: SessionSummary | null = null;   // 动作面板目标会话（长按时定）
   @Local actionMenuOpen: boolean = false;              // 动作面板显隐（组件 @Param open）
   @Local currentChatSessionId: string = '';            // 当前栈顶聊天会话 id（抑制其 ready toast + 防浮卡重复 push）
+
+  // —— OTA 自更新弹窗（主页挂载点）。EntryAbility 启动/回前台 silent 检查命中时 sheetOwner='index'，由本页 bindSheet 弹。
+  //   与 AboutPage（owner='about'）按 sheetOwner 互斥：AboutPage 是 pushed NavDestination，本页（@Entry Navigation 根）在它显示时
+  //   仍常驻，若两页都裸读 sheetOpen 会同时弹两张；owner 门控保证仅归属页渲染。读 getUpdateState() 的 @Trace 字段驱动刷新。 ——
+  private get ota(): UpdateState { return getUpdateState(); }
+  // OTA sheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + FIT_CONTENT 首档（同 AboutPage，走工厂默认）
+  private get otaSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = { onDisappear: () => { this.closeOtaSheet(); } };
+    return buildSheetOptions(this.c.surface, ov);
+  }
+  // sheet 关闭（✕ / 下滑 / 系统关闭）：下载中视为取消（静默收尾），否则仅关 sheet（同 AboutPage）
+  private closeOtaSheet(): void {
+    const s: UpdateState = getUpdateState();
+    if (s.downloading) {
+      OtaController.cancelDownload();   // onCancel 回调会清 sheetOpen
+    } else {
+      s.sheetOpen = false;
+    }
+  }
+
+  // OTA 更新弹窗 sheet —— 挂独立组件 SelfUpdateSheet（@Param/@Event 同 AboutPage；阶段/进度/错误由 @Trace 驱动）。
+  @Builder OtaSheet() {
+    SelfUpdateSheet({
+      info: this.ota.info,
+      phase: this.ota.phase,
+      percent: this.ota.percent,
+      received: this.ota.received,
+      total: this.ota.total,
+      installing: this.ota.installing,
+      error: this.ota.error,
+      onUpdate: (): void => { OtaController.startDownload(); },
+      onIgnore: (): void => { OtaController.skipVersion(); },
+      onCancel: (): void => { OtaController.cancelDownload(); },
+      onRetry: (): void => { OtaController.retry(); },
+      onClose: (): void => { this.closeOtaSheet(); }
+    })
+  }
 
   aboutToAppear(): void {
     this.loadSessions();
@@ -783,5 +823,7 @@ struct Index {
     .width('100%')
     .height('100%')
     .alignContent(Alignment.TopStart)
+    // OTA 自更新弹窗（owner='index' 才弹；与 AboutPage 互斥）。EntryAbility 启动/回前台自动检查命中 → 主页直接弹。
+    .bindSheet(this.ota.sheetOpen && this.ota.sheetOwner === 'index', this.OtaSheet(), this.otaSheetOpts)
   }
 }
