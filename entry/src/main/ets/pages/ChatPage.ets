@@ -382,11 +382,36 @@ struct ChatPage {
         }
       }
     }
-    this.blocks = grouped;
+    // 同 id 复用旧实例 + copyFrom 原地改 @Trace 字段 → Repeat 同 key 项内部精确刷新（流式根治，对照官方示例3/5）。
+    this.blocks = this.reconcileBlocks(grouped);
     // 大纲项随 blocks 一起重算（只索引 user-text 块；大纲抽屉直接读 outlineItems）
     this.outlineItems = buildConversationOutline(grouped);
     // 灌入 LazyForEach 数据源：按签名 diff，结构变→全刷、同结构→仅变项 onDataChange 原地重渲染（流式根治）
     this.refreshDataSource();
+  }
+
+  // 同 id 复用旧实例 + copyFrom 原地改字段（@ObservedV2+@Trace → Repeat 同 key 项内部精确刷新）。
+  //   根因：官方「循环渲染迁移」示例3/5——Repeat 对同 key 项复用 ListItem、不重跑 .each，内容刷新须靠 @Trace
+  //   字段【原地变更】。reducer 每次产全新实例 → 直接 this.blocks=newArr 时同 key 项内容冻住（流式「一动不动」根因）。
+  //   本方法把 reducer 产出的新实例按 id 对齐到旧实例，copyFrom 把可变字段原地写入旧实例（@Trace 触发刷新）；
+  //   新 id（新消息 / 加载更旧历史）用新实例。返回新数组壳、元素尽量复用 → Repeat diff 命中同 key + @Trace 变更。
+  private reconcileBlocks(next: ChatBlock[]): ChatBlock[] {
+    const prevById: Map<string, ChatBlock> = new Map<string, ChatBlock>();
+    for (let i = 0; i < this.blocks.length; i++) {
+      prevById.set(this.blocks[i].id, this.blocks[i]);
+    }
+    const out: ChatBlock[] = [];
+    for (let i = 0; i < next.length; i++) {
+      const nb: ChatBlock = next[i];
+      const prev: ChatBlock | undefined = prevById.get(nb.id);
+      if (prev !== undefined) {
+        prev.copyFrom(nb);   // 原地改 @Trace 字段 → 同 key 项内部刷新（MarkdownText content @Param 随之更新）
+        out.push(prev);
+      } else {
+        out.push(nb);        // 新块（新消息 / 加载更旧历史）→ 新实例
+      }
+    }
+    return out;
   }
 
   // 把当前展示集（filteredBlocks）灌入 LazyForEach 数据源。sigFn=blockSignature（含 toolActionStates/
@@ -1067,7 +1092,8 @@ struct ChatPage {
       const msgRaw = event.getObject('message');
       if (msgRaw !== null) {
         const msg = parseMessage(msgRaw);
-        this.setMessages(mergeMessage(this.messages, msg));
+        const merged: ChatMessage[] = mergeMessage(this.messages, msg);
+        this.setMessages(merged);
         // 贴底 → 跟随滚底；滚在上方读历史 → 不打断，累计新消息计数显浮标（对照上游 NewMessagesIndicator 思路，扩到实时新消息）
         if (this.isPinnedToBottom) {
           this.maybeScrollToBottom();
@@ -2126,7 +2152,9 @@ struct ChatPage {
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
         .backgroundColor(this.c.surface)
         .borderRadius(16)
-        .constraintSize({ maxWidth: '85%' })
+        // 满宽：与 ReasoningBubble/ToolCard 等左侧卡片宽度一致（旧 maxWidth:'85%' 导致 AI 回复比思考气泡窄、
+        //   且长 Markdown 行/代码块超 85% 被 clip(true) 裁掉右边内容）。列表已有左右 12vp padding，满宽不贴边。
+        .width('100%')
         .alignItems(HorizontalAlign.Start)
         .clip(true)
 
@@ -2167,6 +2195,7 @@ struct ChatPage {
           .alignItems(HorizontalAlign.Start)
         }
       }
+      .width('100%')
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
@@ -3055,64 +3084,71 @@ struct ChatPage {
             // Stack 包 List 以悬浮「新消息」浮标（alignContent 底部居中；浮标在 newMessagesCount>0 时显形）
             Stack({ alignContent: Alignment.Bottom }) {
             List({ scroller: this.scroller, space: 8 }) {
-              // LazyForEach + IDataSource（ChatBlockDataSource）：流式时对单项调 onDataChange 原地重渲染——
-              //   组件复用、不销毁、MarkdownText/CJMarkdown 保活、仅 content 更新（对照 chatcube ChatMessageListSection）。
-              //   key 恒用稳定 b.id（revert 动态键——动态键每 token 销毁重建 agent-text → 原生冻结）。
-              LazyForEach(this.dataSource, (b: ChatBlock) => {
-                ListItem() {
-                  Column() {
-                    // 跨日（或首条）日期分隔（dividerBefore 由 recomputeBlocks 盖戳）；
-                    //   过滤视图是非连续子集，分隔会误导 → 实际过滤时（非空查询）不显示。
-                    if (b.dividerBefore && !this.isFiltering()) {
-                      DateDivider({ timestamp: b.createdAt })
-                    }
-                    // 未读分隔（首条 createdAt>entryLastSeenAt 的块前；上游无对照，客户端自创）
-                    if (b.unreadDividerBefore && !this.isFiltering()) {
-                      this.UnreadDivider()
-                    }
-                    if (b.kind === 'user-text') {
-                      this.UserBubble(b)
-                    } else if (b.kind === 'agent-text') {
-                      this.AgentBubble(b)
-                    } else if (b.kind === 'reasoning') {
-                      ReasoningBubble({
-                        text: b.text,
-                        isStreaming: this.isReasoningStreaming(b)
-                      })
-                    } else if (b.kind === 'generated-image') {
-                      GeneratedImageCard({
-                        block: b,
-                        sessionId: this.sessionId
-                      })
-                    } else if (b.kind === 'cli-output') {
-                      CliOutputCard({
-                        block: b
-                      })
-                    } else if (b.kind === 'codex-review' && b.review !== null) {
-                      CodexReviewCard({
-                        review: b.review
-                      })
-                    } else if (b.kind === 'agent-event' && b.event !== null) {
-                      this.EventMessageBar(b)
-                    } else if (b.kind === 'tool-group') {
-                      // 连发同质工具折叠卡（对照 web ToolGroupBlock）：头部 + 展开行 + 行详情 sheet。
-                      //   纯展示（分组内工具恒非待批），无需 sessionId/flavor/nowTick/onDecided。
-                      ToolGroupCard({ block: b })
-                    } else {
-                      ToolCard({
-                        block: b,
-                        sessionId: this.sessionId,
-                        flavor: this.flavor,
-                        nowTick: this.isRunningBlock(b) ? this.nowTick : 0,
-                        actionState: this.toolActionStateOf(b.id),
-                        detailOpenInit: this.detailOpenSigs[b.id] !== undefined,
-                        onAction: (kind: string): void => { this.handleToolAction(b, kind); },
-                        onDetailOpenChange: (open: boolean): void => { this.toggleToolDetail(b.id, open); }
-                      })
+              // Repeat + virtualScroll（V2 原生循环渲染，对照 chatcube/berry3 + 官方「循环渲染迁移」）：
+              //   根因：旧 LazyForEach+IDataSource 是 V1 已废弃 API，在 @ComponentV2 页里即便手动 onDataChange
+              //   也无法把变更下发给 item 内部（chatcube ChatSendFlow:529 注释亲证：即使模型 @ObservedV2+@Trace，
+              //   LazyForEach 嵌套场景下也「不会精确刷新 item 内部 → timeline 看似卡住」）→ 流式一动不动。
+              //   正解：Repeat 直接读 @Local filteredBlocks（V2 观察其变化），数据源变即自动触发更新，无需手动通知。
+              //   key 恒用稳定 b.id（同 key 复用 ListItem、不重建 → MarkdownText/CJMarkdown 保活 → 仅 content @Param
+              //   增量更新 → CJMarkdown 增量重渲、原生组件不重建 → 流式逐字实时增长、无冻结）。
+              Repeat<ChatBlock>(this.filteredBlocks)
+                .each((ri: RepeatItem<ChatBlock>) => {
+                  ListItem() {
+                    Column() {
+                      // 跨日（或首条）日期分隔（dividerBefore 由 recomputeBlocks 盖戳）；
+                      //   过滤视图是非连续子集，分隔会误导 → 实际过滤时（非空查询）不显示。
+                      if (ri.item.dividerBefore && !this.isFiltering()) {
+                        DateDivider({ timestamp: ri.item.createdAt })
+                      }
+                      // 未读分隔（首条 createdAt>entryLastSeenAt 的块前；上游无对照，客户端自创）
+                      if (ri.item.unreadDividerBefore && !this.isFiltering()) {
+                        this.UnreadDivider()
+                      }
+                      if (ri.item.kind === 'user-text') {
+                        this.UserBubble(ri.item)
+                      } else if (ri.item.kind === 'agent-text') {
+                        this.AgentBubble(ri.item)
+                      } else if (ri.item.kind === 'reasoning') {
+                        ReasoningBubble({
+                          text: ri.item.text,
+                          isStreaming: this.isReasoningStreaming(ri.item)
+                        })
+                      } else if (ri.item.kind === 'generated-image') {
+                        GeneratedImageCard({
+                          block: ri.item,
+                          sessionId: this.sessionId
+                        })
+                      } else if (ri.item.kind === 'cli-output') {
+                        CliOutputCard({
+                          block: ri.item
+                        })
+                      } else if (ri.item.kind === 'codex-review' && ri.item.review !== null) {
+                        CodexReviewCard({
+                          review: ri.item.review
+                        })
+                      } else if (ri.item.kind === 'agent-event' && ri.item.event !== null) {
+                        this.EventMessageBar(ri.item)
+                      } else if (ri.item.kind === 'tool-group') {
+                        // 连发同质工具折叠卡（对照 web ToolGroupBlock）：头部 + 展开行 + 行详情 sheet。
+                        //   纯展示（分组内工具恒非待批），无需 sessionId/flavor/nowTick/onDecided。
+                        ToolGroupCard({ block: ri.item })
+                      } else {
+                        ToolCard({
+                          block: ri.item,
+                          sessionId: this.sessionId,
+                          flavor: this.flavor,
+                          nowTick: this.isRunningBlock(ri.item) ? this.nowTick : 0,
+                          actionState: this.toolActionStateOf(ri.item.id),
+                          detailOpenInit: this.detailOpenSigs[ri.item.id] !== undefined,
+                          onAction: (kind: string): void => { this.handleToolAction(ri.item, kind); },
+                          onDetailOpenChange: (open: boolean): void => { this.toggleToolDetail(ri.item.id, open); }
+                        })
+                      }
                     }
                   }
-                }
-              }, (b: ChatBlock) => b.id)
+                })
+                .key((b: ChatBlock): string => b.id)
+                .virtualScroll({ totalCount: this.filteredBlocks.length })
 
               if (this.isThinking) {
                 ListItem() {

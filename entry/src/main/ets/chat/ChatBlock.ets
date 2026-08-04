@@ -1,7 +1,8 @@
 // ChatBlock / ChatToolCall / ToolPermission —— 对齐 web/src/chat/types.ts
 // ArkTS 无判别联合 → 单类 + kind/state/status 字符串判别。
 // 0 表示 null 时间戳（startedAt/completedAt/createdAt of permission）。
-// 纯数据类（reducer 每次产出全新实例），无 ArkUI 依赖。
+// ChatBlock 为 @ObservedV2（Repeat 同 key 项原地刷新依赖 @Trace 字段，对照官方「循环渲染迁移」示例3/5）；
+//   ChatPage.reconcileBlocks 复用旧实例 + copyFrom 原地改字段（非每次 new），其余类纯数据。
 
 import { UsageData } from '../models/Message';
 import { AttachmentMetadata, AgentEvent } from '../models/Types';
@@ -63,33 +64,39 @@ export class ToolGroupSummary {
   otherTargets: string[] = [];
 }
 
-// 渲染单元（reducer 产出，ForEach 按 id 作 key）
+// 渲染单元（reducer 产出，Repeat 按 id 作 key）。
+// @ObservedV2 + @Trace：Repeat 对【同 key 项】复用 ListItem、不重跑 .each；内容刷新须靠 @Trace 字段【原地变更】
+//   触发（对照官方「循环渲染迁移」示例3/5：同 key 项子属性变化 → @ObservedV2+@Trace 深度观测 → 精确刷新该 item 内部）。
+//   故 ChatPage.doRecomputeBlocks 用 reconcileBlocks 复用旧实例 + copyFrom 原地改字段（而非每次 new 新实例），
+//   否则同 key 项 .each 不重跑、plain 字段无观察 → 流式内容冻结（用户报告「一动不动」根因）。
+//   id/kind/createdAt 为身份/时间戳恒量（同 id 块永不变）→ 不加 @Trace；其余显示字段全 @Trace。
+@ObservedV2
 export class ChatBlock {
   kind: ChatBlockKind = 'agent-text';
   id: string = '';                          // 稳定 key：user-text→msg.id；agent-text→`${msgId}:${idx}`；tool-call→tool_use_id
   createdAt: number = 0;
-  text: string = '';                        // user-text / agent-text 正文
-  tool: ChatToolCall | null = null;          // 仅 tool-call
+  @Trace text: string = '';                        // user-text / agent-text 正文
+  @Trace tool: ChatToolCall | null = null;          // 仅 tool-call
 
   // 仅 user-text：携带乐观发送态（迁移到 blocks 模型后仍需显示「发送中/排队中/失败」）
-  userOptimistic: boolean = false;
-  userStatus: string = '';                   // ''|'sending'|'queued'|'failed'
+  @Trace userOptimistic: boolean = false;
+  @Trace userStatus: string = '';                   // ''|'sending'|'queued'|'failed'
 
   // 仅 user-text：用户附件（对照 web MessageAttachments）。reducer 从 ChatMessage.attachments 透传；
   //   图片附件（previewUrl 非空）→ 缩略图网格（点击 ImagePreviewSheet 放大）；其余 → 文件卡片。
   //   纯图消息（text 空）也产出 user-text 块以渲染附件。
-  attachments: AttachmentMetadata[] = [];
+  @Trace attachments: AttachmentMetadata[] = [];
 
   // 渲染标记：本块前是否插入跨日日期分隔（首条或与上一块不同日）。
   //   由 ChatPage.recomputeBlocks 在 reducer 产出后盖戳（纯序列判定，无 now 依赖）；
   //   不放进 reduceChatBlocks 以保持 reducer 纯净/不影响其单测。DateDivider 文本（今天/昨天/日期）在渲染时取。
-  dividerBefore: boolean = false;
+  @Trace dividerBefore: boolean = false;
 
   // 渲染标记：本块是否为「进入会话时的首条未读」（createdAt > entryLastSeenAt 的首块）。
   //   上游无对照（web 进会话总滚底、无未读分隔）——客户端自创，复用 #113 lastSeenAt 基础设施。
   //   entryLastSeenAt 在 aboutToAppear 捕获（markSeen 前），本页期间不变；下次进会话重算。
   //   渲染时在本块前插「以下为未读」分隔；过滤视图不显示（同 dividerBefore）。
-  unreadDividerBefore: boolean = false;
+  @Trace unreadDividerBefore: boolean = false;
 
   // 仅 generated-image：agent 调 display_image 登记的图（对照 web GeneratedImageBlock）。
   //   二进制按 imageId 按 GET 拉 → data URI → Image()；fileName 用作 caption，mimeType 用作 data URI 媒体类型。
@@ -105,39 +112,68 @@ export class ChatBlock {
   // 仅 agent-text：消息元数据脚注（对照 web MessageMetadata）。usage=消息用量（null=无）；
   //   model=消息模型名（'' 时 UI 回退会话 model）；invokedAt=消息调用时间（0=未知，脚注不显 Invoke）。
   //   reducer 从 ChatMessage 拷贝；多条 agent-text 共享同消息的同一份 usage（与上游「每块挂消息用量」一致）。
-  usage: UsageData | null = null;
-  model: string = '';
-  invokedAt: number = 0;
+  @Trace usage: UsageData | null = null;
+  @Trace model: string = '';
+  @Trace invokedAt: number = 0;
   // turn 耗时（对照 web block.durationMs）：-1 = 无；>=0 = turn-duration event 回填的毫秒。
   //   仅 agent-text/reasoning/tool-call/cli-output/codex-review 块被回填（Reducer.applyTurnDuration 据
   //   targetMessageId 匹配，对照 reducerTimeline.ts:443-468）。MessageMetadata 据此显 Duration 脚注。
-  durationMs: number = -1;
+  @Trace durationMs: number = -1;
 
   // 仅 codex-review：Codex agent 偶把 review JSON 当文本发出；parse 嗅探命中后携带解析结果
   //   （对照 web CodexReviewBlock）。reducer 从 NormalizedAgentContent.review 映射；null = 非 review 块。
-  review: CodexReview | null = null;
+  @Trace review: CodexReview | null = null;
 
   // 仅 agent-event：agent 事件系统消息条（对照 web AgentEventBlock）。reducer 从 event 消息（api-error/
   //   microcompact/compact）或 agent-text 限额文本嗅探（limit-warning/reached）映射；null = 非事件块。
   //   EventPresentation 据 event 产 icon+text，渲染为居中灰条（#1 系统消息条 / #4 限额提示）。
-  event: AgentEvent | null = null;
+  @Trace event: AgentEvent | null = null;
 
   // 仅 tool-group：连发同质工具调用折叠卡（对照 web ToolGroupBlock）。由 ChatPage.recomputeBlocks 在
   //   reduceChatBlocks 产出后派生（不入 reducer，保 reducer 纯）。groupTools=被折叠的连续 tool-call 块（行渲染
   //   复用 getToolPresentation）；groupSummary=counts + 状态计数 + target 桶（头徽标/副标题用）；
-  //   groupFirstToolId/groupLastToolId=稳定 id 策略锚点（保 ForEach key 跨重算稳定 → 展开态不丢）；
+  //   groupFirstToolId/groupLastToolId=稳定 id 策略锚点（保 Repeat key 跨重算稳定 → 展开态不丢）；
   //   groupNeedsOlderHistory=组是否跨已加载最旧边界（v1 恒 false，跨页回灌留观察）。
-  groupTools: ChatBlock[] = [];
-  groupSummary: ToolGroupSummary = new ToolGroupSummary();
-  groupFirstToolId: string = '';
-  groupLastToolId: string = '';
-  groupNeedsOlderHistory: boolean = false;
+  @Trace groupTools: ChatBlock[] = [];
+  @Trace groupSummary: ToolGroupSummary = new ToolGroupSummary();
+  @Trace groupFirstToolId: string = '';
+  @Trace groupLastToolId: string = '';
+  @Trace groupNeedsOlderHistory: boolean = false;
 
   // 仅 tool-call（子代理发起卡）：嵌套子代理的 block 时间线（对照上游 ChatBlock.children）。
   //   Flow A（Claude Task/Agent）：Reducer 把 sidechain 消息递归 reduce 成 children（发起卡 = Task 工具块）。
   //   Flow B（Codex CodexAgent）：Reducer 把 agent-run-trace 伪消息递归 reduce 成 children。
   //   TraceSection 组件在卡片详情 sheet 递归渲染（text/reasoning/tool-call 可再嵌套）。空 = 无子代理内容。
-  children: ChatBlock[] = [];
+  @Trace children: ChatBlock[] = [];
+
+  // 把同 id 的另一块实例的可变字段原地拷到本实例（reconcileBlocks 复用旧实例时调用 → @Trace 触发刷新）。
+  //   不拷 id/kind/createdAt（身份/时间戳恒量，同 id 块永不变）；其余显示字段全拷。
+  //   reducer 每次产全新实例 → 直接替换数组时同 key 项 .each 不重跑 → 必须靠本方法原地改旧实例字段。
+  copyFrom(o: ChatBlock): void {
+    this.text = o.text;
+    this.tool = o.tool;
+    this.userOptimistic = o.userOptimistic;
+    this.userStatus = o.userStatus;
+    this.attachments = o.attachments;
+    this.dividerBefore = o.dividerBefore;
+    this.unreadDividerBefore = o.unreadDividerBefore;
+    this.imageId = o.imageId;
+    this.fileName = o.fileName;
+    this.mimeType = o.mimeType;
+    this.source = o.source;
+    this.usage = o.usage;
+    this.model = o.model;
+    this.invokedAt = o.invokedAt;
+    this.durationMs = o.durationMs;
+    this.review = o.review;
+    this.event = o.event;
+    this.groupTools = o.groupTools;
+    this.groupSummary = o.groupSummary;
+    this.groupFirstToolId = o.groupFirstToolId;
+    this.groupLastToolId = o.groupLastToolId;
+    this.groupNeedsOlderHistory = o.groupNeedsOlderHistory;
+    this.children = o.children;
+  }
 
   // 便捷工厂
   static agentText(id: string, createdAt: number, text: string, invokedAt: number = 0,
