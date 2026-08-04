@@ -19,6 +19,8 @@ import { SettingSearchBar } from '../components/settings/SettingSearchBar';
 import { SettingActionButton } from '../components/settings/SettingActionButton';
 import { rowPos } from '../components/settings/RowRadiusUtil';
 import { MorandiKey, morandiSwatch } from '../components/settings/MorandiPalette';
+import { ConfirmSheet, SheetButton } from '../components/settings/ConfirmSheet';
+import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
 
 // 入口项（具名 interface 标注，满足 ArkTS 严格模式对象字面量规则）
 interface SettingsEntry {
@@ -41,6 +43,7 @@ struct SettingsPage {
   @Local query: string = '';             // 搜索查询（受控，SettingSearchBar 唯一数据源）
   @Local isLoggingOut: boolean = false;
   @Local versionName: string = '';       // 关于副标题动态版本号（bundleManager 取）
+  @Local showLogoutSheet: boolean = false;  // 退出登录确认 sheet 开关（单 sheet 挂 NavDestination）
   private navPathStack: NavPathStack | null = null;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -118,17 +121,30 @@ struct SettingsPage {
     return result;
   }
 
-  // 退出登录确认弹窗（UIContext.showAlertDialog）
+  // 退出登录确认弹窗：改为 ConfirmSheet（对照 berry3 ConfirmSheet，替代系统 AlertDialog）
   private confirmLogout(): void {
-    this.getUIContext().showAlertDialog({
-      title: t('settings.logout'),
-      message: t('settings.logoutConfirm'),
-      autoCancel: true,
-      confirm: {
-        value: t('settings.logout'),
-        action: () => { this.doLogout(); }
-      }
-    });
+    this.showLogoutSheet = true;
+  }
+
+  // LogoutSheet 按钮组（用具名 interface 标注的 const 承接：ArkTS 严格模式禁传参对象字面量）
+  private logoutButtons(): SheetButton[] {
+    const cancel: SheetButton = { text: t('common.cancel'), action: (): void => {} };
+    const logout: SheetButton = {
+      text: t('settings.logout'),
+      role: 'danger',
+      action: (): void => { this.doLogout(); }
+    };
+    const arr: SheetButton[] = [cancel, logout];
+    return arr;
+  }
+
+  // LogoutSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + MEDIUM/LARGE 档（message 可滚动）。
+  private get logoutSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: () => { this.showLogoutSheet = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   // 执行退出：断 SSE + 清连接 + 切回登录页
@@ -241,6 +257,18 @@ struct SettingsPage {
     .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
+    })
+    // 退出登录确认 sheet（单 sheet 直接挂 NavDestination，无多 sheet 锚点冲突）
+    .bindSheet(this.showLogoutSheet, this.LogoutSheet(), this.logoutSheetOpts)
+  }
+
+  // 退出登录确认半屏 sheet（ConfirmSheet：标题 + message + 取消/退出登录双胶囊）
+  @Builder LogoutSheet() {
+    ConfirmSheet({
+      title: t('settings.logout'),
+      message: t('settings.logoutConfirm'),
+      buttons: this.logoutButtons(),
+      onClose: () => { this.showLogoutSheet = false; }
     })
   }
 }

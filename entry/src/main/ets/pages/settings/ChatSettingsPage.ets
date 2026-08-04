@@ -25,6 +25,8 @@ import { ChatSurfaceColorsService } from '../../services/ChatSurfaceColorsServic
 import { SettingCard } from '../../components/settings/SettingCard';
 import { SettingSectionTitle } from '../../components/settings/SettingSectionTitle';
 import { resolveRowRadius } from '../../components/settings/RowRadiusUtil';
+import { SheetDialog } from '../../components/settings/SheetDialog';
+import { buildSheetOptions, SheetOverrides } from '../../components/settings/SheetOptionsFactory';
 
 @Builder
 export function ChatSettingsPageBuilder(name: string, param: Object) {
@@ -112,6 +114,15 @@ struct ChatSettingsPage {
   private customSwatch(): string {
     const normalized: string | null = normalizeHexColor(this.customHex);
     return normalized !== null ? normalized : getPickerValue('default');
+  }
+
+  // SurfaceColorSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + LARGE 档。
+  private get surfaceSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.LARGE],
+      onDisappear: () => { this.surfaceSheetOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
   build() {
@@ -269,12 +280,7 @@ struct ChatSettingsPage {
         top: 4, bottom: 0,
         left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
       })
-      .bindSheet(this.surfaceSheetOpen!!, this.SurfaceColorSheet(), {
-        height: SheetSize.LARGE,
-        detents: [SheetSize.LARGE],
-        backgroundColor: this.c.bg,
-        onDisappear: () => { this.surfaceSheetOpen = false; }
-      })
+      .bindSheet(this.surfaceSheetOpen!!, this.SurfaceColorSheet(), this.surfaceSheetOpts)
     }
     .title(t('settings.chat.title'))
     .backgroundColor(this.c.surface)
@@ -310,83 +316,66 @@ struct ChatSettingsPage {
     .borderRadius(resolveRowRadius('first'))
   }
 
-  // 气泡配色选择器 sheet（工具组/用户消息两态；4 预设 + 自定义 hex 输入）
+  // 气泡配色选择器 sheet（工具组/用户消息两态；4 预设 + 自定义 hex 输入）—— berry3 弹窗设计系统：
+  //   SheetDialog 标题栏（白头）+ 灰身(c.surface) + SettingCard(cardBackground + swatchColor) 白卡色点选择器项。
   @Builder SurfaceColorSheet() {
     Column() {
-      Row() {
-        Text(this.surfaceSheetMode === 'tool'
+      SheetDialog({
+        title: this.surfaceSheetMode === 'tool'
           ? t('settings.chat.surfaceColor.toolGroup')
-          : t('settings.chat.surfaceColor.userMessage'))
-          .fontSize(fs(16))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .layoutWeight(1)
-        SymbolGlyph($r('sys.symbol.xmark'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textSecondary])
-          .onClick(() => { this.surfaceSheetOpen = false; })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 12 })
-      .backgroundColor(this.c.bg)
-
+          : t('settings.chat.surfaceColor.userMessage'),
+        showCloseButton: true,
+        onClose: () => { this.surfaceSheetOpen = false; }
+      })
       Scroll() {
-        Column() {
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.default'),
-            getPickerValue('default'), this.currentSurfacePref() === 'default',
-            (): void => { this.pickSurfacePreset('default'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softBlue'),
-            getPickerValue('preset:soft-blue'), this.currentSurfacePref() === 'preset:soft-blue',
-            (): void => { this.pickSurfacePreset('soft-blue'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softGreen'),
-            getPickerValue('preset:soft-green'), this.currentSurfacePref() === 'preset:soft-green',
-            (): void => { this.pickSurfacePreset('soft-green'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
-          this.SurfaceOptionRow(t('settings.chat.surfaceColor.softYellow'),
-            getPickerValue('preset:soft-yellow'), this.currentSurfacePref() === 'preset:soft-yellow',
-            (): void => { this.pickSurfacePreset('soft-yellow'); })
-          Divider().color(this.c.border).strokeWidth(0.5).margin({ left: 16 })
+        Column({ space: 12 }) {
+          SettingCard({
+            primaryText: t('settings.chat.surfaceColor.default'),
+            swatchColor: getPickerValue('default'),
+            suffixType: 'check',
+            isChecked: this.currentSurfacePref() === 'default',
+            rowPosition: 'single', cardBackground: true,
+            onItemClick: (): void => { this.pickSurfacePreset('default'); }
+          })
+          SettingCard({
+            primaryText: t('settings.chat.surfaceColor.softBlue'),
+            swatchColor: getPickerValue('preset:soft-blue'),
+            suffixType: 'check',
+            isChecked: this.currentSurfacePref() === 'preset:soft-blue',
+            rowPosition: 'single', cardBackground: true,
+            onItemClick: (): void => { this.pickSurfacePreset('soft-blue'); }
+          })
+          SettingCard({
+            primaryText: t('settings.chat.surfaceColor.softGreen'),
+            swatchColor: getPickerValue('preset:soft-green'),
+            suffixType: 'check',
+            isChecked: this.currentSurfacePref() === 'preset:soft-green',
+            rowPosition: 'single', cardBackground: true,
+            onItemClick: (): void => { this.pickSurfacePreset('soft-green'); }
+          })
+          SettingCard({
+            primaryText: t('settings.chat.surfaceColor.softYellow'),
+            swatchColor: getPickerValue('preset:soft-yellow'),
+            suffixType: 'check',
+            isChecked: this.currentSurfacePref() === 'preset:soft-yellow',
+            rowPosition: 'single', cardBackground: true,
+            onItemClick: (): void => { this.pickSurfacePreset('soft-yellow'); }
+          })
           this.SurfaceCustomRow()
         }
         .width('100%')
-        .backgroundColor(this.c.bg)
+        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
       }
       .layoutWeight(1)
-      .backgroundColor(this.c.bg)
+      .width('100%')
+      .align(Alignment.TopStart)
+      .scrollBar(BarState.Auto)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.c.bg)
   }
 
-  // 选择器选项行（swatch 圆点 + label + 选中 ✓）
-  @Builder SurfaceOptionRow(label: string, swatch: string, selected: boolean, onSelect: () => void) {
-    Row() {
-      Circle({ width: 18, height: 18 })
-        .fill(swatch)
-        .stroke(this.c.border)
-        .strokeWidth(0.5)
-      Text(label)
-        .fontSize(fs(15))
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-        .margin({ left: 12 })
-      if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(fs(16))
-          .fontColor([this.c.primary])
-      }
-    }
-    .width('100%')
-    .height(52)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { onSelect(); })
-  }
-
-  // 自定义 hex 输入行（swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
+  // 自定义 hex 输入行（白卡浮灰底：swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
   @Builder SurfaceCustomRow() {
     Row() {
       Circle({ width: 18, height: 18 })
@@ -408,8 +397,13 @@ struct ChatSettingsPage {
         .onChange((value: string) => { this.onCustomHexChange(value); })
     }
     .width('100%')
-    .height(64)
-    .padding({ left: 16, right: 16 })
+    .constraintSize({ minHeight: 56 })
+    .padding({
+      left: $r('app.float.setting_card_padding_h'), right: $r('app.float.setting_card_padding_h'),
+      top: $r('app.float.setting_card_padding_v'), bottom: $r('app.float.setting_card_padding_v')
+    })
     .alignItems(VerticalAlign.Center)
+    .backgroundColor(this.c.bg)
+    .borderRadius($r('app.float.setting_card_radius'))
   }
 }

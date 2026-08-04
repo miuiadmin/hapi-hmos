@@ -53,6 +53,10 @@ export struct SettingCard {
   @Param iconSymbol: Resource | null = null;
   /** 左侧图标方块底色（JS 莫兰迪色 string；iconSymbol 为 null 时忽略） */
   @Param iconBgColor: string = '';
+  /** 左侧色点（非空=渲染 18×18 圆色点；气泡配色选择器项用，与图标方块互斥场景各自使用） */
+  @Param swatchColor: string = '';
+  /** 独立白卡模式（true=常态底改 c.bg 白，用于选择器项浮灰底 sheet；false=透明承 ListItemGroup 白底，设置列表用） */
+  @Param cardBackground: boolean = false;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
 
@@ -78,6 +82,7 @@ export struct SettingCard {
   @Builder clickableRow() {
     Row() {
       this.iconNode();
+      this.swatchNode();
       this.textLabel();
       this.suffixNode();
     }
@@ -94,7 +99,7 @@ export struct SettingCard {
     .hoverEffect(HoverEffect.Highlight)
     .stateStyles({
       pressed: { .backgroundColor(this.c.surfaceSelected) },
-      normal: { .backgroundColor(Color.Transparent) }
+      normal: { .backgroundColor(this.cardBackground ? this.c.bg : Color.Transparent) }
     })
     .enabled(this.isEnabled)
     .opacity(this.rowOpacity)
@@ -109,6 +114,7 @@ export struct SettingCard {
   @Builder staticRow() {
     Row() {
       this.iconNode();
+      this.swatchNode();
       this.textLabel();
       this.suffixNode();
     }
@@ -143,6 +149,17 @@ export struct SettingCard {
       // margin({right:12}) 而非父 Row({space:12})：父 Row 被 SettingCard 全场景共用，
       // 加 space 改变 textLabel↔suffixNode 间距；图标槽仅首页用，局部 margin 最小侵入
       .margin({ right: 12 })
+    }
+  }
+
+  /** 左侧色点（可选）：非空渲染 18×18 圆色点 + 0.5 边框（气泡配色选择器项用） */
+  @Builder swatchNode() {
+    if (this.swatchColor.length > 0) {
+      Circle({ width: 18, height: 18 })
+        .fill(this.swatchColor)
+        .stroke(this.c.border)
+        .strokeWidth(0.5)
+        .margin({ right: 12 })
     }
   }
 
