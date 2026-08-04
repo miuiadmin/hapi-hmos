@@ -16,6 +16,7 @@ import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SyncingBanner } from '../components/SyncingBanner';
 import { ComposerToolbar } from '../components/ComposerToolbar';
+import { ChatSendButton } from '../components/ChatSendButton';
 import { AttachmentPickerPanel } from '../components/AttachmentPickerPanel';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { DateDivider } from '../components/DateDivider';
@@ -165,15 +166,9 @@ struct ChatPage {
   // 附件面板绝对叠层（硬复刻 chatcube ChatPage:185/3735-3754）：高度由 animateTo 驱动 0↔attachPanelHeight，
   //   opacity/enabled 随 attachmentPanelOpen 翻转；card 走流式（自然撑 wrapper 高），panel 绝对底锚覆盖 card 底 padding 留白条。
   @Local attachmentPanelHeightVp: number = 0;             // 附件面板当前高度（0=收起；animateTo 驱动 0↔attachPanelHeight）
-  // 发送/附件键动效（对照 chatcube ChatInputBar：图标变形触发器 + pause 呼吸 + 按下态 + 弹跳缩放）
-  @Local sendIconTrigger: number = 0;                   // 发送键 ReplaceSymbolEffect 触发器（hasContent/isThinking 翻转 bump）
+  // 附件/模型键动效（发送键动效已下沉 ChatSendButton 子组件：变形/呼吸/弹跳由其内部 @Local 驱动）
   @Local attachIconTrigger: number = 0;                 // 附件键 plus↔xmark 变形触发器
-  @Local breathOpacity: number = 1;                     // pause 呼吸透明度（生成中且无内容时 1↔0.35 循环）
-  @Local sendBtnPressed: boolean = false;               // 发送键按下态（阴影放大 + 0.95 缩放）
-  @Local sendBtnScale: number = 1;                      // 发送键状态切换弹跳（isThinking 起 0.9 回弹）
   @Local modelBtnPressed: boolean = false;              // 模型键按下态（0.95 缩放 + 浅底）
-  private breatheTimerId: number = -1;                  // 呼吸 setInterval 句柄
-  private lastHasContent: boolean = false;              // 上次 hasContent（仅翻转时 bump 触发器，省冗余变形）
   // 附件面板展开高度（3 项 64 圆角块 + 文案 + 内边距；≈118 实测，+6 余量防文案裁切 → 124；= attachmentPanelHeightVp 展开目标值）
   private readonly attachPanelHeight: number = 124;
   private mentionQueryId: number = 0;                  // 联想查询竞态保护：每次发起递增，仅最新返回生效
@@ -240,8 +235,6 @@ struct ChatPage {
     this.loadEnterToSend();          // 读「回车发送」偏好（默认关；onChange 据此决定 Enter=发送/换行）
     this.addSSEListener();
     this.startTicker();
-    this.lastHasContent = this.composerHasContent();   // 发送键动效初值（进页即生成中也能正确显 pause 呼吸）
-    this.updateBreathing();
     // 标记本会话已看（清未读角标；列表据此判断 updatedAt>lastSeenAt）
     if (this.sessionId !== '') {
       getSessionSeenService().markSeen(this.sessionId);
@@ -250,7 +243,6 @@ struct ChatPage {
 
   aboutToDisappear(): void {
     this.stopTicker();
-    this.stopBreathing();                   // 清呼吸 setInterval，防销毁后回调写已释放组件
     this.clearMention();                 // 取消 @ 联想在途 debounce，防销毁后回调
     // 离开页面前把草稿即时落盘（去抖未触发的尾字不丢）
     if (this.draftTimerId !== -1) {
@@ -2425,48 +2417,21 @@ struct ChatPage {
     .justifyContent(FlexAlign.Center)
   }
 
-  // 发送键是否有可发内容（文本或待发附件；对照 chatcube computeHasContent）
+  // 发送键是否有可发内容（文本或待发附件；对照 chatcube computeHasContent）。
+  //   ⚠️ 仅本页 textarea 回车发送用；发送键自身的 composerHasContent 在 ChatSendButton 子组件内自带副本。
   private composerHasContent(): boolean {
     return this.inputText.trim() !== '' || this.pendingAttachments.length > 0;
   }
-  // 发送键图标（对照 chatcube getSendButtonSymbol + 排队混合方案）：
-  //   生成中 + 有新内容 → paperplane_right_fill（点击=排队下一条，handleSend 不挡 isThinking）；
-  //   生成中 + 无内容 → pause（点击=停止）；非生成中有内容 → 实心纸飞机；空 → 轮廓纸飞机。
-  private sendSymbol(): Resource {
-    if (this.isThinking) {
-      return this.composerHasContent() ? $r('sys.symbol.paperplane_right_fill') : $r('sys.symbol.pause');
-    }
-    if (this.composerHasContent()) { return $r('sys.symbol.paperplane_right_fill'); }
-    return $r('sys.symbol.paperplane');
-  }
-  // 发送键透明度（对照 chatcube getSendButtonOpacity：恒 1，仅 blocking 附件才 0.45；本项目无该态→恒 1）。
-  private sendOpacity(): number { return 1; }
 
-  // —— 发送键动效驱动（对照 chatcube ChatInputBar:651-753 的 @Monitor + 呼吸 + animateSendButton）——
-  // @Monitor 回调若同步改 @Local（sendIconTrigger/breathOpacity/sendBtnScale），其变更会与 isThinking 翻转触发的
-  //   那次 build 批进同一 render pass → ArkUI 报「New UINode added during re-render」（build 期改状态）。
-  //   故整体延后到下一事件循环（setTimeout 0）：让 think 翻转的 build 先提交完，再改这些派生态 → 无 build 期争抢。
+  // isThinking 翻转：思考中占位块（TypingIndicator）的增删须延后到下一事件循环——避 isThinking 翻转那帧
+  //   build 期内改 LazyForEach 触发「UINode added during re-render」。发送键派生态（变形/呼吸/弹跳）已下沉
+  //   ChatSendButton 子组件、由其自身 @Monitor('isThinking') 同步处理（子组件 build 无节点增删，免 setTimeout）。
   @Monitor('isThinking')
   onThinkingChanged(): void {
     setTimeout((): void => {
       if (this.isDisposed) { return; }
-      // 思考中占位块的增删随 isThinking 翻转：发送(false→true)→onDataAdd 追加 typing；回复完成/停止(true→false)→onDataDelete。
-      //   延后到下一事件循环（与下方派生态同因：避 isThinking 翻转那帧 build 期内改 LazyForEach 触发「UINode added during re-render」）。
       this.refreshDataSource();
-      this.sendIconTrigger++;
-      this.lastHasContent = this.composerHasContent();
-      this.updateBreathing();
-      this.animateSendButton();
     }, 0);
-  }
-  // 内容态翻转才 bump 触发器（省冗余变形；生成中 pause↔paperplane 切换亦由此驱动）+ 同步呼吸。
-  @Monitor('inputText', 'pendingAttachments')
-  onComposerContentChanged(): void {
-    const hasContent = this.composerHasContent();
-    this.updateBreathing();
-    if (hasContent === this.lastHasContent) { return; }
-    this.lastHasContent = hasContent;
-    this.sendIconTrigger++;
   }
   @Monitor('attachmentPanelOpen')
   onAttachmentPanelOpenChanged(): void { this.attachIconTrigger++; }
@@ -2489,27 +2454,6 @@ struct ChatPage {
     });
   }
 
-  // 呼吸仅在「生成中且无新内容」(pause 态) 跑；内容出现或停止即停（对照 chatcube updateBreathing）。
-  // ⚠️ 暂关呼吸动画：breathOpacity 是 ChatPage @Local、被 build 读 → setInterval 每 850ms 翻转它会【整体重建
-  //   ChatPage】（全 List/bindSheet/InputBar 重算）→ 生成中持续卡顿、输入框布局被饿死撑大（用户报告症状）。
-  //   chatcube 里 InputBar 是独立子组件、呼吸只重建按钮；本页 InputBar 是内联 @Builder、无此隔离。
-  //   正解后续：把 InputBar 抽成独立 @ComponentV2 子组件、breathOpacity 下沉其内部 → 仅按钮重渲。届时再开呼吸。
-  private updateBreathing(): void {
-    this.breathOpacity = 1;   // 恒不透明（呼吸关停）；保留方法以免动 onThinkingChanged/aboutToAppear 调用点
-  }
-  private startBreathing(): void {
-    this.breathOpacity = 1;   // 呼吸关停：不启 setInterval（避全页 850ms 重建风暴）
-  }
-  private stopBreathing(): void {
-    if (this.breatheTimerId >= 0) { clearInterval(this.breatheTimerId); this.breatheTimerId = -1; }
-    this.breathOpacity = 1;
-  }
-  // 发送键状态切换弹跳（isThinking 起 0.9 回弹到 1，对照 chatcube animateSendButton）。
-  private animateSendButton(): void {
-    this.getUIContext().animateTo({ duration: 200, curve: Curve.EaseOut }, (): void => {
-      this.sendBtnScale = this.isThinking ? 0.9 : 1;
-    });
-  }
 
   // 输入栏（chatcube 同款：ComposerToolbar 工具条 + 附件面板 + 圆角卡片[模型键|TextArea|定时|+|发送]）
   @Builder
@@ -2657,41 +2601,13 @@ struct ChatPage {
             .backgroundColor(Color.Transparent)
             .onClick(() => { this.toggleAttachmentPanel(); })
 
-            // 发送键（对照 chatcube SendButton：ReplaceSymbolEffect 变形 + pause 呼吸 + 按下态阴影/缩放 + 品牌色调阴影）
-            Button({ type: ButtonType.Circle, stateEffect: false }) {
-              SymbolGlyph(this.sendSymbol())
-                .fontSize(this.isThinking ? fs(20) : fs(22))
-                .fontColor([this.c.bubbleUserText])
-                .symbolEffect(new ReplaceSymbolEffect(EffectScope.WHOLE), this.sendIconTrigger)
-                .opacity(this.breathOpacity)
-                .animation({ duration: 850, curve: Curve.EaseInOut })
-            }
-            .width(40)
-            .height(40)
-            .backgroundColor(this.c.primary)
-            .opacity(this.sendOpacity())
-            .shadow({
-              radius: this.sendBtnPressed ? 24 : 16,
-              color: this.withAlpha(this.c.primary, this.sendBtnPressed ? '66' : '40'),
-              offsetX: 0,
-              offsetY: this.sendBtnPressed ? 6 : 4
-            })
-            .scale({
-              x: this.sendBtnPressed ? 0.95 * this.sendBtnScale : this.sendBtnScale,
-              y: this.sendBtnPressed ? 0.95 * this.sendBtnScale : this.sendBtnScale
-            })
-            .animation({ duration: 200, curve: Curve.EaseInOut })
-            .onTouch((event: TouchEvent) => {
-              if (event.type === TouchType.Down) { this.sendBtnPressed = true; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.sendBtnPressed = false; }
-            })
-            .onClick(() => {
-              // 排队混合：生成中 + 有新内容 → 排队发送（handleSend 不挡 isThinking）；生成中 + 空 → 停止；否则有内容才发。
-              if (this.isThinking) {
-                if (this.composerHasContent()) { this.handleSend(); } else { this.handleStop(); }
-                return;
-              }
-              if (this.composerHasContent()) { this.handleSend(); }
+            // 发送键（独立 @ComponentV2 子组件：呼吸/变形/弹跳 @Local 下沉其内，850ms 翻转只重渲按钮）
+            ChatSendButton({
+              isThinking: this.isThinking,
+              inputText: this.inputText,
+              pendingAttachments: this.pendingAttachments,
+              onSend: () => { this.handleSend(); },
+              onStop: () => { this.handleStop(); }
             })
           }
           .width('100%')
