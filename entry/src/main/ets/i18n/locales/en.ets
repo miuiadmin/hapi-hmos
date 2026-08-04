@@ -140,6 +140,9 @@ export const en: Record<string, string> = {
   'newSession.browseFailed': 'Failed to browse directory',
   'newSession.spawnFailed': 'Failed to start session',
   'newSession.directoryNotFound': 'This directory does not exist on the machine. Please check the path.',
+  'newSession.agent': 'Agent',
+  'newSession.sectionEnvironment': 'Environment',
+  'newSession.manualPathPlaceholder': 'Type or paste path…',
 
   // —— Sessions list ——
   'sessions.title': 'Sessions',

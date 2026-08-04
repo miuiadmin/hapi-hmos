@@ -7,6 +7,12 @@ import { ChatPageRouteParams } from './ChatPage';
 import { getPreferencesService } from '../services/PreferencesService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
+import { SettingCard } from '../components/settings/SettingCard';
+import { SheetDialog } from '../components/settings/SheetDialog';
+import { SettingSectionTitle } from '../components/settings/SettingSectionTitle';
+import { SettingActionButton } from '../components/settings/SettingActionButton';
+import { buildSheetOptions, SheetOverrides } from '../components/settings/SheetOptionsFactory';
+import { rowPos, resolveRowRadius } from '../components/settings/RowRadiusUtil';
 
 // 新建会话页（NavDestination）—— 选 machine + 工作目录 + agent → spawn 产生新会话
 // 协议对照 hapi web /sessions/new：spawn 流程（非 POST /api/sessions）
@@ -14,6 +20,11 @@ import { showToast } from '../utils/Toast';
 // spawn 第一版只传 directory + agent；model/effort/yolo/sessionType 用上游默认（'auto'）
 // 通过 router_map.json 注册（NewSessionPageBuilder），由 Index 的 NavPathStack.pushPath('NewSessionPage') 触发
 // 颜色经统一主题（theme/ThemeService）—— 读 getThemeState().isDark 取调色板，切换/跟随系统即时响应
+//
+// 视觉对齐设置页 berry3 卡片风：List{ListItemGroup{SettingCard}} 分组白卡 r20 + 连续圆角咬合；
+//   6 个选择字段（machine/agent/model/effort/reasoning/sessionType）收敛为单 picker sheet（设置页选择范式，
+//   主表单 SettingCard(textAndArrow) → 点击开 SheetDialog + SettingCard(check) 选项）；yolo=switch 行；
+//   工作目录=点行开 DirectoryBrowser sheet（sheet 内保留手输）；创建按钮=SettingActionButton。
 
 // 持久化 key：上次所选机器 / 偏好 agent / 偏好 yolo / 各机器最近路径（JSON 数组）
 const KEY_LAST_MACHINE: string = 'last_machine_id';
@@ -21,6 +32,14 @@ const KEY_PREFERRED_AGENT: string = 'preferred_agent';
 const KEY_PREFERRED_YOLO: string = 'preferred_yolo';
 const KEY_RECENT_PREFIX: string = 'recent_paths_';   // + machineId
 const RECENT_MAX: number = 8;
+
+// picker 选项条目（label=显示 / value=回写值）
+interface PickerEntry {
+  label: string;
+  value: string;
+}
+// picker 模式（单 sheet 复用 6 个选择字段）
+type PickerMode = 'machine' | 'agent' | 'model' | 'effort' | 'reasoning' | 'sessionType';
 
 // 路由参数（对照 ChatPageRouteParams）：会话列表「本目录新建」+ 按钮预填 machine + directory。
 //   Index pushPath({name:'NewSessionPage', param}) 透传；NewSessionPageBuilder 转 @Param routeParamsSeed。
@@ -54,9 +73,14 @@ struct NewSessionPage {
   @Local isSpawning: boolean = false;
   @Local spawnError: string = '';
 
+  // 通用 picker sheet（6 个选择字段共用）
+  @Local pickerOpen: boolean = false;
+  @Local pickerMode: PickerMode = 'machine';
+
   // 目录树浏览弹层（bindSheet，内部 @Builder，不上独立路由——避免 NavPathStack pop 回值复杂）
   @Local browserVisible: boolean = false;
   @Local browserPath: string = '/';
+  @Local browserPathInput: string = '';           // 手输/粘贴路径 draft（保留手输能力：主表单纯点选，sheet 内可手输）
   @Local browserEntries: DirEntry[] = [];
   @Local browserLoading: boolean = false;
   @Local browserError: string = '';
@@ -138,29 +162,6 @@ struct NewSessionPage {
     }
   }
 
-  private onMachineSelected(index: number): void {
-    if (index < 0 || index >= this.machines.length) { return; }
-    this.selectedMachineId = this.machines[index].id;
-    this.directory = '';        // 切 machine 清空目录（不同机器路径不通用）
-    this.recentPaths = [];
-    this.loadRecentFor(this.selectedMachineId);
-    this.refreshModels();       // machine 变 → 重拉 codex/cursor/opencode 模型列表（loadRecentFor 预填目录后 opencode 另由 applyDirectory 再拉一次）
-  }
-
-  private onAgentSelected(index: number): void {
-    if (index < 0 || index >= AGENT_FLAVORS.length) { return; }
-    this.selectedAgent = AGENT_FLAVORS[index];
-    // 切 agent 重置 model/effort/reasoning（对照上游 index.tsx:73-77，不同 agent 的模型/努力域不同）
-    this.selectedModel = 'auto';
-    this.selectedEffort = 'auto';
-    this.selectedReasoningEffort = '';
-    this.refreshModels();       // agent 变 → 按 新 agent 决定拉 codex/cursor/opencode 还是清空（claude/gemini/kimi）
-  }
-
-  private useRecentPath(path: string): void {
-    this.applyDirectory(path);
-  }
-
   // 目录建议（对照上游 useDirectorySuggestions）：recent 在前 + 同机会话的 path/worktree basePath
   //   合并去重 + 其余按 localeCompare。machineId 过滤在纯函数内部（null→全部）。
   get directorySuggestions(): string[] {
@@ -169,58 +170,35 @@ struct NewSessionPage {
 
   // 统一目录赋值入口：切目录时若 agent=opencode 重拉 model 列表（opencode 的可用模型随 cwd 变）。
   //   codex/cursor 的模型列表只随 machine 变（machine/agent 切换时 refreshModels 已覆盖），此处不重复拉。
-  //   注：TextInput 手输路径不走此入口（避免逐键请求）；opencode 手输新路径时 model 列表保持现状，「默认」始终可用。
+  //   注：browser sheet 内手输路径 onSubmit → loadBrowserDir；pickCurrentDir 走此入口赋值。
   private applyDirectory(v: string): void {
     this.directory = v;
     if (this.selectedAgent === 'opencode') { this.refreshModels(); }
   }
 
-  // —— Machine / Agent 下拉选项与索引（Select 需 options + selected idx + value 文本三件套）——
-  private machineIndex(): number {
-    for (let i = 0; i < this.machines.length; i++) {
-      if (this.machines[i].id === this.selectedMachineId) { return i; }
-    }
-    return -1;
-  }
-  private machineOptions(): SelectOption[] {
-    const opts: SelectOption[] = [];
-    for (let i = 0; i < this.machines.length; i++) {
-      const m: Machine = this.machines[i];
-      opts.push({ value: m.displayName !== '' ? m.displayName : m.id });
-    }
-    return opts;
-  }
+  // 当前所选机器显示名（按 selectedMachineId 直查；loading 时「加载中」）
   private machineValueDisplay(): string {
-    const idx: number = this.machineIndex();
-    if (idx < 0) { return this.loadingMachines ? t('common.loading') : t('newSession.selectMachine'); }
-    const m: Machine = this.machines[idx];
-    return m.displayName !== '' ? m.displayName : m.id;
+    for (let i = 0; i < this.machines.length; i++) {
+      if (this.machines[i].id === this.selectedMachineId) {
+        const m: Machine = this.machines[i];
+        return m.displayName !== '' ? m.displayName : m.id;
+      }
+    }
+    return this.loadingMachines ? t('common.loading') : t('newSession.selectMachine');
   }
   // 当前所选机器的上次 spawn 错误诊断文案（对照上游 formatRunnerSpawnError；message 空 → ''）。
   //   红字提示，不阻止创建（仅诊断；用户仍可重试）。
   private machineSpawnErrorText(): string {
-    const idx: number = this.machineIndex();
-    if (idx < 0) { return ''; }
-    const m: Machine = this.machines[idx];
-    return formatMachineSpawnError(m.lastSpawnErrorMessage, m.lastSpawnErrorAt);
-  }
-  private agentIndex(): number {
-    for (let i = 0; i < AGENT_FLAVORS.length; i++) {
-      if (AGENT_FLAVORS[i] === this.selectedAgent) { return i; }
+    for (let i = 0; i < this.machines.length; i++) {
+      if (this.machines[i].id === this.selectedMachineId) {
+        return formatMachineSpawnError(this.machines[i].lastSpawnErrorMessage, this.machines[i].lastSpawnErrorAt);
+      }
     }
-    return 0;
-  }
-  private agentOptions(): SelectOption[] {
-    const opts: SelectOption[] = [];
-    for (let i = 0; i < AGENT_FLAVORS.length; i++) {
-      opts.push({ value: agentDisplayName(AGENT_FLAVORS[i]) });
-    }
-    return opts;
+    return '';
   }
 
-  // —— Model 下拉（「默认」=auto + claude/gemini 静态预设 + codex/cursor/opencode 动态拉取，按 id 去重）——
-  //   codex/cursor/opencode 的 live model 列表经 refreshModels() 从 Hub 拉（对应上游 codex-models /
-  //   cursor-models / opencode-models 端点）；claude/gemini/kimi 走静态预设，dynamicModels 留空。
+  // —— Model 列表（「默认」=auto + claude/gemini 静态预设 + codex/cursor/opencode 动态拉取，按 id 去重）——
+  //   codex/cursor/opencode 的 live model 列表经 refreshModels() 从 Hub 拉；claude/gemini/kimi 走静态预设。
   //   条目顺序：[auto 默认] + modelOptionsForAgent(agent) 静态预设 + dynamicModels 动态，id 去重（auto/静态优先）。
   private appendUnique(list: ModelOption[], id: string, label: string): void {
     for (let i = 0; i < list.length; i++) { if (list[i].id === id) { return; } }
@@ -241,25 +219,7 @@ struct NewSessionPage {
     }
     return out;
   }
-  private modelIndex(): number {
-    const entries: ModelOption[] = this.modelEntries();
-    for (let i = 0; i < entries.length; i++) {
-      if (entries[i].id === this.selectedModel) { return i; }
-    }
-    return 0;   // 选中的不在列表 → 回退「默认」(auto)
-  }
-  private modelOptions(): SelectOption[] {
-    const entries: ModelOption[] = this.modelEntries();
-    const opts: SelectOption[] = [];
-    for (let i = 0; i < entries.length; i++) { opts.push({ value: entries[i].label }); }
-    return opts;
-  }
-  private onModelSelected(index: number): void {
-    const entries: ModelOption[] = this.modelEntries();
-    if (index >= 0 && index < entries.length) { this.selectedModel = entries[index].id; }
-  }
-  // Select 折叠态显示文本：按 selectedModel 在 modelEntries() 查 label（与下拉列表项一致；动态模型的 Hub label
-  //   如 'GPT-5' 而非 id 'gpt-5'）；未命中（理论上不会，auto 必在）回落「默认」。
+  // model 行右侧显示文本：按 selectedModel 在 modelEntries() 查 label；未命中回落「默认」。
   private modelValueDisplay(): string {
     const entries: ModelOption[] = this.modelEntries();
     for (let i = 0; i < entries.length; i++) {
@@ -271,7 +231,7 @@ struct NewSessionPage {
   // 按 agent + machine（opencode 另带 cwd）拉 live model 列表 → 写 @Local dynamicModels。
   //   claude/gemini/kimi：纯静态预设，无需拉取 → 清空。
   //   codex：getMachineCodexModels(machineId)；cursor：getMachineCursorModels(machineId)。
-  //   opencode：依赖 cwd，directory 空 → 跳过（上游对空 cwd 不探测，避免误报）；非空 → getMachineOpencodeModels(machineId, cwd)。
+  //   opencode：依赖 cwd，directory 空 → 跳过；非空 → getMachineOpencodeModels(machineId, cwd)。
   //   失败静默 → 清空（回落「默认」=auto 单选，不阻塞建会话）。防竞态：await 后若 agent/machine 已变则丢弃过期结果。
   private async refreshModels(): Promise<void> {
     const agent: string = this.selectedAgent;
@@ -299,86 +259,162 @@ struct NewSessionPage {
     }
   }
 
-  // —— Effort 下拉（仅 claude；'auto'=省略）——
-  private effortIndex(): number {
-    for (let i = 0; i < EFFORT_OPTIONS.length; i++) {
-      if (EFFORT_OPTIONS[i] === this.selectedEffort) { return i; }
-    }
-    return 0;
-  }
-  private effortOptions(): SelectOption[] {
-    const opts: SelectOption[] = [];
-    for (let i = 0; i < EFFORT_OPTIONS.length; i++) {
-      opts.push({ value: effortDisplayName(EFFORT_OPTIONS[i]) });
-    }
-    return opts;
-  }
-  private onEffortSelected(index: number): void {
-    if (index >= 0 && index < EFFORT_OPTIONS.length) { this.selectedEffort = EFFORT_OPTIONS[index]; }
-  }
-
-  // —— 推理努力下拉（仅 codex/opencode；''=默认省略，对照上游 spawn modelReasoningEffort optional）——
-  //   首项 ''（默认）+ reasoningEffortsForFlavor(agent)；agent 决定 codex(low..xhigh) 或 opencode(low..max)。
+  // 推理努力可选域（仅 codex/opencode；''=默认省略）：首项 ''（默认）+ reasoningEffortsForFlavor(agent)。
   private reasoningEffortValues(): string[] {
     const base: string[] = reasoningEffortsForFlavor(this.selectedAgent);
     const out: string[] = [''];
     for (let i = 0; i < base.length; i++) { out.push(base[i]); }
     return out;
   }
-  private reasoningEffortIndex(): number {
-    const vals: string[] = this.reasoningEffortValues();
+
+  // —— 通用 picker sheet（6 个选择字段共用）——
+  //   openPicker 先设 mode 后开（bindSheet builder 首帧读到正确 mode）。
+  private openPicker(mode: PickerMode): void {
+    this.pickerMode = mode;
+    this.pickerOpen = true;
+  }
+  private pickerTitle(): string {
+    if (this.pickerMode === 'machine') { return t('newSession.machine'); }
+    if (this.pickerMode === 'agent') { return t('newSession.agent'); }
+    if (this.pickerMode === 'model') { return t('newSession.model'); }
+    if (this.pickerMode === 'effort') { return t('newSession.effort'); }
+    if (this.pickerMode === 'reasoning') { return t('sessionConfig.reasoningEffort'); }
+    return t('newSession.type');   // sessionType
+  }
+  // 按 pickerMode 产选项（label+value）。⚠️ ArkTS 严格：每项用 const:PickerEntry 承接，禁裸字面量 push。
+  private pickerEntries(): PickerEntry[] {
+    const out: PickerEntry[] = [];
+    if (this.pickerMode === 'machine') {
+      for (let i = 0; i < this.machines.length; i++) {
+        const m: Machine = this.machines[i];
+        const e: PickerEntry = { label: m.displayName !== '' ? m.displayName : m.id, value: m.id };
+        out.push(e);
+      }
+    } else if (this.pickerMode === 'agent') {
+      for (let i = 0; i < AGENT_FLAVORS.length; i++) {
+        const f: string = AGENT_FLAVORS[i];
+        const e: PickerEntry = { label: agentDisplayName(f), value: f };
+        out.push(e);
+      }
+    } else if (this.pickerMode === 'model') {
+      const entries: ModelOption[] = this.modelEntries();
+      for (let i = 0; i < entries.length; i++) {
+        const e: PickerEntry = { label: entries[i].label, value: entries[i].id };
+        out.push(e);
+      }
+    } else if (this.pickerMode === 'effort') {
+      for (let i = 0; i < EFFORT_OPTIONS.length; i++) {
+        const v: string = EFFORT_OPTIONS[i];
+        const e: PickerEntry = { label: effortDisplayName(v), value: v };
+        out.push(e);
+      }
+    } else if (this.pickerMode === 'reasoning') {
+      const vals: string[] = this.reasoningEffortValues();
+      for (let i = 0; i < vals.length; i++) {
+        const v: string = vals[i];
+        const e: PickerEntry = { label: v === '' ? t('newSession.model.default') : reasoningEffortDisplayName(v), value: v };
+        out.push(e);
+      }
+    } else {   // sessionType
+      for (let i = 0; i < SESSION_TYPES.length; i++) {
+        const v: string = SESSION_TYPES[i];
+        const e: PickerEntry = { label: sessionTypeDisplayName(v), value: v };
+        out.push(e);
+      }
+    }
+    return out;
+  }
+  private pickerSelectedValue(): string {
+    if (this.pickerMode === 'machine') { return this.selectedMachineId; }
+    if (this.pickerMode === 'agent') { return this.selectedAgent; }
+    if (this.pickerMode === 'model') { return this.selectedModel; }
+    if (this.pickerMode === 'effort') { return this.selectedEffort; }
+    if (this.pickerMode === 'reasoning') { return this.selectedReasoningEffort; }
+    return this.selectedSessionType;
+  }
+  // picker 选中分发 → apply*（by-value 唯一入口，杜绝逻辑分叉），末尾关 sheet（onDisappear 亦兜底）。
+  private onPickerPick(value: string): void {
+    if (this.pickerMode === 'machine') { this.applyMachineId(value); }
+    else if (this.pickerMode === 'agent') { this.applyAgent(value); }
+    else if (this.pickerMode === 'model') { this.applyModel(value); }
+    else if (this.pickerMode === 'effort') { this.applyEffort(value); }
+    else if (this.pickerMode === 'reasoning') { this.applyReasoning(value); }
+    else { this.applySessionType(value); }
+    this.pickerOpen = false;
+  }
+
+  // —— apply*（by-value：值域校验替 index 越界守卫，更鲁棒；保留原联动序）——
+  private applyMachineId(id: string): void {
+    let found: boolean = false;
+    for (let i = 0; i < this.machines.length; i++) {
+      if (this.machines[i].id === id) { found = true; break; }
+    }
+    if (!found) { return; }                        // 防 picker 给过期 id（machines 刷新过）
+    this.selectedMachineId = id;
+    this.directory = '';                           // 切 machine 清目录（不同机器路径不通用）
+    this.recentPaths = [];
+    this.loadRecentFor(id);                        // 预填目录（空时）+ opencode 另由 applyDirectory 再 refreshModels
+    this.refreshModels();                          // machine 变 → 重拉 codex/cursor/opencode 模型列表
+  }
+  private applyAgent(flavor: string): void {
+    let found: boolean = false;
+    for (let i = 0; i < AGENT_FLAVORS.length; i++) {
+      if (AGENT_FLAVORS[i] === flavor) { found = true; break; }
+    }
+    if (!found) { return; }
+    this.selectedAgent = flavor;
+    // 切 agent 重置 model/effort/reasoning（对照上游 index.tsx:73-77，不同 agent 的模型/努力域不同）
+    this.selectedModel = 'auto';
+    this.selectedEffort = 'auto';
+    this.selectedReasoningEffort = '';
+    this.refreshModels();                          // 先 set agent 再 refresh（refreshModels 读 selectedAgent）
+  }
+  private applyModel(value: string): void {
+    this.selectedModel = value;                    // 原亦无副作用；'auto' 必在列表
+  }
+  private applyEffort(value: string): void {
+    for (let i = 0; i < EFFORT_OPTIONS.length; i++) {
+      if (EFFORT_OPTIONS[i] === value) { this.selectedEffort = value; return; }
+    }
+  }
+  private applyReasoning(value: string): void {
+    const vals: string[] = this.reasoningEffortValues();   // 含首项 ''
     for (let i = 0; i < vals.length; i++) {
-      if (vals[i] === this.selectedReasoningEffort) { return i; }
+      if (vals[i] === value) { this.selectedReasoningEffort = value; return; }
     }
-    return 0;
   }
-  private reasoningEffortOptions(): SelectOption[] {
-    const vals: string[] = this.reasoningEffortValues();
-    const opts: SelectOption[] = [];
-    opts.push({ value: t('newSession.model.default') });
-    for (let i = 1; i < vals.length; i++) {
-      opts.push({ value: reasoningEffortDisplayName(vals[i]) });
-    }
-    return opts;
-  }
-  private onReasoningEffortSelected(index: number): void {
-    const vals: string[] = this.reasoningEffortValues();
-    if (index >= 0 && index < vals.length) { this.selectedReasoningEffort = vals[index]; }
+  private applySessionType(value: string): void {
+    if (value !== 'simple' && value !== 'worktree') { return; }
+    this.selectedSessionType = value;
+    if (value !== 'worktree') { this.worktreeName = ''; }   // 非 worktree 清名
   }
 
-  // —— SessionType 下拉（simple 普通 / worktree 工作树）——
-  private sessionTypeIndex(): number {
-    for (let i = 0; i < SESSION_TYPES.length; i++) {
-      if (SESSION_TYPES[i] === this.selectedSessionType) { return i; }
-    }
-    return 0;
+  // picker sheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + LARGE 档。
+  private get pickerSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.LARGE],
+      onDisappear: () => { this.pickerOpen = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
-  private sessionTypeOptions(): SelectOption[] {
-    const opts: SelectOption[] = [];
-    for (let i = 0; i < SESSION_TYPES.length; i++) {
-      opts.push({ value: sessionTypeDisplayName(SESSION_TYPES[i]) });
-    }
-    return opts;
-  }
-  private onSessionTypeSelected(index: number): void {
-    if (index >= 0 && index < SESSION_TYPES.length) {
-      this.selectedSessionType = SESSION_TYPES[index];
-      if (this.selectedSessionType !== 'worktree') { this.worktreeName = ''; }
-    }
+  // 目录浏览器 sheet 视觉配置：MEDIUM/LARGE 双档。
+  private get browserSheetOpts(): SheetOptions {
+    const ov: SheetOverrides = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      onDisappear: () => { this.browserVisible = false; }
+    };
+    return buildSheetOptions(this.c.surface, ov);
   }
 
-  private toggleYolo(): void {
-    this.yolo = !this.yolo;
-  }
-
-  // —— 目录树浏览（bindSheet 内）——
+  // —— 目录树浏览 ——
   private openBrowser(): void {
     if (this.selectedMachineId === '') {
       showToast(t('newSession.pleaseSelectMachineFirst'));
       return;
     }
-    this.browserVisible = true;
     const startPath: string = this.directory.trim() !== '' ? this.directory.trim() : '/';
+    this.browserPathInput = startPath;             // 同步手输 draft
+    this.browserVisible = true;
     this.loadBrowserDir(startPath);
   }
   private async loadBrowserDir(path: string): Promise<void> {
@@ -389,6 +425,7 @@ struct NewSessionPage {
       const entries: DirEntry[] = await getHubClient().listMachineDirectory(this.selectedMachineId, path);
       this.browserEntries = entries;
       this.browserPath = path;
+      this.browserPathInput = path;                // 导航后 draft 跟随
     } catch (e) {
       this.browserError = e instanceof Error ? e.message : t('newSession.browseFailed');
     } finally {
@@ -414,7 +451,8 @@ struct NewSessionPage {
     if (p !== this.browserPath) { this.loadBrowserDir(p); }
   }
   private pickCurrentDir(): void {
-    this.applyDirectory(this.browserPath);   // 走统一入口：opencode 随新 cwd 重拉 model 列表
+    const p: string = this.browserPathInput.trim();   // 用 draft（含手输未加载的路径），保留手输即用
+    if (p !== '') { this.applyDirectory(p); }         // 走统一入口：opencode 随新 cwd 重拉 model 列表
     this.browserVisible = false;
   }
   // 目录排序：文件夹在前，再按名升序
@@ -514,33 +552,7 @@ struct NewSessionPage {
     await getPreferencesService().putString(key, JSON.stringify(next));
   }
 
-  @Builder
-  private FieldLabel(text: string) {
-    Text(text)
-      .fontSize(fs(13))
-      .fontColor(this.c.textTertiary)
-      .width('100%')
-      .padding({ left: 16, top: 18, bottom: 6 })
-  }
-
-  @Builder
-  private RecentPathRow(path: string) {
-    Row({ space: 8 }) {
-      SymbolGlyph($r('sys.symbol.folder')).fontSize(fs(14)).fontColor([this.c.textTertiary])
-      Text(path)
-        .fontSize(fs(13))
-        .fontColor(this.c.textSecondary)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .width('100%')
-    .height(40)
-    .padding({ left: 16, right: 16 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => { this.useRecentPath(path); })
-  }
-
+  // 目录树行（folder/doc 图标 + git 徽章；目录树专属，不用 SettingCard）
   @Builder
   private BrowserEntryRow(entry: DirEntry) {
     Row({ space: 10 }) {
@@ -570,16 +582,56 @@ struct NewSessionPage {
     .onClick(() => { this.enterDir(entry); })
   }
 
-  // 目录浏览半模态弹层（bindSheet 内容）
+  // 通用 picker sheet（6 选择字段共用）：SheetDialog 标题栏 + 灰身 + SettingCard(check) 白卡浮灰底选项。
+  @Builder
+  private PickerSheet() {
+    Column() {
+      SheetDialog({
+        title: this.pickerTitle(),
+        showCloseButton: true,
+        onClose: () => { this.pickerOpen = false; }
+      })
+      Scroll() {
+        Column({ space: 12 }) {
+          ForEach(this.pickerEntries(), (e: PickerEntry) => {
+            SettingCard({
+              primaryText: e.label,
+              suffixType: 'check',
+              isChecked: e.value === this.pickerSelectedValue(),
+              rowPosition: 'single',
+              cardBackground: true,
+              onItemClick: (): void => { this.onPickerPick(e.value); }
+            })
+          }, (e: PickerEntry) => e.value)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .align(Alignment.TopStart)
+      .scrollBar(BarState.Auto)
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  // 目录浏览半模态弹层（SheetDialog 标题栏 + 路径行 + 手输框 + 列表 + 选择此目录）
   @Builder
   private DirectoryBrowser() {
     Column() {
+      SheetDialog({
+        title: t('newSession.chooseFolderTitle'),
+        showCloseButton: true,
+        onClose: () => { this.browserVisible = false; }
+      })
+
       // 当前路径 + 回上级
       Row() {
         Button(t('newSession.parentDir'))
           .fontSize(fs(13))
           .height(32)
-          .backgroundColor(this.c.surface)
+          .backgroundColor(this.c.surfaceSelected)
           .fontColor(this.c.textSecondary)
           .borderRadius(8)
           .onClick(() => { this.goParent(); })
@@ -593,6 +645,16 @@ struct NewSessionPage {
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+
+      // 手输/粘贴路径（保留手输能力；onSubmit 加载该路径）
+      TextInput({ text: this.browserPathInput, placeholder: t('newSession.manualPathPlaceholder') })
+        .fontSize(fs(13))
+        .backgroundColor(this.c.surface)
+        .borderRadius(10)
+        .height(40)
+        .margin({ left: 16, right: 16, bottom: 4 })
+        .onChange((value: string) => { this.browserPathInput = value; })
+        .onSubmit((enterKey: EnterKeyType) => { this.loadBrowserDir(this.browserPathInput.trim()); })
 
       if (this.browserLoading) {
         Column() {
@@ -641,242 +703,261 @@ struct NewSessionPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.c.bg)
   }
 
   build() {
     NavDestination() {
-      Column() {
-        // 机器拉取失败兜底（无机器则无法继续）
-        if (this.loadError !== '' && this.machines.length === 0) {
-          Column({ space: 12 }) {
-            Text(t('newSession.loadFailed')).fontSize(fs(16)).fontColor(this.c.error)
-            Text(this.loadError).fontSize(fs(13)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
-            Button(t('common.retry'))
-              .backgroundColor(this.c.primary)
-              .fontColor(this.c.bubbleUserText)
-              .onClick(() => { this.loadMachines(); })
+      Stack() {
+      // 机器拉取失败兜底（无机器则无法继续）—— berry3 卡片风：单张 danger 白卡 + 重试胶囊，与主表单同款 List 结构。
+      if (this.loadError !== '' && this.machines.length === 0) {
+        List({ space: 12 }) {
+          ListItemGroup() {
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.loadFailed'),
+                secondaryText: this.loadError,
+                suffixType: 'none', isDanger: true, clickable: false, rowPosition: 'single'
+              })
+            }
           }
-          .width('100%').height('100%').justifyContent(FlexAlign.Center)
-        } else {
-          Scroll() {
-            Column() {
-              // 机器
-              this.FieldLabel(t('newSession.machine'))
-              Column() {
-                Select(this.machineOptions())
-                  .selected(this.machineIndex())
-                  .value(this.machineValueDisplay())
-                  .onSelect((index: number, text: string) => { this.onMachineSelected(index); })
-                  .width('100%')
-                  .height(50)
+          .backgroundColor(this.c.bg)
+          .borderRadius($r('app.float.setting_card_radius'))
+          .clip(true)
 
-                // 该机器上次 spawn 错误诊断（Hub runnerState.lastSpawnError；非空才显示）
-                if (this.machineSpawnErrorText() !== '') {
-                  Row({ space: 4 }) {
-                    SymbolGlyph($r('sys.symbol.exclamationmark_triangle')).fontSize(fs(12)).fontColor([this.c.error])
-                    Text(this.machineSpawnErrorText())
-                      .fontSize(fs(12))
-                      .fontColor(this.c.error)
-                      .layoutWeight(1)
-                  }
-                  .width('100%')
-                  .margin({ top: 8 })
-                }
+          ListItem() {
+            SettingActionButton({
+              label: t('common.retry'),
+              style: 'primary',
+              onPress: () => { this.loadMachines(); }
+            })
+          }.selectable(false)
+
+          ListItem() { Row().height(24) }.selectable(false)
+        }
+        .scrollBar(BarState.Off)
+        .padding({
+          top: 12, bottom: 0,
+          left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
+        })
+      } else {
+        List({ space: 12 }) {
+          // —— 分组 1：环境（机器 + Agent）——
+          ListItem() {
+            SettingSectionTitle({ text: t('newSession.sectionEnvironment') })
+          }.selectable(false)
+          ListItemGroup() {
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.machine'),
+                suffixText: this.machineValueDisplay(),
+                suffixType: 'textAndArrow',
+                rowPosition: 'first',
+                isEnabled: this.machines.length > 0,
+                onItemClick: () => { this.openPicker('machine'); }
+              })
+            }
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.agent'),
+                suffixText: agentDisplayName(this.selectedAgent),
+                suffixType: 'textAndArrow',
+                rowPosition: 'last',
+                onItemClick: () => { this.openPicker('agent'); }
+              })
+            }
+          }
+          .divider({
+            strokeWidth: $r('app.float.setting_divider_width'), color: this.c.border,
+            startMargin: $r('app.float.setting_card_padding_h'), endMargin: $r('app.float.setting_card_padding_h')
+          })
+          .backgroundColor(this.c.bg)
+          .borderRadius($r('app.float.setting_card_radius'))
+          .clip(true)
+
+          // 该机器上次 spawn 错误诊断（Hub runnerState.lastSpawnError；非空才显示，独立 danger 只读卡）
+          if (this.machineSpawnErrorText() !== '') {
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.machine'),
+                secondaryText: this.machineSpawnErrorText(),
+                suffixType: 'none', isDanger: true, clickable: false, rowPosition: 'single'
+              })
+            }
+          }
+
+          // —— 分组 2：工作目录（当前目录行 + 建议列表）——
+          ListItem() {
+            SettingSectionTitle({ text: t('newSession.directory') })
+          }.selectable(false)
+          ListItemGroup() {
+            ListItem() {
+              SettingCard({
+                primaryText: this.directory !== '' ? this.directory : t('newSession.chooseFolder'),
+                suffixType: 'arrow',
+                rowPosition: this.directorySuggestions.length === 0 ? 'single' : 'first',
+                onItemClick: () => { this.openBrowser(); }
+              })
+            }
+            ForEach(this.directorySuggestions, (path: string, idx: number) => {
+              ListItem() {
+                SettingCard({
+                  primaryText: path,
+                  suffixType: 'check',
+                  isChecked: path === this.directory,
+                  rowPosition: rowPos(idx + 1, this.directorySuggestions.length + 1),
+                  onItemClick: () => { this.applyDirectory(path); }
+                })
               }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-              .backgroundColor(this.c.bg)
+            }, (path: string) => path)
+          }
+          .divider({
+            strokeWidth: $r('app.float.setting_divider_width'), color: this.c.border,
+            startMargin: $r('app.float.setting_card_padding_h'), endMargin: $r('app.float.setting_card_padding_h')
+          })
+          .backgroundColor(this.c.bg)
+          .borderRadius($r('app.float.setting_card_radius'))
+          .clip(true)
 
-              // 工作目录
-              this.FieldLabel(t('newSession.directory'))
-              Column({ space: 0 }) {
-                TextInput({ text: this.directory, placeholder: t('newSession.directoryPlaceholder') })
-                  .height(48)
-                  .fontSize(fs(14))
-                  .backgroundColor(this.c.surface)
-                  .borderRadius(10)
-                  .onChange((value: string) => { this.directory = value; })
-
-                Button(t('newSession.chooseFolder'))
-                  .width('100%')
-                  .height(40)
-                  .margin({ top: 8 })
-                  .backgroundColor(this.c.surface)
-                  .fontColor(this.c.textSecondary)
-                  .borderRadius(8)
-                  .onClick(() => { this.openBrowser(); })
-
-                // 目录建议（recent 在前 + 同机会话 path/worktree；对照上游 useDirectorySuggestions）
-                if (this.directorySuggestions.length > 0) {
-                  Text(t('newSession.recent'))
-                    .fontSize(fs(12))
-                    .fontColor(this.c.textTertiary)
-                    .width('100%')
-                    .margin({ top: 10, bottom: 2 })
-                  Column() {
-                    ForEach(this.directorySuggestions, (path: string) => {
-                      this.RecentPathRow(path)
-                    }, (path: string) => path)
-                  }
-                  .width('100%')
-                  .backgroundColor(this.c.bg)
-                  .borderRadius(10)
-                  .margin({ top: 2 })
-                }
+          // —— 分组 3：模型（model + 条件 effort[claude] / reasoning[codex·opencode]）——
+          ListItem() {
+            SettingSectionTitle({ text: t('newSession.model') })
+          }.selectable(false)
+          ListItemGroup() {
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.model'),
+                suffixText: this.modelValueDisplay(),
+                suffixType: 'textAndArrow',
+                rowPosition: (this.selectedAgent === 'claude' || this.selectedAgent === 'codex' || this.selectedAgent === 'opencode') ? 'first' : 'single',
+                onItemClick: () => { this.openPicker('model'); }
+              })
+            }
+            if (this.selectedAgent === 'claude') {
+              ListItem() {
+                SettingCard({
+                  primaryText: t('newSession.effort'),
+                  suffixText: effortDisplayName(this.selectedEffort),
+                  suffixType: 'textAndArrow',
+                  rowPosition: 'last',
+                  onItemClick: () => { this.openPicker('effort'); }
+                })
               }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-
-              // Agent
-              this.FieldLabel('Agent')
-              Column() {
-                Select(this.agentOptions())
-                  .selected(this.agentIndex())
-                  .value(agentDisplayName(this.selectedAgent))
-                  .onSelect((index: number, text: string) => { this.onAgentSelected(index); })
-                  .width('100%')
-                  .height(50)
+            }
+            if (this.selectedAgent === 'codex' || this.selectedAgent === 'opencode') {
+              ListItem() {
+                SettingCard({
+                  primaryText: t('sessionConfig.reasoningEffort'),
+                  suffixText: this.selectedReasoningEffort === '' ? t('newSession.model.default') : reasoningEffortDisplayName(this.selectedReasoningEffort),
+                  suffixType: 'textAndArrow',
+                  rowPosition: 'last',
+                  onItemClick: () => { this.openPicker('reasoning'); }
+                })
               }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-              .backgroundColor(this.c.bg)
+            }
+          }
+          .divider({
+            strokeWidth: $r('app.float.setting_divider_width'), color: this.c.border,
+            startMargin: $r('app.float.setting_card_padding_h'), endMargin: $r('app.float.setting_card_padding_h')
+          })
+          .backgroundColor(this.c.bg)
+          .borderRadius($r('app.float.setting_card_radius'))
+          .clip(true)
 
-              // 模型（「默认」=auto + claude/gemini 静态预设 + codex/cursor/opencode 动态拉取）
-              this.FieldLabel(t('newSession.model'))
-              Column() {
-                Select(this.modelOptions())
-                  .selected(this.modelIndex())
-                  .value(this.modelValueDisplay())
-                  .onSelect((index: number, text: string) => { this.onModelSelected(index); })
-                  .width('100%')
-                  .height(50)
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-              .backgroundColor(this.c.bg)
-
-              // 努力程度（仅 claude；对照 web ClaudeEffort，'auto'=省略）
-              if (this.selectedAgent === 'claude') {
-                this.FieldLabel(t('newSession.effort'))
-                Column() {
-                  Select(this.effortOptions())
-                    .selected(this.effortIndex())
-                    .value(effortDisplayName(this.selectedEffort))
-                    .onSelect((index: number, text: string) => { this.onEffortSelected(index); })
-                    .width('100%')
-                    .height(50)
-                }
-                .width('100%')
-                .padding({ left: 16, right: 16 })
-                .backgroundColor(this.c.bg)
-              }
-
-              // 推理努力（仅 codex/opencode；对照 web ReasoningEffort，''=默认省略）
-              if (this.selectedAgent === 'codex' || this.selectedAgent === 'opencode') {
-                this.FieldLabel(t('sessionConfig.reasoningEffort'))
-                Column() {
-                  Select(this.reasoningEffortOptions())
-                    .selected(this.reasoningEffortIndex())
-                    .value(this.selectedReasoningEffort === '' ? t('newSession.model.default') : reasoningEffortDisplayName(this.selectedReasoningEffort))
-                    .onSelect((index: number, text: string) => { this.onReasoningEffortSelected(index); })
-                    .width('100%')
-                    .height(50)
-                }
-                .width('100%')
-                .padding({ left: 16, right: 16 })
-                .backgroundColor(this.c.bg)
-              }
-
-              // 会话类型（simple 普通 / worktree 工作树）
-              this.FieldLabel(t('newSession.type'))
-              Column({ space: 8 }) {
-                Select(this.sessionTypeOptions())
-                  .selected(this.sessionTypeIndex())
-                  .value(sessionTypeDisplayName(this.selectedSessionType))
-                  .onSelect((index: number, text: string) => { this.onSessionTypeSelected(index); })
-                  .width('100%')
-                  .height(50)
-
-                // 工作树自定义名（worktree 时显示；留空则服务端自动生成）
-                if (this.selectedSessionType === 'worktree') {
+          // —— 分组 4：会话选项（会话类型 + worktree 名 + Yolo）——
+          ListItem() {
+            SettingSectionTitle({ text: t('newSession.options') })
+          }.selectable(false)
+          ListItemGroup() {
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.type'),
+                suffixText: sessionTypeDisplayName(this.selectedSessionType),
+                suffixType: 'textAndArrow',
+                rowPosition: 'first',
+                onItemClick: () => { this.openPicker('sessionType'); }
+              })
+            }
+            // 工作树自定义名（worktree 时显示；留空则服务端自动生成）
+            if (this.selectedSessionType === 'worktree') {
+              ListItem() {
+                Row() {
                   TextInput({ text: this.worktreeName, placeholder: t('newSession.worktreeNamePlaceholder') })
-                    .height(44)
                     .fontSize(fs(14))
                     .backgroundColor(this.c.surface)
                     .borderRadius(10)
+                    .height(44)
                     .onChange((value: string) => { this.worktreeName = value; })
                 }
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-              .backgroundColor(this.c.bg)
-
-              // Yolo（跳过权限确认 = --yolo；持久化 preferred_yolo）—— 行内可点切换
-              this.FieldLabel(t('newSession.options'))
-              Column() {
-                Row() {
-                  Column({ space: 2 }) {
-                    Text(t('newSession.yolo')).fontSize(fs(14)).fontColor(this.c.textPrimary)
-                    Text(t('newSession.yoloDesc')).fontSize(fs(11)).fontColor(this.c.textTertiary)
-                  }
-                  .alignItems(HorizontalAlign.Start)
-                  .layoutWeight(1)
-                  .onClick(() => { this.toggleYolo(); })
-
-                  Toggle({ type: ToggleType.Switch, isOn: this.yolo })
-                    .selectedColor(this.c.primary)
-                    .onChange((on: boolean) => { this.yolo = on; })
-                }
                 .width('100%')
-                .height(56)
-                .padding({ left: 16, right: 16 })
-                .alignItems(VerticalAlign.Center)
+                .padding({
+                  left: $r('app.float.setting_card_padding_h'), right: $r('app.float.setting_card_padding_h'),
+                  top: $r('app.float.setting_card_padding_v'), bottom: $r('app.float.setting_card_padding_v')
+                })
+                .borderRadius(resolveRowRadius('middle'))
               }
-              .width('100%')
-              .backgroundColor(this.c.bg)
-
-              // 错误提示
-              if (this.spawnError !== '') {
-                Text(this.spawnError)
-                  .fontSize(fs(12))
-                  .fontColor(this.c.error)
-                  .width('100%')
-                  .padding({ left: 16, top: 12 })
-              }
-
-              // 创建按钮
-              Button(this.isSpawning ? t('newSession.creating') : t('newSession.create'))
-                .width('100%')
-                .height(50)
-                .margin({ top: 24, left: 16, right: 16, bottom: 24 })
-                .backgroundColor(this.c.primary)
-                .fontColor(this.c.bubbleUserText)
-                .borderRadius(12)
-                .enabled(!this.isSpawning && this.machines.length > 0)
-                .onClick(() => { this.createSession(); })
             }
-            .width('100%')
-            .alignItems(HorizontalAlign.Start)
+            ListItem() {
+              SettingCard({
+                primaryText: t('newSession.yolo'),
+                secondaryText: t('newSession.yoloDesc'),
+                suffixType: 'switch',
+                switchIsOn: this.yolo,
+                onSwitchChange: (on: boolean) => { this.yolo = on; },
+                rowPosition: 'last'
+              })
+            }
           }
-          .width('100%')
-          .layoutWeight(1)
-          .scrollBar(BarState.Off)
+          .divider({
+            strokeWidth: $r('app.float.setting_divider_width'), color: this.c.border,
+            startMargin: $r('app.float.setting_card_padding_h'), endMargin: $r('app.float.setting_card_padding_h')
+          })
+          .backgroundColor(this.c.bg)
+          .borderRadius($r('app.float.setting_card_radius'))
+          .clip(true)
+
+          // 错误提示（spawn 校验/spawn 失败）
+          if (this.spawnError !== '') {
+            ListItem() {
+              Text(this.spawnError)
+                .fontSize(fs(12))
+                .fontColor(this.c.error)
+                .width('100%')
+                .padding({ left: $r('app.float.setting_card_padding_h'), top: 4, bottom: 4 })
+            }.selectable(false)
+          }
+
+          // 创建按钮
+          ListItem() {
+            SettingActionButton({
+              label: this.isSpawning ? t('newSession.creating') : t('newSession.create'),
+              style: 'primary',
+              isEnabled: !this.isSpawning && this.machines.length > 0,
+              onPress: () => { this.createSession(); }
+            })
+          }.selectable(false)
+
+          ListItem() { Row().height(24) }.selectable(false)
         }
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
+        .padding({
+          top: 12, bottom: 0,
+          left: $r('sys.float.padding_level8'), right: $r('sys.float.padding_level8')
+        })
+      }
+      // picker / 目录浏览器 sheet 各挂独立 0×0 锚点节点（同节点叠多 bindSheet 仅一个生效 → 必须分流，对照 memory「bindSheet 两坑」）
+      Column() {}.width(0).height(0)
+        .bindSheet(this.pickerOpen!!, this.PickerSheet(), this.pickerSheetOpts)
+      Column() {}.width(0).height(0)
+        .bindSheet(this.browserVisible!!, this.DirectoryBrowser(), this.browserSheetOpts)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.c.surface)
     }
     .title(t('newSession.title'))
+    .backgroundColor(this.c.surface)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
-    })
-    .bindSheet(this.browserVisible!!, this.DirectoryBrowser(), {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      dragBar: true,
-      blurStyle: BlurStyle.Thick,
-      title: { title: t('newSession.chooseFolderTitle') }
     })
   }
 }

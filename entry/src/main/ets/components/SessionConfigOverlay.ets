@@ -33,6 +33,17 @@ export struct SessionConfigOverlay {
   @Event onSetCollaborationMode: (m: string) => void = (m: string): void => {};
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  private get isDark(): boolean { return getThemeState().isDark; }
+
+  // 半透明色（对照 ComposerToolbar.withAlpha / chatcube withColorAlpha：#RRGGBB → #AA{{RRGGBB}}，八位色 alpha 在前）。
+  private withAlpha(color: string, alphaHex: string): string {
+    if (color.startsWith('#') && color.length === 7) {
+      return `#${alphaHex}${color.substring(1)}`;
+    }
+    return color;
+  }
+  // 选中行底（chatcube themePrimarySubtleBackground：primary + 暗 '28'/亮 '14'）。
+  private selectedBg(): string { return this.withAlpha(this.c.primary, this.isDark ? '28' : '14'); }
 
   // 按 flavor 拉 session 作用域 live 模型列表 → 写 @Local dynamicModels。
   //   claude/gemini/kimi：纯静态预设，无需拉取 → 清空。
@@ -88,27 +99,36 @@ export struct SessionConfigOverlay {
   private sectionTitle(title: string) {
     Text(title)
       .fontSize(fs(13))
-      .fontColor(this.c.textTertiary)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.c.textSecondary)
       .width('100%')
-      .padding({ left: 4, top: 14, bottom: 4 })
+      .padding({ left: 4, top: 16, bottom: 8 })
   }
 
+  // 选项胶囊（对照 chatcube ChatToolPickerSheetContent / ModelPickerSheet：每项一枚 surface 胶囊，
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→surface 灰底 + 次要字 + 空心圆。
+  //   行间 margin 8vp；sectionTitle 顶 16 底 8 → 组内紧(8)/组间松(24) 的近聚分组。
   @Builder
   private optionRow(label: string, value: string, current: string, field: string) {
     Row({ space: 10 }) {
       SymbolGlyph(value === current ? $r('sys.symbol.circle_fill') : $r('sys.symbol.circle'))
-        .fontSize(fs(14))
+        .fontSize(fs(15))
         .fontColor([value === current ? this.c.primary : this.c.textTertiary])
-        .width(18)
+        .width(20)
       Text(label)
         .fontSize(fs(15))
-        .fontColor(value === current ? this.c.textPrimary : this.c.textSecondary)
+        .fontWeight(value === current ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(value === current ? this.c.primary : this.c.textPrimary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
     }
     .width('100%')
-    .height(44)
-    .padding({ left: 12, right: 12 })
-    .borderRadius(8)
+    .height(48)
+    .padding({ left: 14, right: 14 })
+    .borderRadius(12)
+    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
+    .margin({ bottom: 8 })
     .onClick(() => { this.dispatch(field, value); })
   }
 
@@ -116,7 +136,7 @@ export struct SessionConfigOverlay {
     Scroll() {
       Column() {
         Text(t('sessionConfig.title'))
-          .fontSize(fs(17))
+          .fontSize(fs(19))
           .fontWeight(FontWeight.Medium)
           .fontColor(this.c.textPrimary)
           .width('100%')

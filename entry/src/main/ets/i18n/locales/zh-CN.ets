@@ -141,6 +141,9 @@ export const zhCN: Record<string, string> = {
   'newSession.browseFailed': '浏览目录失败',
   'newSession.spawnFailed': '启动会话失败',
   'newSession.directoryNotFound': '该目录在机器上不存在，请检查路径',
+  'newSession.agent': 'Agent',
+  'newSession.sectionEnvironment': '环境',
+  'newSession.manualPathPlaceholder': '输入或粘贴路径…',
 
   // —— 会话列表页 ——
   'sessions.title': '会话',
