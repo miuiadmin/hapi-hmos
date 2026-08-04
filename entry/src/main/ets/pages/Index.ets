@@ -71,10 +71,10 @@ struct Index {
   //   与 AboutPage（owner='about'）按 sheetOwner 互斥：AboutPage 是 pushed NavDestination，本页（@Entry Navigation 根）在它显示时
   //   仍常驻，若两页都裸读 sheetOpen 会同时弹两张；owner 门控保证仅归属页渲染。读 getUpdateState() 的 @Trace 字段驱动刷新。 ——
   private get ota(): UpdateState { return getUpdateState(); }
-  // OTA sheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + FIT_CONTENT 首档（同 AboutPage，走工厂默认）
+  // OTA sheet 视觉配置：白身(c.bg) + 毛玻璃 + 无把手 + FIT_CONTENT 首档（同 AboutPage，走工厂默认）
   private get otaSheetOpts(): SheetOptions {
     const ov: SheetOverrides = { onDisappear: () => { this.closeOtaSheet(); } };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
   // sheet 关闭（✕ / 下滑 / 系统关闭）：下载中视为取消（静默收尾），否则仅关 sheet（同 AboutPage）
   private closeOtaSheet(): void {

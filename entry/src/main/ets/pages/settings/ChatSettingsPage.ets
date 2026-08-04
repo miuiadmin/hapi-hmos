@@ -116,13 +116,13 @@ struct ChatSettingsPage {
     return normalized !== null ? normalized : getPickerValue('default');
   }
 
-  // SurfaceColorSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + LARGE 档。
+  // SurfaceColorSheet 的 bindSheet 视觉配置：白身(c.bg) + 毛玻璃 + 无把手 + LARGE 档。
   private get surfaceSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.LARGE],
       onDisappear: () => { this.surfaceSheetOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {
@@ -317,7 +317,7 @@ struct ChatSettingsPage {
   }
 
   // 气泡配色选择器 sheet（工具组/用户消息两态；4 预设 + 自定义 hex 输入）—— berry3 弹窗设计系统：
-  //   SheetDialog 标题栏（白头）+ 灰身(c.surface) + SettingCard(cardBackground + swatchColor) 白卡色点选择器项。
+  //   SheetDialog 标题栏（白头）+ 白身(c.bg) + SettingCard(cardBackground + swatchColor) 灰卡色点选择器项。
   @Builder SurfaceColorSheet() {
     Column() {
       SheetDialog({
@@ -375,7 +375,7 @@ struct ChatSettingsPage {
     .height('100%')
   }
 
-  // 自定义 hex 输入行（白卡浮灰底：swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
+  // 自定义 hex 输入行（灰卡浮白底：swatch 预览 + 标签 + TextInput；每键校验，合法即应用）
   @Builder SurfaceCustomRow() {
     Row() {
       Circle({ width: 18, height: 18 })
@@ -389,7 +389,7 @@ struct ChatSettingsPage {
       TextInput({ text: this.customHex, placeholder: '#rrggbb' })
         .fontSize(fs(14))
         .fontColor(this.c.textPrimary)
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.bg)
         .borderRadius(8)
         .height(40)
         .margin({ left: 12 })
@@ -403,7 +403,7 @@ struct ChatSettingsPage {
       top: $r('app.float.setting_card_padding_v'), bottom: $r('app.float.setting_card_padding_v')
     })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.c.bg)
+    .backgroundColor(this.c.surface)
     .borderRadius($r('app.float.setting_card_radius'))
   }
 }

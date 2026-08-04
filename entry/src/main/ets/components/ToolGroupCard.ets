@@ -239,7 +239,7 @@ struct ToolGroupCard {
 
   @Builder
   DetailSheet() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay）。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay）。
     Column() {
       SheetDialog({
         title: getToolPresentation(this.detailTool).title,
@@ -274,7 +274,7 @@ struct ToolGroupCard {
         scrollForward: NestedScrollMode.PARENT_FIRST,
         scrollBackward: NestedScrollMode.SELF_FIRST,
       })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')
@@ -286,7 +286,7 @@ struct ToolGroupCard {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: (): void => { this.isDetailOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {

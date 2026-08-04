@@ -29,7 +29,7 @@ export struct OutlinePanel {
   }
 
   build() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 NewSession PickerSheet）。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身滚动区：标题不再随滚动消失（对照 NewSession PickerSheet）。
     Column() {
       SheetDialog({
         title: t('outline.title'),
@@ -81,7 +81,7 @@ export struct OutlinePanel {
       .layoutWeight(1)
       .width('100%')
       .scrollBar(BarState.Off)
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')

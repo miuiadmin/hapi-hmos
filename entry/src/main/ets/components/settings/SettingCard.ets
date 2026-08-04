@@ -55,7 +55,7 @@ export struct SettingCard {
   @Param iconBgColor: string = '';
   /** 左侧色点（非空=渲染 18×18 圆色点；气泡配色选择器项用，与图标方块互斥场景各自使用） */
   @Param swatchColor: string = '';
-  /** 独立白卡模式（true=常态底改 c.bg 白，用于选择器项浮灰底 sheet；false=透明承 ListItemGroup 白底，设置列表用） */
+  /** 独立浮卡模式（true=常态底改 c.surface 灰卡，用于选择器项浮白底 sheet；false=透明承 ListItemGroup 白底，设置列表用） */
   @Param cardBackground: boolean = false;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -99,7 +99,7 @@ export struct SettingCard {
     .hoverEffect(HoverEffect.Highlight)
     .stateStyles({
       pressed: { .backgroundColor(this.c.surfaceSelected) },
-      normal: { .backgroundColor(this.cardBackground ? this.c.bg : Color.Transparent) }
+      normal: { .backgroundColor(this.cardBackground ? this.c.surface : Color.Transparent) }
     })
     .enabled(this.isEnabled)
     .opacity(this.rowOpacity)

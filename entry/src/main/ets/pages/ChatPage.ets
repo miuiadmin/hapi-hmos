@@ -2693,14 +2693,14 @@ struct ChatPage {
     .height(48)
     .padding({ left: 14, right: 14 })
     .borderRadius(12)
-    .backgroundColor(this.c.bg)
+    .backgroundColor(this.c.surface)
     .margin({ bottom: 8 })
     .onClick(() => { this.chooseSchedule(offsetMs); })
   }
 
   @Builder
   private ScheduleSheet() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身：预设/自定义/清除翻白胶囊浮灰身（对照 SessionConfigOverlay）。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身：预设/自定义/清除翻灰胶囊浮白身（对照 SessionConfigOverlay）。
     Column() {
       SheetDialog({
         title: t('chat.scheduleSend'),
@@ -2739,7 +2739,7 @@ struct ChatPage {
             Button(t('common.back'))
               .layoutWeight(1)
               .height(42)
-              .backgroundColor(this.c.bg)
+              .backgroundColor(this.c.surface)
               .fontColor(this.c.textPrimary)
               .onClick(() => { this.scheduleCustomMode = false; })
             Button(t('common.confirm'))
@@ -2771,7 +2771,7 @@ struct ChatPage {
           .height(48)
           .padding({ left: 14, right: 14 })
           .borderRadius(12)
-          .backgroundColor(this.c.bg)
+          .backgroundColor(this.c.surface)
           .margin({ bottom: 8 })
           .onClick(() => { this.openCustomSchedule(); })
 
@@ -2786,14 +2786,14 @@ struct ChatPage {
             .height(48)
             .padding({ left: 14, right: 14 })
             .borderRadius(12)
-            .backgroundColor(this.c.bg)
+            .backgroundColor(this.c.surface)
             .onClick(() => { this.clearSchedule(); })
           }
         }
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 16 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }
@@ -2839,51 +2839,51 @@ struct ChatPage {
     })
   }
 
-  // config/outline sheet 视觉配置：半屏 [MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  // config/outline sheet 视觉配置：半屏 [MEDIUM,LARGE] + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭
   //   （关闭走组件内 SheetDialog 标题栏 ✕）。对照 NewSession PickerSheet / 设置页同款 chrome。
   private get configSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: (): void => { this.configSheetOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
   private get outlineSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: (): void => { this.outlineOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
-  // rename/schedule/messageMenu sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  // rename/schedule/messageMenu sheet 视觉配置：FIT_CONTENT + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭
   //   （关闭走 SheetDialog 标题栏 ✕ / 点遮罩 onDisappear）。对照 configSheetOpts 同款 chrome。
   private get renameSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.closeRename(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
   private get scheduleSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.scheduleSheetOpen = false; this.scheduleCustomMode = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
   private get messageMenuSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.closeMessageMenu(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   // 重命名 sheet（⋯ 下拉「重命名」开；TextInput 预填当前标题 + 取消/保存，镜像 SessionActionMenu RenameSheet）
   @Builder
   private RenameSheet() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身：TextInput/按钮翻白卡浮灰身（对照 SessionConfigOverlay）。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身：TextInput/按钮翻灰卡浮白身（对照 SessionConfigOverlay）。
     Column() {
       SheetDialog({
         title: t('sessionMenu.rename'),
@@ -2895,7 +2895,7 @@ struct ChatPage {
           .fontSize(fs(16))
           .fontColor(this.c.textPrimary)
           .placeholderColor(this.c.textTertiary)
-          .backgroundColor(this.c.bg)
+          .backgroundColor(this.c.surface)
           .borderRadius(12)
           .padding({ left: 14, right: 14, top: 12, bottom: 12 })
           .maxLength(255)
@@ -2907,7 +2907,7 @@ struct ChatPage {
           Button(t('common.cancel'))
             .layoutWeight(1)
             .height(44)
-            .backgroundColor(this.c.bg)
+            .backgroundColor(this.c.surface)
             .fontColor(this.c.textPrimary)
             .borderRadius(12)
             .onClick(() => { this.closeRename(); })
@@ -2925,7 +2925,7 @@ struct ChatPage {
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }
@@ -3118,7 +3118,7 @@ struct ChatPage {
         .height(48)
         .padding({ left: 14, right: 14 })
         .borderRadius(12)
-        .backgroundColor(this.c.bg)
+        .backgroundColor(this.c.surface)
         .margin({ bottom: 8 })
         .alignItems(VerticalAlign.Center)
         .onClick(() => { this.copyMessageText(); })
@@ -3134,7 +3134,7 @@ struct ChatPage {
           .height(48)
           .padding({ left: 14, right: 14 })
           .borderRadius(12)
-          .backgroundColor(this.c.bg)
+          .backgroundColor(this.c.surface)
           .margin({ bottom: 8 })
           .alignItems(VerticalAlign.Center)
           .onClick(() => { this.retryMessageMenu(); })
@@ -3147,13 +3147,13 @@ struct ChatPage {
         .height(48)
         .padding({ left: 14, right: 14 })
         .borderRadius(12)
-        .backgroundColor(this.c.bg)
+        .backgroundColor(this.c.surface)
         .alignItems(VerticalAlign.Center)
         .onClick(() => { this.shareMessageMenu(); })
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }

@@ -372,7 +372,7 @@ struct TerminalPage {
     .border({ width: { bottom: 0.5 }, color: this.c.border })
   }
 
-  // ⋯ 动作面板（固定标题栏 SheetDialog 白头 + ✕ + 灰身白胶囊；tap 关闭）
+  // ⋯ 动作面板（固定标题栏 SheetDialog 白头 + ✕ + 白身灰胶囊；tap 关闭）
   @Builder
   private TerminalActionSheet() {
     Column() {
@@ -386,44 +386,44 @@ struct TerminalPage {
           Text(t('terminal.copy')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
         .onClick(() => { this.actionSheetOpen = false; this.copySelection(); })
 
         Row() {
           Text(t('terminal.paste')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
         .onClick(() => { this.actionSheetOpen = false; this.paste(); })
 
         Row() {
           Text(t('terminal.selectAll')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
         .onClick(() => { this.actionSheetOpen = false; this.selectAllTerm(); })
 
         Row() {
           Text(t('terminal.find')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).alignItems(VerticalAlign.Center)
         .onClick(() => { this.actionSheetOpen = false; this.openFind(); })
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }
 
-  // 动作面板 sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  // 动作面板 sheet 视觉配置：FIT_CONTENT + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
   private get actionSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.actionSheetOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   // 错误/退出/不可用 横幅（对照上游 errorMessage / exitInfo / inactive 提示）

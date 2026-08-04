@@ -103,7 +103,7 @@ export struct CliOutputCard {
       }
       .layoutWeight(1)
       .width('100%')
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')
@@ -115,6 +115,6 @@ export struct CliOutputCard {
       detents: [SheetSize.LARGE],
       onDisappear: (): void => { this.isDetailOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 }

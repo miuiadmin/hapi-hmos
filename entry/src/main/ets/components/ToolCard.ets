@@ -421,8 +421,8 @@ struct ToolCard {
   // 详情半模态：特化输入视图 + 结果视图（dialog surface，完整未截断）。对照上游 ToolDetailDialogContent。
   @Builder
   private DetailSheet() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay /
-    //   NewSession PickerSheet）。原 native title 栏 + dragBar 换为常驻 SheetDialog；灰身 c.surface。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay /
+    //   NewSession PickerSheet）。原 native title 栏 + dragBar 换为常驻 SheetDialog；白身 c.bg。
     Column() {
       SheetDialog({
         title: this.presentation.title,
@@ -463,20 +463,20 @@ struct ToolCard {
         scrollForward: NestedScrollMode.PARENT_FIRST,
         scrollBackward: NestedScrollMode.SELF_FIRST,
       })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')
   }
 
-  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭
   //   （关闭走 SheetDialog 标题栏 ✕ / 点遮罩 onDisappear）。对照 SessionConfigOverlay 同款 chrome。
   private get detailSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: (): void => { this.isDetailOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {

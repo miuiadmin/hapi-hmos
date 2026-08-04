@@ -55,12 +55,12 @@ struct AboutPage {
     }
   }
 
-  // OtaSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + FIT_CONTENT 首档（贴合内容，可下拉到 LARGE）。
+  // OtaSheet 的 bindSheet 视觉配置：白身(c.bg) + 毛玻璃 + 无把手 + FIT_CONTENT 首档（贴合内容，可下拉到 LARGE）。
   private get otaSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       onDisappear: () => { this.closeOtaSheet(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   // 打开 GitHub 源代码（https 走 viewData + browsable 唤浏览器；对照 MarkdownText.openSafeLink）

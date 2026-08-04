@@ -7,9 +7,9 @@
 //   内容 @Builder 纵向并列。⚠️ 不用 @BuilderParam content：V2 下方法引用传入的 @BuilderParam 在
 //   update func 丢绑定 → "undefined is not callable" 闪退（berry3 Bug2 实测抓到崩溃栈）。
 //
-// 【白头 ↔ 灰身】标题栏独立 bg 白底（⚠️不加分割线，靠白头 ↔ 灰身(c.surface)纯色对比），白底铺满
-//   sheet 宽（被 sheet 顶部圆角自然裁剪）。调用方根 Column 不加 left/right/top padding（白头要铺满），
-//   内容用内层 Column 自管边距。
+// 【白头 ↔ 白身】标题栏独立 bg 白底，body 亦 c.bg 白底（连成一片白）；卡片（胶囊/输入框/SettingCard）
+//   用 c.surface 灰浮白底形成对比（⚠️不加分割线）。白底铺满 sheet 宽（被 sheet 顶部圆角自然裁剪）。
+//   调用方根 Column 不加 left/right/top padding（白头要铺满），内容用内层 Column 自管边距。
 //
 // 颜色映射（berry3 sys token → PaletteColors）：
 //   font_primary→textPrimary / icon_secondary→textSecondary / comp_background_tertiary→surfaceSelected /

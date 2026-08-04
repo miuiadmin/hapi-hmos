@@ -1,7 +1,7 @@
 // 语音设置子页（识别语言 / 声音）—— tap 开 sheet 选择器。
 // 逻辑从旧 SettingsPage 迁移：voiceLangLabel / voiceIdLabel / openVoiceSheet / pickLang / pickVoice。
 // 单分组（无 SectionTitle，顶部 List padding 留白）。VoicePickerSheet 走 berry3 弹窗设计系统：
-//   SheetDialog 统一标题栏 + 灰身(c.surface) + SettingCard(cardBackground) 白卡浮灰底选择器项。
+//   SheetDialog 统一标题栏 + 白身(c.bg) + SettingCard(cardBackground) 灰卡浮白底选择器项。
 import { paletteOf, PaletteColors, getThemeState } from '../../theme/ThemeService';
 import { t, getI18nState } from '../../i18n/I18nService';
 import { VoiceSettingsService } from '../../services/VoiceSettingsService';
@@ -50,14 +50,14 @@ struct VoiceSettingsPage {
     this.voiceSheetOpen = false;
   }
 
-  // VoicePickerSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + 无把手 + LARGE 档。
+  // VoicePickerSheet 的 bindSheet 视觉配置：白身(c.bg) + 毛玻璃 + 无把手 + LARGE 档。
   // 覆写参数用具名 interface 标注的 const 承接（ArkTS 严格模式禁传参对象字面量）。
   private get voiceSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.LARGE],
       onDisappear: () => { this.voiceSheetOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {
@@ -103,8 +103,8 @@ struct VoiceSettingsPage {
   }
 
   // 语音设置选择器 sheet（语言/声音两态）—— berry3 弹窗设计系统：
-  //   SheetDialog 统一标题栏（白头）+ 灰身(c.surface，由 bindSheet 提供) + SettingCard 白卡浮灰底选择器项。
-  //   根 Column 不设底色（透 bindSheet 灰身）；标题栏 SheetDialog 自带 c.bg 白头。
+  //   SheetDialog 统一标题栏（白头）+ 白身(c.bg，由 bindSheet 提供) + SettingCard 灰卡浮白底选择器项。
+  //   根 Column 不设底色（透 bindSheet 白身）；标题栏 SheetDialog 自带 c.bg 白头。
   @Builder VoicePickerSheet() {
     Column() {
       SheetDialog({

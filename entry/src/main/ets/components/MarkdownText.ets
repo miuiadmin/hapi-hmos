@@ -324,7 +324,7 @@ export struct MarkdownText {
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
       .padding({ left: 16, right: 16, top: 8, bottom: 16 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')
@@ -336,7 +336,7 @@ export struct MarkdownText {
       detents: [SheetSize.LARGE],
       onDisappear: (): void => { this.closeCodePreview(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   private buildPlugin(): MarkdownPlugin {

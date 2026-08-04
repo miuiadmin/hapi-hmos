@@ -400,14 +400,14 @@ struct NewSessionPage {
     if (value !== 'worktree') { this.worktreeName = ''; }   // 非 worktree 清名
   }
 
-  // picker sheet 视觉配置：半屏起 [MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭
+  // picker sheet 视觉配置：半屏起 [MEDIUM,LARGE] + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭
   //   （关闭走 SheetDialog 标题栏 ✕）。复用 buildSheetOptions，与设置页/目录浏览器同款 chrome。
   private get pickerSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: () => { this.pickerOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
   // 目录浏览器 sheet 视觉配置：MEDIUM/LARGE 双档。
   private get browserSheetOpts(): SheetOptions {
@@ -415,7 +415,7 @@ struct NewSessionPage {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: () => { this.browserVisible = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   // —— 目录树浏览 ——
@@ -595,7 +595,7 @@ struct NewSessionPage {
   }
 
   // 通用 picker sheet（6 选择字段共用）：SheetDialog 固定标题栏（白头 + ✕，不随滚动消失，留出顶部高度）
-  //   + 灰身滚动区 + 胶囊选项行（左 radio 圆点 + 文字，r12/h48，选中 primary 半透明底）。半屏 [MEDIUM,LARGE]。
+  //   + 白身滚动区 + 胶囊选项行（左 radio 圆点 + 文字，r12/h48，选中 primary 半透明底）。半屏 [MEDIUM,LARGE]。
   //   ⚠️ 第二轮反馈修复：先前误删 SheetDialog 致顶部只剩原生细把手 → 顶栏过窄；恢复固定标题栏。
   @Builder
   private PickerSheet() {
@@ -623,8 +623,8 @@ struct NewSessionPage {
     .height('100%')
   }
   // 胶囊选项行（对照 SessionConfigOverlay.optionRow：左 circle/circle_fill + 文字。
-  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→白底(bg) 浮灰身 + 主文字 + 空心圆。
-  //   ⚠️ 行底用 c.bg 而非 c.surface：sheet 灰身已是 c.surface，白胶囊才看得见（对照 SessionConfigOverlay 灰胶囊浮白身的镜像）。
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→灰底(surface) 浮白身 + 主文字 + 空心圆。
+  //   ⚠️ 行底用 c.surface 而非 c.bg：sheet 白身已是 c.bg，灰胶囊才看得见（对照 SessionConfigOverlay 灰胶囊浮白身的镜像）。
   @Builder
   private PickerOptionRow(label: string, value: string, current: string) {
     Row({ space: 10 }) {
@@ -644,7 +644,7 @@ struct NewSessionPage {
     .height(48)
     .padding({ left: 14, right: 14 })
     .borderRadius(12)
-    .backgroundColor(value === current ? this.selectedBg() : this.c.bg)
+    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
     .onClick(() => { this.onPickerPick(value); })
   }
 

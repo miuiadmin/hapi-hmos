@@ -206,7 +206,7 @@ export struct SessionActionMenu {
   }
 
   // 动作面板（重命名 / 归档或删除，对照上游 SessionActionMenu）
-  //   固定标题栏（SheetDialog 白头 + ✕）+ 灰身：动作行翻白胶囊浮灰身（对照 SessionConfigOverlay）。
+  //   固定标题栏（SheetDialog 白头 + ✕）+ 白身：动作行翻灰胶囊浮白身（对照 SessionConfigOverlay）。
   @Builder
   private ActionMenuSheet() {
     Column() {
@@ -222,7 +222,7 @@ export struct SessionActionMenu {
             Text(t('sessionMenu.files')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .onClick(() => { this.onClose(); this.onOpenFiles(); })
 
           Row() {
@@ -230,7 +230,7 @@ export struct SessionActionMenu {
               .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .opacity(this.active ? 1 : 0.5)
           .onClick(() => { if (this.active) { this.onClose(); this.onOpenTerminal(); } })
 
@@ -239,7 +239,7 @@ export struct SessionActionMenu {
               .fontColor(this.active ? this.c.textPrimary : this.c.textTertiary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .opacity(this.active ? 1 : 0.5)
           .onClick(() => { if (this.active) { this.onClose(); this.onOpenVoice(); } })
         }
@@ -250,7 +250,7 @@ export struct SessionActionMenu {
             Text(t('chat.exportTitle')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .onClick(() => { this.onClose(); this.onExport(); })
         }
 
@@ -260,7 +260,7 @@ export struct SessionActionMenu {
             Text(t('outline.title')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .onClick(() => { this.onClose(); this.onOutline(); })
         }
 
@@ -268,7 +268,7 @@ export struct SessionActionMenu {
           Text(t('sessionMenu.rename')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
         .onClick(() => { this.startRename(); })
 
         if (this.active) {
@@ -276,7 +276,7 @@ export struct SessionActionMenu {
             Text(t('sessionMenu.switchRemote')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
           }
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.bg).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .onClick(() => { this.startSwitchRemote(); })
         }
 
@@ -284,17 +284,17 @@ export struct SessionActionMenu {
           Text(this.destructiveLabel()).fontSize(fs(15)).fontColor(this.c.error).layoutWeight(1)
         }
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.bg).alignItems(VerticalAlign.Center)
+        .backgroundColor(this.c.surface).alignItems(VerticalAlign.Center)
         .onClick(() => { this.onDestructiveTap(); })
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }
 
-  // 重命名面板：固定标题栏（SheetDialog 白头）+ 灰身（TextInput 预填 + 保存/取消）；
+  // 重命名面板：固定标题栏（SheetDialog 白头）+ 白身（TextInput 预填 + 保存/取消）；
   //   空或未改不请求，回车提交，失败保留面板（对照上游 RenameSessionDialog）。
   @Builder
   private RenameSheet() {
@@ -309,7 +309,7 @@ export struct SessionActionMenu {
           .fontSize(fs(16))
           .fontColor(this.c.textPrimary)
           .placeholderColor(this.c.textTertiary)
-          .backgroundColor(this.c.bg)
+          .backgroundColor(this.c.surface)
           .borderRadius(12)
           .padding({ left: 14, right: 14, top: 12, bottom: 12 })
           .maxLength(255)
@@ -321,7 +321,7 @@ export struct SessionActionMenu {
           Button(t('common.cancel'))
             .layoutWeight(1)
             .height(44)
-            .backgroundColor(this.c.bg)
+            .backgroundColor(this.c.surface)
             .fontColor(this.c.textPrimary)
             .borderRadius(12)
             .onClick(() => { this.closeRename(); })
@@ -339,27 +339,27 @@ export struct SessionActionMenu {
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
   }
 
-  // 重命名 sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（SheetDialog 自带标题栏+✕）。
+  // 重命名 sheet 视觉配置：FIT_CONTENT + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭（SheetDialog 自带标题栏+✕）。
   private get renameSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.closeRename(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
-  // 动作面板 sheet 视觉配置：FIT_CONTENT + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  // 动作面板 sheet 视觉配置：FIT_CONTENT + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
   private get actionMenuSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.onActionDisappear(); }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {

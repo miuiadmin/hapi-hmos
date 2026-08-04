@@ -258,7 +258,7 @@ struct TraceSection {
 
   @Builder
   ChildDetailSheet() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay）。
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身滚动区：标题不再随滚动消失（对照 SessionConfigOverlay）。
     Column() {
       SheetDialog({
         title: getToolPresentation(this.detailTool).title,
@@ -281,18 +281,18 @@ struct TraceSection {
       .width('100%')
       .align(Alignment.Top)
       .scrollBar(BarState.Auto)
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%').height('100%')
   }
 
-  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 灰身(c.surface) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
+  // 详情 sheet 视觉配置：[MEDIUM,LARGE] + 白身(c.bg) + 毛玻璃 + 无把手/无系统关闭（对照 SessionConfigOverlay）。
   private get detailSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: (): void => { this.isDetailOpen = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   build() {

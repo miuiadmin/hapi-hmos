@@ -109,7 +109,7 @@ export struct SessionConfigOverlay {
   }
 
   // 选项胶囊（对照 chatcube ChatToolPickerSheetContent / ModelPickerSheet / NewSession PickerSheet：
-  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→白底(bg) 浮灰身 + 次要字 + 空心圆。
+  //   选中→primary 半透明底 + primary 字 + Medium + 实心圆；未选→灰底(surface) 浮白身 + 次要字 + 空心圆。
   //   行间 margin 8vp；sectionTitle 顶 16 底 8 → 组内紧(8)/组间松(24) 的近聚分组。
   @Builder
   private optionRow(label: string, value: string, current: string, field: string) {
@@ -130,15 +130,15 @@ export struct SessionConfigOverlay {
     .height(48)
     .padding({ left: 14, right: 14 })
     .borderRadius(12)
-    .backgroundColor(value === current ? this.selectedBg() : this.c.bg)
+    .backgroundColor(value === current ? this.selectedBg() : this.c.surface)
     .margin({ bottom: 8 })
     .onClick(() => { this.dispatch(field, value); })
   }
 
   build() {
-    // 固定标题栏（SheetDialog 白头 + ✕）+ 灰身滚动区：标题不再随滚动消失（对照 NewSession PickerSheet /
+    // 固定标题栏（SheetDialog 白头 + ✕）+ 白身滚动区：标题不再随滚动消失（对照 NewSession PickerSheet /
     //   设置页半窗）。原 title Text 在 Scroll 内随滚动消失 → 顶部只剩原生细把手；现 SheetDialog 常驻。
-    //   ⚠️ 配套：sheet 灰身 c.surface，故未选胶囊翻白底 c.bg（白胶囊浮灰身，与 PickerSheet 一致）。
+    //   ⚠️ 配套：sheet 白身 c.bg，故未选胶囊翻灰底 c.surface（灰胶囊浮白身，与 PickerSheet 一致）。
     Column() {
       SheetDialog({
         title: t('sessionConfig.title'),
@@ -193,7 +193,7 @@ export struct SessionConfigOverlay {
       .layoutWeight(1)
       .width('100%')
       .scrollBar(BarState.Off)
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.bg)
     }
     .width('100%')
     .height('100%')

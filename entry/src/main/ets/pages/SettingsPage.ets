@@ -138,13 +138,13 @@ struct SettingsPage {
     return arr;
   }
 
-  // LogoutSheet 的 bindSheet 视觉配置：灰身(c.surface) + 毛玻璃 + MEDIUM/LARGE 档（message 可滚动）。
+  // LogoutSheet 的 bindSheet 视觉配置：白身(c.bg) + 毛玻璃 + MEDIUM/LARGE 档（message 可滚动）。
   private get logoutSheetOpts(): SheetOptions {
     const ov: SheetOverrides = {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       onDisappear: () => { this.showLogoutSheet = false; }
     };
-    return buildSheetOptions(this.c.surface, ov);
+    return buildSheetOptions(this.c.bg, ov);
   }
 
   // 执行退出：断 SSE + 清连接 + 切回登录页
