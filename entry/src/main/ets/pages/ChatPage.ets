@@ -205,6 +205,7 @@ struct ChatPage {
   private isPinnedToBottom: boolean = true;
   private settlingCancelled: boolean = false;          // 初始滚动定锚：用户上滑即放弃后续重试（对照上游 shouldCancelInitialScrollSettling）
   private settlingTimerIds: number[] = [];             // 初始定锚重试 timer 句柄簇（进会话按延迟数组排多个 scrollEdge）
+  private followScrollTimerIds: number[] = [];         // 贴底跟随重试 timer（流式/发送后 doRecomputeBlocks 末尾触发，短多帧 scrollEdge）
   private sseListenerId: number = -1;
   private localIdCounter: number = 0;
   private tickerId: number = -1;                // elapsed 每秒 ticker 句柄
@@ -265,6 +266,10 @@ struct ChatPage {
       this.sessionRefreshTimer = -1;
     }
     this.cancelSettling();   // 清进会话定锚重试 timer 簇（含兜底揭幕），防销毁后回调跑 scrollEdge
+    for (let i = 0; i < this.followScrollTimerIds.length; i++) {
+      clearTimeout(this.followScrollTimerIds[i]);
+    }
+    this.followScrollTimerIds = [];
   }
 
   // 前台重同步触发（EntryAbility.onForeground beginSync → resyncSeq++）：重拉消息 + 结束同步（关横幅）。
@@ -402,6 +407,13 @@ struct ChatPage {
     this.outlineItems = buildConversationOutline(grouped);
     // 灌入 LazyForEach 数据源：按签名 diff，结构变→全刷、同结构→仅变项 onDataChange 原地重渲染（流式根治）
     this.refreshDataSource();
+    // 数据/展示集已更新 → 若贴底且非初始定锚期，跟随滚底。★ 流式跟随的真正挂载点：trailing 节流下 blocks 直到此处
+    //   才更新，scrollEdge 必落在【新内容 notify 之后】（旧实现 mergeMessage 后立即 scrollEdge 早于此 → 滚旧底，
+    //   新内容渲染后落在视口外，即「发消息/流式不跟随」根因）。初始定锚期跳过（交给 settleScrollToBottom /
+    //   scrollToFirstUnread，避免与首条未读定位冲突）。
+    if (this.isPinnedToBottom && !this.isEntrySettling && !this.isDisposed) {
+      this.followScroll();
+    }
   }
 
   // 同 id 复用旧实例 + copyFrom 原地改字段（@ObservedV2+@Trace → Repeat 同 key 项内部精确刷新）。
@@ -1098,10 +1110,9 @@ struct ChatPage {
         const msg = parseMessage(msgRaw);
         const merged: ChatMessage[] = mergeMessage(this.messages, msg);
         this.setMessages(merged);
-        // 贴底 → 跟随滚底；滚在上方读历史 → 不打断，累计新消息计数显浮标（对照上游 NewMessagesIndicator 思路，扩到实时新消息）
-        if (this.isPinnedToBottom) {
-          this.maybeScrollToBottom();
-        } else {
+        // 贴底 → 跟随滚底由 doRecomputeBlocks 末尾统一触发（此处 blocks 尚未更新，立即 scrollEdge 会落空、滚旧底）；
+        //   滚在上方读历史 → 不打断，累计新消息计数显浮标（对照上游 NewMessagesIndicator 思路，扩到实时新消息）。
+        if (!this.isPinnedToBottom) {
           this.newMessagesCount = this.newMessagesCount + 1;
         }
       }
@@ -1250,6 +1261,10 @@ struct ChatPage {
     if (schedule <= 0) {
       this.isThinking = true;                // 即时发送才显生成中（定时未触发，agent 未跑）
     }
+    // 用户主动发送 → 显然要看回复：强制贴底 + 开启流式跟随 + 清新消息浮标。optimistic 是 leading 同步进 blocks，
+    //   doRecomputeBlocks 末尾的 followScroll 会滚到含本条的位置；此处 scrollToBottom 作即时反馈（双保险）。
+    this.isPinnedToBottom = true;
+    this.newMessagesCount = 0;
     this.scrollToBottom();
 
     try {
@@ -1870,6 +1885,31 @@ struct ChatPage {
     }, 120);
   }
 
+  // 贴底跟随（流式/发送后）：blocks 与 dataSource 已更新【之后】才滚——对抗 LazyForEach 异步布局，用短多帧重试
+  //   scrollEdge（0ms 兜当前帧布局、60ms 兜图片/复杂块延迟增高），确保滚到【含新内容】的底部。
+  //   ★ 只在 doRecomputeBlocks 末尾（blocks+dataSource 已 notify）调用：trailing 节流下 blocks 在此处才更新，
+  //   scrollEdge 必在新内容 notify 之后（旧「setMessages 后固定 120ms 单次」早于 trailing 150ms 的 blocks 更新 → 滚旧底）。
+  private followScroll(): void {
+    for (let i = 0; i < this.followScrollTimerIds.length; i++) {
+      clearTimeout(this.followScrollTimerIds[i]);
+    }
+    this.followScrollTimerIds = [];
+    if (this.isDisposed) {
+      return;
+    }
+    const delays: number[] = [0, 60];
+    for (let i = 0; i < delays.length; i++) {
+      const d: number = delays[i];
+      const id: number = setTimeout(() => {
+        if (this.isDisposed) {
+          return;
+        }
+        this.scroller.scrollEdge(Edge.Bottom);
+      }, d);
+      this.followScrollTimerIds.push(id);
+    }
+  }
+
   // 初始滚动定锚：进会话按延迟数组排多次 scrollEdge（对照上游 HappyThread INITIAL_SCROLL_SETTLE_DELAYS_MS），
   //   抵消流式布局/图片加载导致的首帧高度抖动，确保真的贴底。用户上滑 → cancelSettling 放弃后续重试。
   private settleScrollToBottom(): void {
@@ -1899,12 +1939,6 @@ struct ChatPage {
       clearTimeout(this.settlingTimerIds[i]);
     }
     this.settlingTimerIds = [];
-  }
-
-  private maybeScrollToBottom(): void {
-    if (this.isPinnedToBottom) {
-      this.scrollToBottom();
-    }
   }
 
   // 是否存在「进入时未读」块（unreadDividerBefore 戳中至少一块）—— 决定进会话滚到首条未读 vs 滚底。
