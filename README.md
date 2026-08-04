@@ -153,7 +153,7 @@ npx @twsxtd/hapi hub --relay     # 启动带 E2E 加密中继的 Hub
 ```
 
 Hub 默认监听 `127.0.0.1:3006`；鸿蒙设备远程访问需配置公网地址或反代，
-详见官方 `参考源码/hapi/docs/guide/installation.md`。
+详见官方 `参考源码/hapi-v0.25.4/docs/guide/installation.md`。
 
 ### 打开鸿蒙工程
 
@@ -194,15 +194,19 @@ hapi-hmos/
 
 ## 上游项目（官方 Hapi）
 
-本仓库的 `参考源码/hapi/` 是官方仓库的一份**本地 clone**，作为只读参考用于移植对照（**不入库**，见下）。
+本仓库的 `参考源码/` 下保留官方仓库的**两份本地 clone**，作为只读参考用于移植对照（**不入库**，见下）。文件夹名即版本号，便于并排对比：
+
+| 目录 | 版本 | commit | 说明 |
+|---|---|---|---|
+| **`参考源码/hapi-v0.25.4/`** | **0.25.4（当前主参考）** | **`2d7115f`**（tag `v0.25.4`，2026-08-03） | 最新稳定版，**所有对照 / 移植以本目录为准** |
+| `参考源码/hapi-v0.18.4/` | 0.18.4 系列（历史快照） | `ec3722a`（2026-05-29） | 早期移植基线，仅作历史对比留存 |
 
 | 项 | 值 |
 |---|---|
 | 仓库 | https://github.com/tiann/hapi |
 | Git URL | `https://github.com/tiann/hapi.git` |
 | npm 包 | [`@twsxtd/hapi`](https://www.npmjs.com/package/@twsxtd/hapi) |
-| 参考版本 | `0.18.4` |
-| 本地参考 commit | `ec3722a` |
+| **当前参考版本** | **`0.25.4`**（固定 tag `v0.25.4`） |
 | License | **AGPL-3.0-only** |
 | 作者 | Kirill Dubovitskiy & weishu |
 
@@ -217,17 +221,18 @@ hapi-hmos/
 
 ### 同步官方更新
 
-`参考源码/hapi` 是独立 git clone（不是 submodule）。更新方式：
+主参考 `参考源码/hapi-v0.25.4/` 是独立 git clone（不是 submodule），且**已固定在 tag `v0.25.4`**（detached HEAD，不随 `main` 漂移），保证对照口径稳定。需要追新版本时：
 
 ```bash
-cd 参考源码/hapi
-git fetch origin
-git log --oneline -10 origin/main      # 先看上游新增
-git checkout main && git pull           # 或切到指定 tag/commit
-git rev-parse HEAD                      # 取新 commit，回填到上表
+cd 参考源码/hapi-v0.25.4
+git fetch origin --tags
+git tag --sort=-creatordate | head -5      # 看最新 tag
+git checkout <新tag>                        # 切到新稳定版（detached）
+git rev-parse HEAD                          # 取新 commit，回填到上表
+# 回填后建议把目录名 hapi-v0.25.4 → hapi-v<新版本>，并同步更新文档路径
 ```
 
-> **为什么 `参考源码/` 不入库**：它是上游 + chatcube 的本地对照 clone（共 245M，含各自独立 `.git`），仅供阅读对照；普通目录比 submodule 更简单，精确锁定版本靠记录 commit。clone 本仓库后如需对照，自行 `git clone tiann/hapi` 即可。
+> **为什么 `参考源码/` 不入库**：它是上游（两份版本快照）+ chatcube 的本地对照 clone（含各自独立 `.git`），仅供阅读对照；普通目录比 submodule 更简单，精确锁定版本靠「文件夹名带版本号 + 记录 commit」。clone 本仓库后如需对照，自行 `git clone tiann/hapi && git checkout v0.25.4` 即可。
 
 ## 文档导航
 

@@ -48,7 +48,7 @@ publish.sh                                    Cloudflare 橙云 → :8443
 bash 下载服务器/scripts/publish.sh      # ★一键：打包 + 上传
 ```
 
-> 或对 Claude 说「帮我同步到服务器」（若有 hapi-sync skill 则自动跑 publish.sh）。
+> 或对 Claude 说「帮我同步到服务器」/「出个 OTA 版本」→ 触发 **hapi-ota-release** skill（[`../.claude/skills/hapi-ota-release/SKILL.md`](../.claude/skills/hapi-ota-release/SKILL.md)，完整发版+验证 runbook，含 token 防泄露与设备端验证）。
 
 发完验证：
 ```bash
@@ -79,6 +79,7 @@ curl -sk https://berry.flyme.chat:8443/hapi/update.json | head
 
 ## 关键坑（打包相关）
 
+- **★发版前必须清 FactoryPresets.local 的 token**：`entry/src/main/ets/config/FactoryPresets.local.ets` 本地可能存真 Hub token（`git update-index --skip-worktree` 保护，HEAD 是 `[]` 但工作区副本有真值），**打包会把它打进公开 HAP**。发版前确认 `FACTORY_PRESETS = []`、全仓 grep 确认 token 仅此一处；发完 `unzip -p output/dist/*/hapi-*.app | grep -ac "<token片段>"` 复核 **0 命中**（命中即泄露 → 清 token 重打重发 + 轮换 Hub CLI_API_TOKEN）。完整流程见 hapi-ota-release skill。
 - **hapi 无 `AboutPage.ets`**，dist.sh 无字节级备份/恢复步骤（berry 才有，见 berry 项目打包流程.md 对照）。
 - **pack.sh 中途看 git status 会误判**：运行中途 `git status` 显示包名 patch 中间态，正常，trap 会恢复。确认工作区干净要 pack 前/后看。
 

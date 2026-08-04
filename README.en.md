@@ -147,7 +147,7 @@ npx @twsxtd/hapi hub --relay     # start a Hub with an E2E-encrypted relay
 # the terminal prints a URL / QR code + CLI_API_TOKEN
 ```
 
-The Hub listens on `127.0.0.1:3006` by default; for remote access from a HarmonyOS device you need a public address or reverse proxy — see `参考源码/hapi/docs/guide/installation.md`.
+The Hub listens on `127.0.0.1:3006` by default; for remote access from a HarmonyOS device you need a public address or reverse proxy — see `参考源码/hapi-v0.25.4/docs/guide/installation.md`.
 
 ### Open the HarmonyOS project
 
@@ -183,15 +183,19 @@ hapi-hmos/
 
 ## Upstream (official Hapi)
 
-`参考源码/hapi/` is a **local clone** of the official repo, kept as a read-only porting reference (**not committed**, see below).
+`参考源码/` keeps **two local clones** of the official repo as a read-only porting reference (**not committed**, see below). The folder name carries the version, so they sit side by side for comparison:
+
+| Directory | Version | commit | Notes |
+|---|---|---|---|
+| **`参考源码/hapi-v0.25.4/`** | **0.25.4 (current, primary)** | **`2d7115f`** (tag `v0.25.4`, 2026-08-03) | Latest stable release — **the authoritative reference for all porting** |
+| `参考源码/hapi-v0.18.4/` | 0.18.4 series (legacy snapshot) | `ec3722a` (2026-05-29) | Early porting baseline; kept for historical comparison only |
 
 | Field | Value |
 |---|---|
 | Repo | https://github.com/tiann/hapi |
 | Git URL | `https://github.com/tiann/hapi.git` |
 | npm package | [`@twsxtd/hapi`](https://www.npmjs.com/package/@twsxtd/hapi) |
-| Reference version | `0.18.4` |
-| Local reference commit | `ec3722a` |
+| **Current reference version** | **`0.25.4`** (pinned to tag `v0.25.4`) |
 | License | **AGPL-3.0-only** |
 | Authors | Kirill Dubovitskiy & weishu |
 
@@ -206,17 +210,18 @@ hapi-hmos/
 
 ### Syncing upstream
 
-`参考源码/hapi` is a standalone git clone (not a submodule). To update:
+The primary reference `参考源码/hapi-v0.25.4/` is a standalone git clone (not a submodule), **pinned to tag `v0.25.4`** (detached HEAD, so it doesn't drift with `main`) to keep the porting reference stable. To move to a newer version:
 
 ```bash
-cd 参考源码/hapi
-git fetch origin
-git log --oneline -10 origin/main      # review new upstream changes first
-git checkout main && git pull           # or checkout a specific tag/commit
-git rev-parse HEAD                      # take the new commit, fill it into the table above
+cd 参考源码/hapi-v0.25.4
+git fetch origin --tags
+git tag --sort=-creatordate | head -5      # see the latest tags
+git checkout <new-tag>                      # switch to the new stable release (detached)
+git rev-parse HEAD                          # take the new commit, fill it into the table above
+# after updating, rename the folder hapi-v0.25.4 → hapi-v<new-version> and update doc paths
 ```
 
-> **Why `参考源码/` isn't committed**: it's a local reference clone of upstream + chatcube (245M total, each with its own `.git`), kept only for reading; a plain directory is simpler than a submodule, and commit pinning tracks the exact version. If you clone this repo and want the references, just `git clone tiann/hapi` yourself.
+> **Why `参考源码/` isn't committed**: it holds local reference clones of upstream (two version snapshots) + chatcube (each with its own `.git`), kept only for reading; a plain directory is simpler than a submodule, and version pinning is tracked by "versioned folder name + recorded commit". If you clone this repo and want the reference, just `git clone tiann/hapi && git checkout v0.25.4` yourself.
 
 ## Docs
 
