@@ -7,7 +7,8 @@
 //   也不靠键值销毁 → 流式逐字实时增长、无冻结。
 //
 // setItems(next, sigFn) 按 index diff：
-//   结构变化（长度变 / 任一 index 的 id 漂移，如新消息/加载更旧/搜索过滤）→ onDataReloaded 全刷；
+//   末尾追加（发消息/流式新 block，prev 是 next 前缀）→ onDataAdd 增量（仅渲染新项，余者复用，无整列闪烁）；
+//   结构变化（头部插入更旧历史/删除/id 漂移/搜索过滤）→ onDataReloaded 全刷；
 //   同结构 → 逐 index 比签名 sigFn(b)，仅对变化 index 调 onDataChange → 单项原地刷新。
 //   流式只改末块 text → 仅 onDataChange(末块) → 一次单项刷新。
 //
@@ -46,7 +47,30 @@ export class ChatBlockDataSource implements IDataSource {
 
   // 整体替换展示集并按 index 增量通知。sigFn(b) 由调用方提供（反映 ChatPage 实例态的变更指纹）。
   setItems(next: ChatBlock[], sigFn: (b: ChatBlock) => string): void {
-    const structural: boolean = this.items.length !== next.length || this.idsMismatch(this.items, next);
+    const prev: ChatBlock[] = this.items;
+    // 末尾追加（发消息 optimistic / 流式新 block）：prev 是 next 的前缀 → 增量 onDataAdd，
+    //   不全量 reload。reload 会重建全部可见 ListItem（重新 build+measure）→ 整列闪烁/"消息填充屏"；
+    //   onDataAdd 仅渲染新增项，余者复用 → 发消息平滑无闪烁（对照 web 末条 append）。
+    if (next.length > prev.length) {
+      let isAppend: boolean = true;
+      for (let i = 0; i < prev.length; i++) {
+        if (next[i].id !== prev[i].id) { isAppend = false; break; }
+      }
+      if (isAppend) {
+        const newSigs: string[] = this.computeSigs(next, sigFn);
+        const changed: number[] = [];
+        for (let i = 0; i < prev.length; i++) {
+          if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
+        }
+        this.items = next;            // 先更数据源（getData/totalCount 通知时返回新数据）
+        this.sigs = newSigs;
+        for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
+        for (let i = prev.length; i < next.length; i++) { this.notifyDataAdd(i); }
+        return;
+      }
+    }
+    // 其余结构变化（头部插入更旧历史 / 删除 / id 漂移 / 搜索过滤）：全量 reload
+    const structural: boolean = prev.length !== next.length || this.idsMismatch(prev, next);
     if (structural) {
       this.items = next;
       this.sigs = this.computeSigs(next, sigFn);
@@ -57,15 +81,11 @@ export class ChatBlockDataSource implements IDataSource {
     const newSigs: string[] = this.computeSigs(next, sigFn);
     const changed: number[] = [];
     for (let i = 0; i < next.length; i++) {
-      if (newSigs[i] !== this.sigs[i]) {
-        changed.push(i);
-      }
+      if (newSigs[i] !== this.sigs[i]) { changed.push(i); }
     }
     this.items = next;
     this.sigs = newSigs;
-    for (let i = 0; i < changed.length; i++) {
-      this.notifyChange(changed[i]);
-    }
+    for (let i = 0; i < changed.length; i++) { this.notifyChange(changed[i]); }
   }
 
   private idsMismatch(a: ChatBlock[], b: ChatBlock[]): boolean {
@@ -94,6 +114,12 @@ export class ChatBlockDataSource implements IDataSource {
   private notifyChange(index: number): void {
     for (let i = 0; i < this.listeners.length; i++) {
       this.listeners[i].onDataChange(index);
+    }
+  }
+
+  private notifyDataAdd(index: number): void {
+    for (let i = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataAdd(index);
     }
   }
 }

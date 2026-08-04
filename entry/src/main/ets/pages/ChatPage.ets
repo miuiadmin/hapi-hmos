@@ -3305,6 +3305,18 @@ struct ChatPage {
                 this.isEntrySettling = false;   // 用户已介入 → 立即揭幕，勿再遮罩
               }
             })
+            .onScroll((_scrollOffset: number, scrollState: ScrollState) => {
+              // ★ 逐帧判定用户是否上滑离底 → 立即取消贴底跟随（对照 chatcube handleMessageListDidScroll
+              //   的 isMovingAwayFromBottom → clearBottomFollowState）。旧 isPinnedToBottom 仅 onScrollStop（滚动
+              //   【停止后】）更新，用户上滑过程中仍 true，进会话后异步加载（图片/元数据/setMessages）触发
+              //   recompute → doRecomputeBlocks 末尾的 followScroll 把正在上滑读历史的用户拽回底部（"进会话上滑
+              //   又被重置滚到最新"根因）。此处逐帧置 false → followScroll 守卫失败 → 不再拽回。
+              //   程序 scrollEdge 瞬移到底 isAtEnd()=true 不会误判；仅用户主动滚动(Scroll/Fling)且离底才翻 false。
+              if ((scrollState === ScrollState.Scroll || scrollState === ScrollState.Fling) &&
+                this.isPinnedToBottom && !this.scroller.isAtEnd()) {
+                this.isPinnedToBottom = false;
+              }
+            })
 
             // 进会话定锚遮罩：列表在底层滚到位（不可见），揭幕（isEntrySettling→false）即已就位、无可见跳动
             if (this.isEntrySettling) {
