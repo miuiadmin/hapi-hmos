@@ -17,8 +17,28 @@ export function withAlpha(color: string, alphaHex: string): string {
 /**
  * HDS 液态 titleBar style 工厂。
  * @param bg 页面底色（静止态透明 / 滚动态半透明随此色）；随主题切换由调用方 getter 重取（c.bg）。
+ * @param staticBlur 真=静止磨砂（Web 容器页无 Scroller，不滚动联动，originalStyle 恒磨砂）；缺省=滚动联动（GRADIENT_BLUR）。
  */
-export function hdsTitleBarStyle(bg: string): TitleBarStyleOptions {
+export function hdsTitleBarStyle(bg: string, staticBlur?: boolean): TitleBarStyleOptions {
+  // 静止磨砂（Web 容器页 Terminal/Voice：ArkUI 无 Scroller，不滚动联动）：
+  //   不设 scrollEffectOpts（不依赖 scroller），originalStyle 直接放磨砂态（bg E6 + blurRadius 26）。
+  //   systemMaterialEffect ADAPTIVE 仍带（走系统合成器模拟器可渲染；Web 背后磨砂真机确认，E6 半透明兜底防穿帮）。
+  if (staticBlur) {
+    return {
+      originalStyle: {
+        backgroundStyle: {
+          backgroundColor: withAlpha(bg, 'E6'),
+          maskExtraHeight: 20,
+          blurRadius: 26
+        }
+      },
+      blurStrategy: BlurStrategy.ENABLE,
+      systemMaterialEffect: {
+        materialType: hdsMaterial.MaterialType.ADAPTIVE,
+        materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+      }
+    };
+  }
   return {
     scrollEffectOpts: {
       enableScrollEffect: true,                                       // 滚动联动：静止透明/滚动磨砂（chatcube/berry3 同款）

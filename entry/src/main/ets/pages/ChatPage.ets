@@ -55,7 +55,7 @@ import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/
 import { pasteboard } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { SymbolGlyphModifier, LengthMetrics } from '@kit.ArkUI';
-import { HdsNavDestination, HdsNavDestinationTitleMode, ScrollEffectType, hdsMaterial, DividerShowType, BlurStrategy } from '@kit.UIDesignKit';
+import { HdsNavDestination, HdsNavDestinationTitleMode, ScrollEffectType, hdsMaterial, DividerShowType, BlurStrategy, HdsNavigationMenuItemOptions, HdsNavigationBackButtonItemOptions } from '@kit.UIDesignKit';
 import { getLayoutState } from '../state/LayoutState';
 import { getChatClock } from '../state/ChatClock';
 import { getShareService } from '../services/ShareService';
@@ -194,8 +194,11 @@ struct ChatPage {
     }
     return color;
   }
-  // 顶栏三钮（‹返回 / 🔍 / ⋯）走原生液态玻璃：backgroundBlurStyle(COMPONENT_THIN)，不设实色 backgroundColor
-  //   （实色底会被 blur 默认 activeColor 盖掉→钮隐形，且遮挡玻璃材质）。真机出液态；模拟器 blur no-op 只见平色。
+  // 顶栏三钮（‹返回 / 🔍 / ⋯）走系统原生液态玻璃：HdsNavDestination titleBar.content 的 backIcon + menu.value
+  //   （对齐 chatcube ChatPage getTitleBarOptions + HdsVisualEffectUtil contentStyle.menuStyle/backIconStyle）。
+  //   钮的圆形磨砂底由 style.{original,scrollEffect}Style.contentStyle.menuStyle/backIconStyle 的系统三级背景色
+  //   提供（sys.color.comp_background_tertiary + icon_primary）——系统 systemMaterialEffect 渲染，真机出液态；
+  //   模拟器即使 blur no-op，该背景色仍渲染 → 钮有可见圆形底，呈液态圆钮观感。不再自建 Button+backgroundBlurStyle。
 
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
@@ -2976,128 +2979,167 @@ struct ChatPage {
     setTimeout((): void => { this.scroller.scrollToIndex(idx, true, ScrollAlign.START); }, 120);
   }
 
-  // 液态顶栏（HDS 沉浸光感：渲染在 HdsNavDestination 的 titleBar.stackBuilder 内）。
-  //   液态背景（systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变 + maskExtraHeight 过渡带）由系统 titleBar 提供；
-  //   本 Builder 仅渲染顶栏内容：左返回(液态圆钮) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 液态 chip。
-  //   圆钮走原生 backgroundBlurStyle(COMPONENT_THIN) 液态玻璃（无实色底、无 border、无 shadow）；液态也由
-  //   titleBar(systemMaterialEffect + GRADIENT_BLUR) 提供，根容器不设 backgroundColor/backdropBlur 避免叠加遮挡。
+  // 顶栏标题内容（渲染在 HdsNavDestination titleBar.stackBuilder 内）。
+  //   三钮（‹返回 / 🔍 / ⋯）下沉为系统原生 titleBar 的 backIcon + menu（content.backIcon/content.menu），
+  //   由系统 systemMaterialEffect 渲染为真·液态玻璃圆钮——对齐 chatcube ChatPage getTitleBarOptions
+  //   （stackBuilder + backIcon + menu 三者共存）+ berry3 BookmarksPage。本 Builder 仅留标题列，左右 padding
+  //   让位原生返回钮(左 56)/菜单钮(右 56)。不再自建 Button+backgroundBlurStyle（那不是真液态，模拟器/真机
+  //   均无系统材质；berry3 FloatingToolbar 注释明示「systemMaterialEffect 仅官方容器可用，无独立光感钮组件」）。
   @Builder
   private ChatTopBar() {
-    Row({ space: 8 }) {
-      // 返回（液态圆钮；hideTitleBar 去掉系统返回，必须有。附件面板开时先收面板）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textPrimary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .onClick(() => {
-        if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); return; }
-        if (this.navPathStack !== null) { this.navPathStack.pop(); }
-      })
-
-      // 标题列（flavor 徽章 + 标题 + 副标题；layoutWeight 占满，标题 ellipsis）
-      Row({ space: 6 }) {
-        Text(flavorLabel(this.flavor))
-          .fontSize(fs(9)).fontWeight(FontWeight.Medium).fontColor('#ffffff')
-          .backgroundColor(flavorColorHex(this.flavor))
-          .borderRadius(2)
-          .width(fs(18)).height(fs(18))
-          .textAlign(TextAlign.Center)
-          .maxLines(1)
-        Column() {
-          Text(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
-            .fontSize(fs(16)).fontWeight(FontWeight.Medium).fontColor(this.c.textPrimary)
+    // 标题列（flavor 徽章 + 标题 + 副标题）
+    Row({ space: 6 }) {
+      Text(flavorLabel(this.flavor))
+        .fontSize(fs(9)).fontWeight(FontWeight.Medium).fontColor('#ffffff')
+        .backgroundColor(flavorColorHex(this.flavor))
+        .borderRadius(2)
+        .width(fs(18)).height(fs(18))
+        .textAlign(TextAlign.Center)
+        .maxLines(1)
+      Column() {
+        Text(this.sessionTitle !== '' ? this.sessionTitle : t('chat.defaultTitle'))
+          .fontSize(fs(16)).fontWeight(FontWeight.Medium).fontColor(this.c.textPrimary)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.chatSubtitle !== '') {
+          Text(this.chatSubtitle)
+            .fontSize(fs(11)).fontColor(this.c.textSecondary)
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-          if (this.chatSubtitle !== '') {
-            Text(this.chatSubtitle)
-              .fontSize(fs(11)).fontColor(this.c.textSecondary)
-              .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              .margin({ top: 1 })
-          }
+            .margin({ top: 1 })
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
       }
+      .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      .alignItems(VerticalAlign.Center)
-
-      // 搜索（实色圆钮，chatcube 同款；searchMode 时 primary 字色 + xmark）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
-          .fontSize(fs(18))
-          .fontColor([this.searchMode ? this.c.primary : this.c.textSecondary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .onClick(() => { this.toggleSearch(); })
-
-      // ⋯ 下拉（液态 chip + bindMenu frosted 气泡；替换原 SessionActionMenu 底部 sheet）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.ellipsis_message'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textSecondary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .bindMenu(this.ChatTopMenu(), {
-        placement: Placement.BottomRight,
-        offset: { x: 0, y: 8 },
-        backgroundColor: this.c.surface,
-        backgroundBlurStyle: BlurStyle.Regular
-      })
     }
     .width('100%')
-    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 液态背景由系统 HDS titleBar 提供（systemMaterialEffect + GRADIENT_BLUR）：本 Builder 仅渲染顶栏内容。
-    //   不设根 backgroundColor/backdropBlur——避免与 titleBar 液态层叠加。
+    .padding({ left: 56, right: 56, top: 8, bottom: 8 })
+    .alignItems(VerticalAlign.Center)
   }
 
-  // ⋯ 下拉菜单（替换 SessionActionMenu sheet）。Menu/MenuItem 形态镜像 ComposerToolbar ThinkingMenu；
-  //   active 门控（终端/语音/切换远程仅活跃；归档↔删除二选一）。
-  @Builder
-  private ChatTopMenu() {
-    Menu() {
-      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')).fontSize(16), content: t('chat.config') })
-        .contentFont({ size: fs(14) })
-        .onClick(() => { this.configSheetOpen = true; })
-      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.folder')).fontSize(16), content: t('sessionMenu.files') })
-        .contentFont({ size: fs(14) })
-        .onClick(() => { this.openFiles(); })
-      if (this.isActive) {
-        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.keyboard')).fontSize(16), content: t('sessionMenu.terminal') })
-          .contentFont({ size: fs(14) })
-          .onClick(() => { this.openTerminal(); })
-        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.mic')).fontSize(16), content: t('sessionMenu.voice') })
-          .contentFont({ size: fs(14) })
-          .onClick(() => { this.openVoice(); })
+  // 系统原生返回钮（titleBar.content.backIcon）：由系统 systemMaterialEffect 渲染真·液态玻璃圆钮。
+  //   附件面板开时先收面板（保留原自建返回钮逻辑；对齐 chatcube getTitleBarBackIcon → handleBack）。
+  private titleBarBackIcon(): HdsNavigationBackButtonItemOptions {
+    const icon: SymbolGlyphModifier = new SymbolGlyphModifier($r('sys.symbol.chevron_backward'));
+    icon.fontSize(20);
+    return {
+      icon: icon,
+      action: () => {
+        if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); return; }
+        if (this.navPathStack !== null) { this.navPathStack.pop(); }
       }
-      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.share')).fontSize(16), content: t('chat.exportTitle') })
-        .contentFont({ size: fs(14) })
-        .onClick(() => { this.exportConversation(); })
-      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.list_bullet')).fontSize(16), content: t('outline.title') })
-        .contentFont({ size: fs(14) })
-        .onClick(() => { this.outlineOpen = true; })
-      MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')).fontSize(16), content: t('sessionMenu.rename') })
-        .contentFont({ size: fs(14) })
-        .onClick(() => { this.startRename(); })
-      if (this.isActive) {
-        MenuItem({ symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.swap')).fontSize(16), content: t('sessionMenu.switchRemote') })
-          .contentFont({ size: fs(14) })
-          .onClick(() => { this.startSwitchRemote(); })
+    };
+  }
+
+  // 菜单项图标 helper（SymbolGlyphModifier 统一 fontSize 20；字色交系统 menuStyle.iconColor 渲染）。
+  private titleBarMenuIcon(symbol: Resource): SymbolGlyphModifier {
+    const icon: SymbolGlyphModifier = new SymbolGlyphModifier(symbol);
+    icon.fontSize(20);
+    return icon;
+  }
+
+  // 系统原生菜单项（titleBar.content.menu.value，对齐 chatcube getTitleBarMenuItems + berry3 BookmarksPage）。
+  //   第 1 项=搜索(maxCount=1 常驻栏直接图标，searchMode 翻 xmark)；其余溢出到系统⋯面板。
+  //   active 门控不变（终端/语音/切换远程仅活跃；归档↔删除二选一）。
+  private titleBarMenuItems(): Array<HdsNavigationMenuItemOptions> {
+    const menus: Array<HdsNavigationMenuItemOptions> = [];
+
+    // 搜索（常驻栏直接图标位；searchMode 时翻 xmark）
+    const searchIcon: SymbolGlyphModifier =
+      new SymbolGlyphModifier(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'));
+    searchIcon.fontSize(20);
+    const searchItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('chat.search'),
+        icon: searchIcon,
+        action: () => { this.toggleSearch(); }
       }
-      MenuItem({
-        symbolStartIcon: new SymbolGlyphModifier(this.isActive ? $r('sys.symbol.archivebox') : $r('sys.symbol.trash')).fontSize(16),
-        content: this.isActive ? t('sessionMenu.archive') : t('sessionMenu.delete')
-      })
-        .contentFont({ size: fs(14) })
-        .contentFontColor(this.c.error)
-        .onClick(() => { this.onDestructiveTap(); })
+    };
+    menus.push(searchItem);
+
+    const configItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('chat.config'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.gearshape')),
+        action: () => { this.configSheetOpen = true; }
+      }
+    };
+    menus.push(configItem);
+
+    const filesItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('sessionMenu.files'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.folder')),
+        action: () => { this.openFiles(); }
+      }
+    };
+    menus.push(filesItem);
+
+    if (this.isActive) {
+      const terminalItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.terminal'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.keyboard')),
+          action: () => { this.openTerminal(); }
+        }
+      };
+      menus.push(terminalItem);
+      const voiceItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.voice'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.mic')),
+          action: () => { this.openVoice(); }
+        }
+      };
+      menus.push(voiceItem);
     }
+
+    const exportItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('chat.exportTitle'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.share')),
+        action: () => { this.exportConversation(); }
+      }
+    };
+    menus.push(exportItem);
+
+    const outlineItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('outline.title'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.list_bullet')),
+        action: () => { this.outlineOpen = true; }
+      }
+    };
+    menus.push(outlineItem);
+
+    const renameItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('sessionMenu.rename'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.square_and_pencil')),
+        action: () => { this.startRename(); }
+      }
+    };
+    menus.push(renameItem);
+
+    if (this.isActive) {
+      const switchItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.switchRemote'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.swap')),
+          action: () => { this.startSwitchRemote(); }
+        }
+      };
+      menus.push(switchItem);
+    }
+
+    const destructiveItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: this.isActive ? t('sessionMenu.archive') : t('sessionMenu.delete'),
+        icon: this.titleBarMenuIcon(this.isActive ? $r('sys.symbol.archivebox') : $r('sys.symbol.trash')),
+        action: () => { this.onDestructiveTap(); }
+      }
+    };
+    menus.push(destructiveItem);
+
+    return menus;
   }
 
   // 对话内搜索栏（对照 Index 顶栏 Search 组件：内置 ✕ 仅清文本；标题栏 🔍/✕ 切整栏显隐）
@@ -3439,9 +3481,14 @@ struct ChatPage {
     //   - systemBarStyle：全屏后状态栏图标色显式设（暗浅/亮深）
     .titleBar({
       content: {
-        title: { mainTitle: ' ' },                         // 占位（真内容走 stackBuilder）
+        title: { mainTitle: ' ' },                         // 占位（真标题走 stackBuilder）
         divider: { showType: DividerShowType.OFF },        // 关闭滚动分割线（否则又出硬线）
-        stackBuilder: (): void => { this.ChatTopBar(); }   // 自建顶栏塞进系统 titleBar
+        backIcon: this.titleBarBackIcon(),                 // 系统原生液态返回钮（替代自建圆钮）
+        menu: {                                            // 系统原生液态菜单：搜索常驻栏 + 其余溢出⋯
+          maxCount: 1,
+          value: this.titleBarMenuItems()
+        },
+        stackBuilder: (): void => { this.ChatTopBar(); }   // 仅标题列（flavor 徽章 + 标题/副标题）
       },
       style: {
         scrollEffectOpts: {
@@ -3455,6 +3502,20 @@ struct ChatPage {
             backgroundColor: this.withAlpha(this.c.bg, '00'),
             maskExtraHeight: 20,                           // 渐变过渡带（解决「边缘硬线无过渡」，竖屏 20）
             blurRadius: 0
+          },
+          contentStyle: {                                  // 钮/标题样式（对齐 chatcube HdsVisualEffectUtil：menu/backIcon
+            titleStyle: {                                  //   走系统三级背景色 + 主图标色 → 即使模拟器不跑 blur，钮也有
+              mainTitleColor: this.c.textPrimary,          //   可见圆形磨砂底，呈液态圆钮观感，而非裸图标）
+              subTitleColor: this.c.textSecondary
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
           }
         },
         scrollEffectStyle: {                               // 滚动态：bg 半透明 E6 + blurRadius 26 + 过渡带
@@ -3462,6 +3523,20 @@ struct ChatPage {
             backgroundColor: this.withAlpha(this.c.bg, 'E6'),
             maskExtraHeight: 20,
             blurRadius: 26
+          },
+          contentStyle: {                                  // 同 originalStyle（chatcube 两态 contentStyle 一致）
+            titleStyle: {
+              mainTitleColor: this.c.textPrimary,
+              subTitleColor: this.c.textSecondary
+            },
+            menuStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            },
+            backIconStyle: {
+              backgroundColor: $r('sys.color.comp_background_tertiary'),
+              iconColor: $r('sys.color.icon_primary')
+            }
           }
         },
         blurStrategy: BlurStrategy.ENABLE,
@@ -3476,8 +3551,6 @@ struct ChatPage {
     .bindToScrollable([this.scroller])
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .hideTitleBar(false, true)
-    .hideBackButton(true)   // 隐藏系统返回箭头：液态背景由系统 titleBar 提供，但返回按钮走 stackBuilder 内
-                             //   ChatTopBar 自建液态圆钮（chatcube 同款）；不隐藏会与系统箭头叠成「左上角两个返回」。
     .systemBarStyle(
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }

@@ -16,6 +16,8 @@ import { formatVoiceStartedContext, formatNewSingleMessage, formatReadyEvent,
   formatPermissionRequest, extractLastAssistantSpeakable } from '../chat/VoiceFormatters';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { getElevenLabsCodeFromPreference } from '../chat/VoiceLanguages';
+import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
+import { hdsTitleBarStyle } from '../components/HdsTitleBarStyle';
 
 // 语音页（NavDestination）—— 对照 hapi web/src/realtime/RealtimeVoiceSession.tsx
 //   Web 组件托管 ElevenLabs Conversational AI（rawfile/voice/voice.html + elevenlabs-client.min.js）：
@@ -499,17 +501,26 @@ struct VoicePage {
     return this.sessionTitle !== '' ? this.sessionTitle : t('voice.title');
   }
 
-  // —— 顶栏：返回 + 标题 + 状态色点 + 文案 ——
+  // 液态 titleBar 样式（静止磨砂：Web 容器页无 ArkUI Scroller，不滚动联动；systemMaterialEffect + E6 半透明兜底）。
+  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg, true); }
+  private get isDark(): boolean { return getThemeState().isDark; }
+
+  // —— 顶栏：返回 + 标题/状态 + 状态色点（液态圆钮；HdsNavDestination titleBar.stackBuilder 调用）——
   @Builder
   private TopBar() {
-    Row({ space: 10 }) {
-      Text('‹')
-        .fontSize(fs(26))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
+    Row({ space: 8 }) {
+      // 返回（液态圆钮；hideBackButton 去掉系统返回，必须有）
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
+        SymbolGlyph($r('sys.symbol.chevron_backward'))
+          .fontSize(fs(18))
+          .fontColor([this.c.textPrimary])
+      }
+      .width(36)
+      .height(36)
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+      .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
+
+      // 标题 + 状态文案（双行）
       Column({ space: 2 }) {
         Text(this.titleText())
           .fontSize(fs(15))
@@ -528,7 +539,7 @@ struct VoicePage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      // 状态色点（Column 圆点，复用既有样式原语）
+      // 状态色点（对照上游；非按钮，保留圆点）
       Column()
         .width(9)
         .height(9)
@@ -536,9 +547,8 @@ struct VoicePage {
         .backgroundColor(this.statusColor())
     }
     .width('100%')
-    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
-    .backgroundColor(this.c.bg)
-    .border({ width: { bottom: 0.5 }, color: this.c.border })
+    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
+    // 液态背景由系统 HDS titleBar 提供；本 Builder 仅渲染顶栏内容，不设根 backgroundColor/border。
   }
 
   // 错误 / 未授权 / 非活跃 横幅（含重试按钮；mic 未授权单独提示去设置授权）
@@ -640,9 +650,8 @@ struct VoicePage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        this.TopBar()
         this.StatusBanner()
         // 语音渲染（Web 托管 ElevenLabs；恒为主内容，不被遮挡；中心区渲染波形 + mode 文案）
         Web({ src: 'resource://rawfile/voice/voice.html', controller: this.controller })
@@ -687,7 +696,25 @@ struct VoicePage {
       .height('100%')
       .backgroundColor(this.c.bg)
     }
-    .hideTitleBar(true)
+    // HDS 液态 titleBar（静止磨砂：Web 容器无 Scroller 不滚动联动；stackBuilder 渲染 TopBar）+
+    //   ignoreLayoutSafeArea 顶延伸状态栏（液态顶栏）/底自管安全区（VoiceBar padding 补）。
+    .titleBar({
+      content: {
+        title: { mainTitle: ' ' },                          // 占位（真内容走 stackBuilder）
+        divider: { showType: DividerShowType.OFF },         // 关分割线（否则又出硬线）
+        stackBuilder: (): void => { this.TopBar(); }        // 自建顶栏塞进系统 titleBar
+      },
+      style: this.titleBarStyle,
+      avoidLayoutSafeArea: true,                            // titleBar 自身避让状态栏
+      enableComponentSafeArea: false
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .hideBackButton(true)   // 隐藏系统返回箭头：返回走 stackBuilder 内 TopBar 自建液态圆钮
+    .systemBarStyle(
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }
+    )
     .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
