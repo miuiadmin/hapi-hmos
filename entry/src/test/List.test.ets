@@ -62,6 +62,7 @@ import agentRunTraceTest from './AgentRunTrace.test';
 import toastLocalizeTest from './ToastLocalize.test';
 import filePathScannerTest from './FilePathScanner.test';
 import markdownCodeSplitterTest from './MarkdownCodeSplitter.test';
+import sessionMergeTest from './SessionMerge.test';
 
 export default function testsuite() {
   diffTest();
@@ -125,4 +126,5 @@ export default function testsuite() {
   toastLocalizeTest();
   filePathScannerTest();
   markdownCodeSplitterTest();
+  sessionMergeTest();
 }

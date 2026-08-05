@@ -4,31 +4,47 @@
 import { t } from '../i18n/Translate';
 
 // —— 会话摘要（列表用，对齐 shared/src/sessionSummary.ts SessionSummary）——
+// @ObservedV2 + @Trace：会话摘要为列表项数据源，列表 ForEach 同 key 复用项时，
+//   须靠 @Trace 字段级响应驱动重渲染（整体替换数组/对象实例 → ForEach 视为同 key 不刷新 → 列表冻结）。
+//   故 loadSessions 走 mergeSessionArrays 就地 copyFrom（改 @Trace 字段），非整体替换。对照 ChatBlock 范式。
+@ObservedV2
 export class SessionSummaryMetadata {
-  name: string = '';           // 会话标题
-  path: string = '';           // 工作目录
-  machineId: string = '';
-  summaryText: string = '';    // 摘要文本
-  flavor: string = '';
-  agentSessionId: string = '';
-  worktreeBasePath: string = '';   // metadata.worktree.basePath（目录建议第二源；对照 shared WorktreeMetadata.basePath）
+  @Trace name: string = '';           // 会话标题
+  @Trace path: string = '';           // 工作目录
+  @Trace machineId: string = '';
+  @Trace summaryText: string = '';    // 摘要文本
+  @Trace flavor: string = '';
+  @Trace agentSessionId: string = '';
+  @Trace worktreeBasePath: string = '';   // metadata.worktree.basePath（目录建议第二源；对照 shared WorktreeMetadata.basePath）
+
+  // 就地拷贝（改 @Trace 子字段 → 触发依赖此字段的 UI 重渲染，如 title/summaryText getter）。
+  copyFrom(o: SessionSummaryMetadata): void {
+    this.name = o.name;
+    this.path = o.path;
+    this.machineId = o.machineId;
+    this.summaryText = o.summaryText;
+    this.flavor = o.flavor;
+    this.agentSessionId = o.agentSessionId;
+    this.worktreeBasePath = o.worktreeBasePath;
+  }
 }
 
+@ObservedV2
 export class SessionSummary {
-  id: string = '';
-  active: boolean = false;
-  thinking: boolean = false;
-  activeAt: number = 0;
-  updatedAt: number = 0;
-  metadata: SessionSummaryMetadata | null = null;
-  pendingRequestsCount: number = 0;
-  backgroundTaskCount: number = 0;
-  futureScheduledMessageCount: number = 0;   // 待触发的定时消息数（hub GET /api/sessions 返回；列表 ⏰ 角标）
-  pendingRequestKinds: string[] = [];   // 待处理请求类型（'permission'|'input'；attention 指示器分级用）
-  model: string = '';          // null → ''
-  effort: string = '';
-  todoCompleted: number = 0;
-  todoTotal: number = 0;
+  id: string = '';                  // 不变标识（ForEach key 派生自此），无需 @Trace
+  @Trace active: boolean = false;
+  @Trace thinking: boolean = false;
+  @Trace activeAt: number = 0;
+  @Trace updatedAt: number = 0;
+  @Trace metadata: SessionSummaryMetadata | null = null;
+  @Trace pendingRequestsCount: number = 0;
+  @Trace backgroundTaskCount: number = 0;
+  @Trace futureScheduledMessageCount: number = 0;   // 待触发的定时消息数（hub GET /api/sessions 返回；列表 ⏰ 角标）
+  @Trace pendingRequestKinds: string[] = [];   // 待处理请求类型（'permission'|'input'；attention 指示器分级用）
+  @Trace model: string = '';          // null → ''
+  @Trace effort: string = '';
+  @Trace todoCompleted: number = 0;
+  @Trace todoTotal: number = 0;
 
   // 标题：name 优先，否则 path 末段，否则 id
   get title(): string {
@@ -46,6 +62,32 @@ export class SessionSummary {
 
   get summaryText(): string {
     return this.metadata !== null ? this.metadata.summaryText : '';
+  }
+
+  // 就地拷贝 fetched 字段到本对象（@Trace 字段变更触发 V2 重渲染，ForEach 同 key 保留项随之刷新）。
+  //   metadata：有→有则就地 copyFrom 子字段；无→有则换引用（@Trace metadata 触发）。
+  copyFrom(o: SessionSummary): void {
+    this.active = o.active;
+    this.thinking = o.thinking;
+    this.activeAt = o.activeAt;
+    this.updatedAt = o.updatedAt;
+    this.pendingRequestsCount = o.pendingRequestsCount;
+    this.backgroundTaskCount = o.backgroundTaskCount;
+    this.futureScheduledMessageCount = o.futureScheduledMessageCount;
+    this.pendingRequestKinds = o.pendingRequestKinds;
+    this.model = o.model;
+    this.effort = o.effort;
+    this.todoCompleted = o.todoCompleted;
+    this.todoTotal = o.todoTotal;
+    if (o.metadata !== null) {
+      if (this.metadata !== null) {
+        this.metadata.copyFrom(o.metadata);
+      } else {
+        this.metadata = o.metadata;
+      }
+    } else {
+      this.metadata = null;
+    }
   }
 }
 
@@ -542,7 +584,28 @@ export function parseSessionsResponse(json: string): SessionSummary[] {
   return result;
 }
 
-// —— 解析 GET /api/machines → { machines: Machine[] }（对齐 MachinesResponse）——
+// 列表就地合并：以 id 为键，复用既有 SessionSummary 对象（@ObservedV2 + @Trace），copyFrom 改字段
+//   → 触发 V2 字段级重渲染，ForEach 同 key 保留项随之刷新（修「列表冻结，须重启 App 才更新」根因：
+//   整体替换为新对象实例时 ForEach 视 key 不变 → 不重调 itemGenerator → 标题/状态点停在首帧）。
+//   新增会话入列、删除会话丢弃；返回新数组引用（顺序跟随 fetched）供 sessionRows getter 重算分组结构。
+export function mergeSessionArrays(existing: SessionSummary[], fetched: SessionSummary[]): SessionSummary[] {
+  const map: Map<string, SessionSummary> = new Map<string, SessionSummary>();
+  for (let i = 0; i < existing.length; i++) {
+    map.set(existing[i].id, existing[i]);
+  }
+  const out: SessionSummary[] = [];
+  for (let i = 0; i < fetched.length; i++) {
+    const f: SessionSummary = fetched[i];
+    if (map.has(f.id)) {
+      const found: SessionSummary = map.get(f.id) as SessionSummary;
+      found.copyFrom(f);
+      out.push(found);
+    } else {
+      out.push(f);
+    }
+  }
+  return out;
+}
 export function parseMachinesResponse(json: string): Machine[] {
   let raw: Record<string, Object>;
   try {

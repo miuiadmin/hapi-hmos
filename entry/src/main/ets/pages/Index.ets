@@ -1,6 +1,6 @@
 import { getHubClient } from '../api/HubClient';
 import { getSSEClient, SSESubscription, SSEConnectionState } from '../api/SSEClient';
-import { SessionSummary, Machine } from '../models/Types';
+import { SessionSummary, Machine, mergeSessionArrays } from '../models/Types';
 import { SyncEvent, SyncEventType } from '../models/SyncEvent';
 import { ChatPageRouteParams } from './ChatPage';
 import { NewSessionPageRouteParams } from './NewSessionPage';
@@ -137,7 +137,10 @@ struct Index {
     try {
       const list = await getHubClient().fetchSessions();
       if (seq === this.loadSeq) {
-        this.sessions = list;
+        // 就地合并（非整体替换）：复用既有 @ObservedV2 对象 + copyFrom 改 @Trace 字段 →
+        //   ForEach 同 key 保留项随之字段级重渲染（修「列表冻结，须重启 App 才更新」根因）。
+        //   新增入列 / 删除丢弃；返回新数组引用供 sessionRows getter 重算分组。
+        this.sessions = mergeSessionArrays(this.sessions, list);
       }
     } catch (e) {
       if (seq === this.loadSeq) {
