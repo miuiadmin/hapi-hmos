@@ -5,6 +5,7 @@ import { GitStatusFiles, GitFileStatus, GitFileStatusType, buildGitStatusFiles }
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { FileViewerRouteParams } from './FileViewerPage';
 import { t, kv2 } from '../i18n/I18nService';
+import { getLayoutState } from '../state/LayoutState';
 
 // 会话文件浏览页（NavDestination）—— 对照 hapi web /sessions/$sessionId/files（全量：git 变更 + 目录树 + 搜索）
 //   3 Tab：① 改动（getGitStatus porcelain v2 + git-diff-numstat ×2 → buildGitStatusFiles）
@@ -165,6 +166,44 @@ struct FilesPage {
     if (i < 0) { this.loadDirectory(''); return; }
     const segs: string[] = this.pathSegments();
     this.loadDirectory(segs.slice(0, i + 1).join('/'));
+  }
+
+  // 自定义 TopBar（方案 D：hideTitleBar + ignoreLayoutSafeArea + 自建栏 padding topAvoidHeight）。
+  //   全屏 setWindowLayoutFullScreen 后普通 NavDestination 系统 titleBar 避让异常→飞进状态栏；
+  //   走 Terminal/Voice 同款自建 TopBar：‹返回 + 标题 + ↻刷新（刷新逻辑同原 RefreshMenu）。
+  @Builder
+  private TopBar() {
+    Row({ space: 10 }) {
+      Text('‹')
+        .fontSize(fs(26))
+        .fontColor(this.c.textSecondary)
+        .width(36)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
+      Text(t('files.page.title'))
+        .fontSize(fs(16))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text('↻')
+        .fontSize(fs(20))
+        .fontColor(this.c.textPrimary)
+        .width(36)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          if (this.activeTab === 'changes') { this.loadGitStatus(); }
+          else if (this.activeTab === 'files') { this.loadDirectory(this.dirPath); }
+          else { this.doSearch(); }
+        })
+    }
+    .width('100%')
+    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
+    .backgroundColor(this.c.bg)
+    .border({ width: { bottom: 0.5 }, color: this.c.border })
   }
 
   @Builder
@@ -472,19 +511,10 @@ struct FilesPage {
     return 'doc';
   }
 
-  @Builder
-  private RefreshMenu() {
-    Text('↻').fontSize(fs(20)).fontColor(this.c.textPrimary)
-      .onClick(() => {
-        if (this.activeTab === 'changes') { this.loadGitStatus(); }
-        else if (this.activeTab === 'files') { this.loadDirectory(this.dirPath); }
-        else { this.doSearch(); }
-      })
-  }
-
   build() {
     NavDestination() {
       Column() {
+        this.TopBar()
         this.HeaderBar()
         this.Segmented()
         Scroll() {
@@ -506,9 +536,10 @@ struct FilesPage {
       .width('100%')
       .height('100%')
       .backgroundColor(this.c.bg)
+      .padding({ bottom: getLayoutState().bottomAvoidHeight })
     }
-    .title(t('files.page.title'))
-    .menus(this.RefreshMenu)
+    .hideTitleBar(true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as FilesRouteParams;

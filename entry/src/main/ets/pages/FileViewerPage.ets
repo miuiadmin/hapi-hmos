@@ -4,6 +4,7 @@ import { getHubClient } from '../api/HubClient';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 import { CodeBlock } from '../components/CodeBlock';
+import { getLayoutState } from '../state/LayoutState';
 
 // 文件查看页（NavDestination）—— 对照 hapi web /sessions/$sessionId/file
 //   readSessionFile → content(base64)：图片扩展名→Image(data:mime;base64,...)；
@@ -246,17 +247,46 @@ struct FileViewerPage {
     }
   }
 
+  // 自定义 TopBar（方案 D，同 FilesPage/Terminal：全屏后系统 titleBar 飞状态栏，走自建栏）。
+  //   ‹返回 + 文件名 + 复制（SymbolGlyph 同原 CopyMenu：copied?checkmark:doc_filled_on_doc）。
   @Builder
-  private CopyMenu() {
-    SymbolGlyph(this.copied ? $r('sys.symbol.checkmark') : $r('sys.symbol.doc_filled_on_doc'))
-      .fontSize(fs(18))
-      .fontColor([this.canCopy ? this.c.textPrimary : this.c.textTertiary])
+  private TopBar() {
+    Row({ space: 10 }) {
+      Text('‹')
+        .fontSize(fs(26))
+        .fontColor(this.c.textSecondary)
+        .width(36)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
+      Text(this.fileName !== '' ? this.fileName : t('fileViewer.fallbackTitle'))
+        .fontSize(fs(16))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Row() {
+        SymbolGlyph(this.copied ? $r('sys.symbol.checkmark') : $r('sys.symbol.doc_filled_on_doc'))
+          .fontSize(fs(18))
+          .fontColor([this.canCopy ? this.c.textPrimary : this.c.textTertiary])
+      }
+      .width(36)
+      .height(40)
+      .justifyContent(FlexAlign.Center)
       .onClick(() => { this.copyContent(); })
+    }
+    .width('100%')
+    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
+    .backgroundColor(this.c.bg)
+    .border({ width: { bottom: 0.5 }, color: this.c.border })
   }
 
   build() {
     NavDestination() {
-      Scroll() {
+      Column() {
+        this.TopBar()
+        Scroll() {
         Column({ space: 12 }) {
           // 内容
           Column() {
@@ -279,14 +309,18 @@ struct FileViewerPage {
           }
         }
         .width('100%')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .backgroundColor(this.c.bg)
       }
       .width('100%')
       .height('100%')
-      .scrollBar(BarState.Auto)
-      .backgroundColor(this.c.bg)
+      .padding({ bottom: getLayoutState().bottomAvoidHeight })
     }
-    .title(this.fileName !== '' ? this.fileName : t('fileViewer.fallbackTitle'))
-    .menus(this.CopyMenu)
+    .hideTitleBar(true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as FileViewerRouteParams;
