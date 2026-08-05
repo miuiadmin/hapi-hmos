@@ -4,11 +4,14 @@
 // 语法高亮：逐行 tokenizeLine → 按 token 类型染色的 Span 序列（chat/CodeHighlight 纯层；
 //   keyword=primary/string=success/number=warning/comment=codeMuted/plain=codeText）。
 //   text 语言全 plain（零回归）；大文件（>20k 字符）降级 text 免扫描 jank。
-// V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight；@Computed allLines/isCollapsed/visibleLines/label。
+// V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight/showCopy/showFullScreen + @Event onFullScreen；
+//   @Computed isCollapsed/visibleLines/label。
 
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
 import { tokenizeLine, HighlightToken, HighlightTokenType } from '../chat/CodeHighlight';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { showToast } from '../utils/Toast';
 
 const COLLAPSE_LINE_THRESHOLD: number = 18;
 const COLLAPSE_CHAR_THRESHOLD: number = 1800;
@@ -36,6 +39,12 @@ struct CodeBlock {
   @Param collapseLongContent: boolean = false;
   @Param scrollY: boolean = false;
   @Param maxHeight: number = 0;          // 0 = 默认（折叠 260 / 滚动 420）
+  // —— markdown 代码块 opt-in 动作（默认关：工具卡 / FileViewer / CliOutput 等调用点零回归）——
+  //   showCopy：header 右侧显复制图标 → 写系统剪贴板（对照 CJMarkdown setCodeCopyCallback）。
+  //   showFullScreen：header 右侧显全屏图标 → 触发 @Event onFullScreen（交上层开全屏 sheet）。
+  @Param showCopy: boolean = false;
+  @Param showFullScreen: boolean = false;
+  @Event onFullScreen: () => void = (): void => {};
 
   // 主题（读 @Trace isDark 建立刷新依赖）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -107,9 +116,17 @@ struct CodeBlock {
     return this.c.codeText;
   }
 
+  // 复制整段代码到系统剪贴板（showCopy=true 时 header 复制图标触发；对照 MarkdownText.copyToClipboard）
+  private copyCode(): void {
+    const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.code);
+    pasteboard.getSystemPasteboard().setData(data)
+      .then((): void => { showToast(t('common.copySuccess')); })
+      .catch((): void => { showToast(t('markdown.copyFailed')); });
+  }
+
   build() {
     Column() {
-      // header（label）
+      // header（label + opt-in 复制 / 全屏动作图标）
       Row() {
         Text(this.label)
           .fontSize(fs(10))
@@ -117,6 +134,20 @@ struct CodeBlock {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.showCopy) {
+          Image($r('app.media.markdown_code_copy'))
+            .width(16)
+            .height(16)
+            .margin({ left: 8 })
+            .onClick(() => { this.copyCode(); })
+        }
+        if (this.showFullScreen) {
+          Image($r('app.media.markdown_code_fullscreen'))
+            .width(16)
+            .height(16)
+            .margin({ left: 8 })
+            .onClick(() => { this.onFullScreen(); })
+        }
       }
       .width('100%')
       .padding({ left: 10, right: 10, top: 6, bottom: 6 })

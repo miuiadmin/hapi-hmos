@@ -175,7 +175,7 @@ export struct CodexReviewCard {
     }
     .width('100%')
     .borderRadius(12)
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
     .border({ width: 0.5, color: this.c.border })
     .clip(true)
   }

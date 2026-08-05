@@ -76,7 +76,7 @@ export struct CliOutputCard {
     .width('100%')
     .padding(10)
     .borderRadius(20)
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
     .border({ width: 0.5, color: this.c.border })
     .bindSheet(this.isDetailOpen!!, this.DetailSheet(), this.detailSheetOpts)
   }

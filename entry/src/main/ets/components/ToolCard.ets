@@ -516,7 +516,8 @@ struct ToolCard {
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.surface)
+    .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.card)
+    .border({ width: 0.5, color: this.c.border })
     .borderRadius(16)
     .bindSheet(this.isDetailOpen!!, this.DetailSheet(), this.detailSheetOpts)
   }

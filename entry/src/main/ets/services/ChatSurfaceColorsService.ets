@@ -58,7 +58,7 @@ function resolveToHex(pref: ChatSurfaceColorPreference, isDark: boolean, base: s
 function resolveNow(): void {
   const state: ChatSurfaceColorsState = getChatSurfaceColorsState();
   const palette = paletteOf(_isDark);
-  state.toolGroupBg = resolveToHex(state.toolGroupPref, _isDark, palette.surface);
+  state.toolGroupBg = resolveToHex(state.toolGroupPref, _isDark, palette.card);
   state.userMessageBg = resolveToHex(state.userMessagePref, _isDark, palette.primary);
 }
 

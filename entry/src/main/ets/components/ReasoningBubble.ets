@@ -65,7 +65,8 @@ export struct ReasoningBubble {
       }
     }
     .width('100%')
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
+    .border({ width: 0.5, color: this.c.border })
     .borderRadius(16)
   }
 }

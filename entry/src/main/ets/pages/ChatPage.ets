@@ -2306,7 +2306,8 @@ struct ChatPage {
           })
         }
         .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.card)
+        .border({ width: 0.5, color: this.c.border })
         .borderRadius(16)
         // 满宽：与 ReasoningBubble/ToolCard 等左侧卡片宽度一致（旧 maxWidth:'85%' 导致 AI 回复比思考气泡窄、
         //   且长 Markdown 行/代码块超 85% 被 clip(true) 裁掉右边内容）。列表已有左右 12vp padding，满宽不贴边。
@@ -2425,10 +2426,10 @@ struct ChatPage {
   @Builder
   private MessageSkeleton() {
     Column({ space: 10 }) {
-      Row().width('60%').height(36).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
-      Row().width('75%').height(44).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
-      Row().width('45%').height(32).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
-      Row().width('83%').height(52).borderRadius(12).backgroundColor(this.c.surface).opacity(0.7)
+      Row().width('60%').height(36).borderRadius(12).backgroundColor(this.c.card).opacity(0.7)
+      Row().width('75%').height(44).borderRadius(12).backgroundColor(this.c.card).opacity(0.7)
+      Row().width('45%').height(32).borderRadius(12).backgroundColor(this.c.card).opacity(0.7)
+      Row().width('83%').height(52).borderRadius(12).backgroundColor(this.c.card).opacity(0.7)
     }
     .width('100%')
     .layoutWeight(1)
@@ -2444,7 +2445,7 @@ struct ChatPage {
         .fontSize(fs(14))
         .fontColor(this.c.textTertiary)
         .padding({ left: 14, right: 14, top: 9, bottom: 9 })
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.card)
         .borderRadius(16)
       // 小停止键：isAborting 显 spinner，否则 stop 图标（与发 send 键空态 pause 同走 handleStop）
       Button({ type: ButtonType.Circle, stateEffect: false }) {
@@ -2458,7 +2459,7 @@ struct ChatPage {
       }
       .width(32)
       .height(32)
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.card)
       .borderRadius(16)
       .margin({ left: 8 })
       .onClick(() => { this.handleStop(); })
@@ -2983,7 +2984,7 @@ struct ChatPage {
   //   三钮（‹返回 / 🔍 / ⋯）下沉为系统原生 titleBar 的 backIcon + menu（content.backIcon/content.menu），
   //   由系统 systemMaterialEffect 渲染为真·液态玻璃圆钮——对齐 chatcube ChatPage getTitleBarOptions
   //   （stackBuilder + backIcon + menu 三者共存）+ berry3 BookmarksPage。本 Builder 仅留标题列，左右 padding
-  //   让位原生返回钮(左 56)/菜单钮(右 56)。不再自建 Button+backgroundBlurStyle（那不是真液态，模拟器/真机
+  //   让位原生返回钮(左 68)/菜单钮(右 56)。不再自建 Button+backgroundBlurStyle（那不是真液态，模拟器/真机
   //   均无系统材质；berry3 FloatingToolbar 注释明示「systemMaterialEffect 仅官方容器可用，无独立光感钮组件」）。
   @Builder
   private ChatTopBar() {
@@ -3011,7 +3012,7 @@ struct ChatPage {
       .layoutWeight(1)
     }
     .width('100%')
-    .padding({ left: 56, right: 56, top: 8, bottom: 8 })
+    .padding({ left: 68, right: 56, top: 8, bottom: 8 })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -3476,7 +3477,7 @@ struct ChatPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.c.bg)
+      .backgroundColor(this.c.canvas)
     }
     // HDS 沉浸光感 titleBar（系统级材质管线，替代自建 backdropBlur）：
     //   - titleBar(stackBuilder 渲染 ChatTopBar) + systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变模糊 +

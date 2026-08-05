@@ -212,7 +212,7 @@ struct TraceSection {
       .layoutWeight(1).alignItems(HorizontalAlign.Start)
     }
     .width('100%').padding({ left: 10, right: 10, top: 8, bottom: 8 })
-    .borderRadius(10).backgroundColor(this.c.surface)
+    .borderRadius(10).backgroundColor(this.c.card)
     .border({ width: 0.5, color: this.c.border })
     .onClick(() => { this.openDetail(ch); })
   }

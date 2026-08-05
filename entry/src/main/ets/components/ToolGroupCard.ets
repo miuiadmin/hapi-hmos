@@ -311,7 +311,8 @@ struct ToolGroupCard {
       }
     }
     .width('100%')
-    .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.surface)
+    .backgroundColor(getChatSurfaceColorsState().toolGroupBg || this.c.card)
+    .border({ width: 0.5, color: this.c.border })
     .borderRadius(20)
     .bindSheet(this.isDetailOpen!!, this.DetailSheet(), this.detailSheetOpts)
   }

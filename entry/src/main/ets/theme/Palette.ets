@@ -10,6 +10,10 @@ export interface PaletteColors {
   primary: string;          // 主色（主按钮 / 链接 / 勾选 / 引用竖条 / 头像激活 / badge 文字）
   bg: string;               // 页面 / 卡片白底
   surface: string;          // 输入框 / AI 气泡 / 工具卡底 / 次按钮底
+  // 聊天区专用语义别名（灰底白卡范式，对照 chatcube）：canvas=聊天区页面底、card=聊天区卡片抬升面。
+  //   LIGHT: canvas=surface 灰、card=bg 白（翻转 bg/surface 的卡片含义）；DARK: canvas=bg 深、card=surface 亮（=原状，暗色不翻转）。
+  canvas: string;           // 聊天区页面底（浅灰 / 暗深底）
+  card: string;             // 聊天区卡片抬升面（浅白 / 暗亮卡）
   surfaceSelected: string;  // 选中底 / badge / pill / 代码 header 底
   textPrimary: string;      // 主要正文 / 标题
   textSecondary: string;    // 次要正文 / 副标题 / 摘要（吸收 #888888）
@@ -33,6 +37,8 @@ export const LIGHT: PaletteColors = {
   primary: '#007DFF',
   bg: '#FFFFFF',
   surface: '#F2F3F5',
+  canvas: '#F2F3F5',         // 聊天区页面底（灰，=surface）
+  card: '#FFFFFF',           // 聊天区卡片（白，=bg）
   surfaceSelected: '#ECEEF1',
   textPrimary: '#1A1A1A',
   textSecondary: '#8A8A8A',
@@ -56,6 +62,8 @@ export const DARK: PaletteColors = {
   primary: '#0A84FF',
   bg: '#161618',
   surface: '#232326',
+  canvas: '#161618',         // 聊天区页面底（深底，=bg；暗色不翻转）
+  card: '#232326',           // 聊天区卡片（亮卡，=surface）
   surfaceSelected: '#2E2E33',
   textPrimary: '#E8E8EA',
   textSecondary: '#A0A0A4',

@@ -7,6 +7,15 @@ import {
 import { Want, common } from '@kit.AbilityKit'
 import { pasteboard } from '@kit.BasicServicesKit'
 import { fs, paletteOf, PaletteColors, toArgb, getThemeState } from '../theme/ThemeService'
+import {
+  getMarkdownTitleSizes,
+  getMarkdownTitleLineHeights,
+  getMarkdownTextLineHeight,
+  getMarkdownBlockSpacing,
+  MarkdownTitleScale
+} from '../utils/MarkdownTypographyUtil';
+import { CodeBlock } from './CodeBlock';
+import { splitMarkdown, MarkdownSegment } from '../utils/MarkdownCodeSplitter';
 import { showToast } from '../utils/Toast';
 import { NON_HTTPS_LINKIFY_SCHEMES } from '../chat/LinkSchemes';
 import { t, kv2 } from '../i18n/I18nService';
@@ -44,14 +53,25 @@ export struct MarkdownText {
   // 流式增量分析：流式块传 true（配合 content @Param 原地更新做增量解析）；历史块 false（默认）。
   //   修「incrementalAnalysis:false + content 变化 → CJMarkdown 不重渲流式增量」根因。
   @Param incrementalAnalysis: boolean = false;
+  // 紧凑档（reasoning 气泡等次级文本；默认 false）：小一号字号 + 更紧间距/级差。对照 chatcube compact。
+  @Param compact: boolean = false;
 
   // 裸文件路径 → hapi-file: 链接（喂 CJMarkdown 前预处理；对照上游 remarkFilePathLinks MDAST 插件）。
   //   opt-in：仅当上层接了 onOpenFilePath 并显式 linkFilePaths=true 才扫描——避免工具卡 / reasoning 等无 nav
   //   上下文的叶子场景出现「点得动却没反应」的死链接（上游能处处链是因 markdown-text 恒有 session 上下文）。
   //   scanFilePaths 是纯函数、幂等（无命中返回原引用）→ @Computed 仅依赖 @Param 基本类型，无链式追踪。
   @Param linkFilePaths: boolean = false;
-  @Computed get renderedContent(): string {
-    return this.linkFilePaths ? scanFilePaths(this.content) : this.content;
+
+  // 拆段：fenced 代码块脱离 CJMarkdown 自渲（CodeBlock 语法高亮；CJMarkdown 无 token 着色 API），
+  //   正文段仍走 CJMarkdown（标题/列表/表格/行内码 排版强）。@Computed 仅依赖 @Param content →
+  //   content 流式变化时重算；splitter 前缀稳定（append-only）→ ForEach index 键复用前缀段，不整列重建。
+  @Computed get segments(): MarkdownSegment[] {
+    return splitMarkdown(this.content);
+  }
+
+  // 正文段文件路径链接预处理（opt-in；代码段不处理——代码非散文，路径不该成链接）
+  private mdContent(text: string): string {
+    return this.linkFilePaths ? scanFilePaths(text) : text;
   }
 
   // 路径链接点击 → 委托上层（ChatPage.openFilePath → FileViewer）。叶子组件不持 navStack，范式同 chatcube @Event onOpenLink。
@@ -69,10 +89,17 @@ export struct MarkdownText {
 
   private cachedConfig: MarkdownConfiguration | null = null;
   private cachedPlugin: MarkdownPlugin | null = null;
-  private cachedForIsDark: boolean = false;     // config 缓存对应的明暗；变化则重建（驱动 markdown 暗色刷新）
+  private cachedConfigSignature: string = '';   // config 缓存对应的签名（isDark/fontScale/isInputEnded/compact）；任一变化则重建
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+
+  // 代码块上下外边距（对齐 CJMarkdown 块间距 blockSpacing，保持正文↔代码段垂直节奏一致；
+  //   CJMarkdown 各实例首末块 margin=0，故代码段与正文段之间的间距由此外边距提供）
+  private get codeBlockMargin(): number {
+    const textSize: number = Math.max(fs(15) - (this.compact ? 2 : 1), 10);
+    return getMarkdownBlockSpacing(textSize, this.compact);
+  }
 
   // 构建配置（主题 + 回调）；isDark 变化时由 getConfig 失效重建，否则缓存复用避免每帧重建
   private buildConfig(): MarkdownConfiguration {
@@ -88,86 +115,159 @@ export struct MarkdownText {
       theme.setContext(ctx);
     }
 
-    const textSize: number = 15;
-    const codeTextSize: number = Math.max(textSize - 1, 12);
+    // —— 尺寸派生（对照 chatcube MarkdownTypographyUtils；base 走全局字号缩放 fs()，响应设置页 small/default/large）——
+    const textSize: number = Math.max(fs(15) - (this.compact ? 2 : 1), 10);
+    const textLineHeight: number = getMarkdownTextLineHeight(textSize, this.compact);
+    const codeTextSize: number = Math.max(textSize - 1, 10);
+    const codeLineHeight: number = getMarkdownTextLineHeight(codeTextSize);
+    const blockSpacing: number = getMarkdownBlockSpacing(textSize, this.compact);
+    const titleSizes: MarkdownTitleScale = getMarkdownTitleSizes(textSize, this.compact);
+    const titleLineHeights: MarkdownTitleScale = getMarkdownTitleLineHeights(titleSizes, this.compact);
+
+    // —— 颜色（palette → ARGB）——
+    const textColor: number = toArgb(c.textPrimary);
+    const titleColor: number = toArgb(c.textPrimary);
+    const linkColor: number = toArgb(c.primary);
+    const codeTextColor: number = toArgb(c.codeText);
+    const codeBgColor: number = toArgb(c.codeBg);
+    const tableBorderColor: number = toArgb(c.border);
+    const tableBgColor: number = toArgb(c.bg);
+
+    // —— 派生边距（列表 / 引用 / 上下标 / 代码多行；对照 chatcube applyListTheme/applyInlineDecorationTheme）——
+    const listItemSpacing: number = Math.max(Math.round(textSize * (this.compact ? 0.12 : 0.18)), this.compact ? 1 : 2);
+    const listLeftMargin: number = Math.max(Math.round(textSize * 0.65), this.compact ? 7 : 8);
+    const bulletSize: number = Math.max(Math.round(textSize * 0.35), 4);
+    const subSupTextSize: number = Math.max(Math.round(textSize * 0.72), 8);
+    const codeMultilineMargin: number = Math.max(Math.round(codeTextSize * (this.compact ? 0.65 : 0.75)), this.compact ? 8 : 10);
+    const quoteHorizontalMargin: number = Math.max(Math.round(textSize * (this.compact ? 0.72 : 0.8)), this.compact ? 9 : 10);
+    const quoteVerticalSpacing: number = Math.max(Math.round(textSize * (this.compact ? 0.4 : 0.45)), this.compact ? 5 : 6);
 
     // 解析器 / 行为
     theme.setIsMarkdownParserSync(false);
     theme.setIsCodeBlockParserSync(false);
-    theme.setIsCodeFullScreen(true);             // 开启代码块全屏按钮（点 → 全屏 sheet）
-    theme.setIconWidthAndHeight(22);             // 代码块图标尺寸（复制 / 全屏，对照 chatcube）
+    theme.setIsOnCopy(this.isInputEnded);          // 流式中关复制（对照 chatcube）
+    theme.setIsCodeFullScreen(true);               // 开启代码块全屏按钮（点 → 全屏 sheet）
+    theme.setIconWidthAndHeight(22);               // 代码块图标尺寸（复制 / 全屏，对照 chatcube）
     theme.setCodeCopyIcon($r('app.media.markdown_code_copy'));
     theme.setCodeFullScreenIcon($r('app.media.markdown_code_fullscreen'));
     theme.setBlockFirstTopMargin(0);
     theme.setBlockLastBottomMargin(0);
-    theme.setBlockTopAndBottomMargins(6);
+    theme.setBlockTopAndBottomMargins(blockSpacing);
     theme.setOpenGestureSwipe(false);
 
     // 正文段落
     theme.setParagraphTextSize(textSize);
-    theme.setParagraphTextLineHeight(textSize + 6);
-    theme.setParagraphTextColor(toArgb(c.textPrimary));
+    theme.setParagraphTextLineHeight(textLineHeight);
+    theme.setParagraphTextColor(textColor);
     theme.setParagraphTopMargins(0);
     theme.setParagraphBottomMargins(0);
 
-    // 标题（仅配色，分级字号用库默认）
-    theme.setHeadingTextColor(toArgb(c.textPrimary));
-    theme.setHeadingBreakColor(toArgb(c.border));
+    // 标题（分级字号 / 行高 / 颜色 / 边距，对照 chatcube applyHeadingTheme；旧版只设了颜色 → H1≈H4 扁平）
+    theme.setHeadingTextColor(titleColor);
+    theme.setHeadingBreakColor(tableBorderColor);
+    theme.setHeadingTextSize1(titleSizes[0]);
+    theme.setHeadingTextSize2(titleSizes[1]);
+    theme.setHeadingTextSize3(titleSizes[2]);
+    theme.setHeadingTextSize4(titleSizes[3]);
+    theme.setHeadingTextSize5(titleSizes[4]);
+    theme.setHeadingTextSize6(titleSizes[5]);
+    theme.setHeadingTextLineHeight1(titleLineHeights[0]);
+    theme.setHeadingTextLineHeight2(titleLineHeights[1]);
+    theme.setHeadingTextLineHeight3(titleLineHeights[2]);
+    theme.setHeadingTextLineHeight4(titleLineHeights[3]);
+    theme.setHeadingTextLineHeight5(titleLineHeights[4]);
+    theme.setHeadingTextLineHeight6(titleLineHeights[5]);
+    theme.setHeadingTextColor1(titleColor);
+    theme.setHeadingTextColor2(titleColor);
+    theme.setHeadingTextColor3(titleColor);
+    theme.setHeadingTextColor4(titleColor);
+    theme.setHeadingTextColor5(titleColor);
+    theme.setHeadingTextColor6(titleColor);
+    theme.setHeadingTypeface('sans-serif');
+    theme.setHeadingTopMargins(blockSpacing);
+    theme.setHeadingBottomMargins(Math.max(Math.round(textSize * 0.35), 4));
 
     // 链接
-    theme.setLinkColor(toArgb(c.primary));
+    theme.setLinkColor(linkColor);
     theme.setLinkSize(textSize);
-    theme.setLinkLineHeight(textSize + 6);
+    theme.setLinkLineHeight(textLineHeight);
     theme.setLinkBackGroupColor(0x00000000);
     theme.setIsLinkUnderlined(false);
 
     // 引用块
-    theme.setBlockQuoteColor(toArgb(c.primary));
-    theme.setBlockQuoteBackGroupColor(toArgb(c.codeBg));
+    theme.setBlockQuoteColor(linkColor);
+    theme.setBlockQuoteBackGroupColor(codeBgColor);
     theme.setBlockQuoteWidth(3);
-    theme.setBlockQuoteLeftMargin(10);
+    theme.setBlockQuoteLeftMargin(quoteHorizontalMargin);
     theme.setBlockQuoteRightMargin(0);
-    theme.setBlockQuoteTopAndBottomMargins(6);
+    theme.setBlockQuoteTopAndBottomMargins(quoteVerticalSpacing);
 
-    // 行内修饰（删除线 / 下划线 / 上下标字色，字号用库默认）
-    theme.setStrikethroughColor(toArgb(c.textPrimary));
-    theme.setUnderlineColor(toArgb(c.textPrimary));
-    theme.setSubTextColor(toArgb(c.textPrimary));
-    theme.setSupTextColor(toArgb(c.textPrimary));
+    // 列表（bullet / ordered 项色 / 字号 / 行高 + 缩进 + 项间距，对照 chatcube applyListTheme；旧版全缺 → 无缩进挤一团）
+    theme.setBlockOrderedAndBulletTopAndBottomMargins(listItemSpacing);
+    theme.setBlockLeftMargin(listLeftMargin);
+    theme.setBlockRightMargin(0);
+    theme.setOrderedListItemPrefixBold(false);
+    theme.setOrderedListItemColor(textColor);
+    theme.setOrderedListItemSize(textSize);
+    theme.setOrderedListItemLineHeight(textLineHeight);
+    theme.setBulletListItemColor(textColor);
+    theme.setBulletListItemSize(bulletSize);
+    theme.setBulletListItemLineHeight(textLineHeight);
+
+    // 行内修饰（删除线 / 下划线 / 上下标字色 + 字号）
+    theme.setStrikethroughColor(textColor);
+    theme.setUnderlineColor(textColor);
+    theme.setSubTextColor(textColor);
+    theme.setSubTextSize(subSupTextSize);
+    theme.setSupTextColor(textColor);
+    theme.setSupTextSize(subSupTextSize);
 
     // 行内代码
-    theme.setCodeTextColor(toArgb(c.codeText));
-    theme.setCodeBackgroundColor(toArgb(c.codeBg));
+    theme.setCodeTextColor(codeTextColor);
+    theme.setCodeBackgroundColor(codeBgColor);
     theme.setCodeTextSize(codeTextSize);
     theme.setCodeTypeface('monospace');
 
-    // 代码块
-    theme.setCodeBlockTextColor(toArgb(c.codeText));
-    theme.setCodeBlockBackgroundColor(toArgb(c.codeBg));
+    // 代码块（字 / 底 / 字号 / 行距 / 多行间距 / 圆角 / 行号 + 语言标签 CodeList 全家，对照 chatcube）
+    theme.setCodeBlockTextColor(codeTextColor);
+    theme.setCodeBlockBackgroundColor(codeBgColor);
     theme.setCodeBlockTextSize(codeTextSize);
     theme.setCodeBlockTypeface('monospace');
-    theme.setCodeBlockLineHeight(codeTextSize + 4);
+    theme.setCodeBlockLineHeight(codeLineHeight);
+    theme.setCodeMultilineMargin(codeMultilineMargin);
     theme.setCodeBlockRadius(8);
     theme.setCodeBlockLineNumberHide(false);
     theme.setCodeBlockIconTextHide(false);
+    theme.setCodeBlockTypeTextColor(codeTextColor);
+    theme.setCodeBlockTypeTextPadding(4);
+    theme.setCodeListTitleTextSize(codeTextSize);
+    theme.setCodeListTitleSelectTextSize(codeTextSize);
+    theme.setCodeListTitleSelectTextColor(codeTextColor);
+    theme.setCodeListTitleUnSelectTextColor(textColor);
+    theme.setCodeListTitleSelectBackGroupColor(codeBgColor);
+    theme.setCodeListTitleUnSelectBackGroupColor(0x00000000);
     theme.setIsSeparateCodeBlock(false);
 
-    // 表格
-    theme.setTableCellPadding(6);
-    theme.setTableBorderColor(toArgb(c.border));
+    // 表格（奇行 bg / 偶行+表头 codeBg / 边框 / 行高，对照 chatcube）
+    theme.setTableCellPadding(8);
+    theme.setTableBorderColor(tableBorderColor);
     theme.setTableBorderWidth(1);
-    theme.setTableOddRowBackgroundColor(0x00000000);
-    theme.setTableEvenRowBackgroundColor(toArgb(c.codeBg));
-    theme.setTableHeaderRowBackgroundColor(toArgb(c.codeBg));
-    theme.setTableContentTextColor(toArgb(c.textPrimary));
+    theme.setTableOddRowBackgroundColor(tableBgColor);
+    theme.setTableEvenRowBackgroundColor(codeBgColor);
+    theme.setTableHeaderRowBackgroundColor(codeBgColor);
+    theme.setTableContentTextColor(textColor);
     theme.setTableContentTextSize(textSize);
-    theme.setTableTitleTextColor(toArgb(c.textPrimary));
+    theme.setTableContentTextLineHeight(textLineHeight);
+    theme.setTableTitleTextColor(titleColor);
     theme.setTableTitleTextSize(textSize);
+    theme.setTableTitleLineHeight(textLineHeight);
+    theme.setTableTextLineHeight(textLineHeight);
     theme.setTableRadius(6);
     theme.setTableScrollBarShow(false);
+    theme.setTableScrollBarColor(tableBorderColor);
 
     // 分割线 / 暗色模式
-    theme.setThematicBreakColor(toArgb(c.border));
+    theme.setThematicBreakColor(tableBorderColor);
     theme.setIsDark(isDark);
 
     config.setMarkdownTheme(theme);
@@ -353,13 +453,16 @@ export struct MarkdownText {
     return plugin;
   }
 
-  // 读 isDark（@Trace）建立刷新依赖；isDark 变化 → 丢弃缓存重建 config（markdown 暗色刷新的关键）
+  // 读 isDark/fontScale（@Trace）建立刷新依赖；签名变化 → 丢弃缓存重建 config（markdown 暗色 / 字号刷新的关键）。
+  //   ★ 签名须覆盖 buildConfig 读取的全部外部输入（isDark 配色 / fontScale 字号 / isInputEnded 复制门控 / compact 尺寸档），
+  //     否则缓存返回旧 config（如改字号不重建、流式结束后复制仍关）。键同 buildConfigSignature（ForEach 键 + 缓存键统一）。
   private getConfig(): MarkdownConfiguration {
-    const isDark: boolean = getThemeState().isDark;
-    if (this.cachedConfig === null || this.cachedForIsDark !== isDark) {
-      this.cachedConfig = this.buildConfig();
-      this.cachedForIsDark = isDark;
+    const sig: string = this.buildConfigSignature();
+    if (this.cachedConfig !== null && this.cachedConfigSignature === sig) {
+      return this.cachedConfig;
     }
+    this.cachedConfig = this.buildConfig();
+    this.cachedConfigSignature = sig;
     return this.cachedConfig;
   }
 
@@ -369,7 +472,8 @@ export struct MarkdownText {
   //   isDark / isInputEnded 入 → 翻转时 CJMarkdown 一次性重建（主题切换 / 流式→完成最终解析，非 per-token，可接受）。
   private buildConfigSignature(): string {
     const isDark: boolean = getThemeState().isDark;
-    return `${isDark ? 'd' : 'l'}|${this.isInputEnded ? 'end' : 'stream'}`;
+    const fontScale: number = getThemeState().fontScale;
+    return `${isDark ? 'd' : 'l'}|${this.isInputEnded ? 'end' : 'stream'}|${this.compact ? 'c' : 'n'}|${fontScale}`;
   }
 
   private getPlugin(): MarkdownPlugin {
@@ -384,19 +488,41 @@ export struct MarkdownText {
     // （延续 SessionActionMenu 两节点模式——规避同节点 bindSheet 叠加疑问）
     Column() {
       Column() {
-        // config 签名 ForEach 包裹 CJMarkdown（对照 chatcube ChatMarkdownHybridRenderer:317-332）：
-        //   签名含 isDark/isInputEnded、【不含 content】→ content 流式变化时键不变 → CJMarkdown 复用、
-        //   仅 content @Param 更新 → incrementalAnalysis:true 增量重渲、原生组件不重建（防每 token 重建冻结根因）。
-        ForEach([this.buildConfigSignature()], (_sig: string) => {
-          CJMarkdown({
-            content: this.renderedContent,
-            isInputEnded: this.isInputEnded,
-            incrementalAnalysis: this.incrementalAnalysis,
-            useCangjieComponent: true,
-            config: this.getConfig(),
-            plugin: this.getPlugin()
-          })
-        }, (sig: string): string => sig)
+        // 段 ForEach：splitMarkdown 把 content 拆成「正文段 / 代码段」交替渲染。
+        //   key = `${configSignature}:${index}`：签名(isDark/fontScale/isInputEnded/compact)入键 → 翻转时
+        //   各段一次性重建（主题/字号/流式→完成）；index 入键 + splitter 前缀稳定(append-only) → content
+        //   流式变化时前缀段键不变 → CJMarkdown/CodeBlock 复用、仅末段 @Param 增量更新（防每 token 整列重建冻结）。
+        ForEach(this.segments, (seg: MarkdownSegment, index: number) => {
+          if (seg.kind === 'code') {
+            // 代码段 → CodeBlock 语法高亮（脱离 CJMarkdown；本库无 token 着色 API）：
+            //   scrollY 长代码限高滚动（对齐 CJMarkdown 代码块）；不折叠（collapseLongContent=false，markdown 里要看全）；
+            //   showCopy/showFullScreen 对齐 CJMarkdown 既有复制/全屏；onFullScreen → 复用本组件 CodePreviewSheet。
+            CodeBlock({
+              code: seg.text,
+              language: seg.language,   // 空串 → CodeBlock label 走 t('code.code')（「代码」），高亮降级 text（全 plain）
+              scrollY: true,
+              collapseLongContent: false,
+              showCopy: true,
+              showFullScreen: true,
+              onFullScreen: (): void => { this.openCodePreview(seg.text, seg.language); }
+            })
+              .margin({ top: this.codeBlockMargin, bottom: this.codeBlockMargin })
+          } else if (seg.text.trim().length > 0) {
+            // 正文段 → CJMarkdown（标题/列表/表格/行内码…）；逐段文件路径链接预处理（opt-in）
+            CJMarkdown({
+              content: this.mdContent(seg.text),
+              isInputEnded: this.isInputEnded,
+              incrementalAnalysis: this.incrementalAnalysis,
+              useCangjieComponent: true,
+              config: this.getConfig(),
+              plugin: this.getPlugin()
+            })
+          } else {
+            // 空 markdown 段（两代码块之间 / 代码块后尾随换行）→ 零高占位，保 ForEach index 键前缀稳定
+            Column() {}
+              .height(0)
+          }
+        }, (seg: MarkdownSegment, index: number): string => `${this.buildConfigSignature()}:${index}`)
       }
       .width('100%')
       .backgroundColor(Color.Transparent)

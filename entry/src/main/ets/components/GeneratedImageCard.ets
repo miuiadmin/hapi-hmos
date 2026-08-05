@@ -98,7 +98,7 @@ export struct GeneratedImageCard {
     }
     .padding(10)
     .borderRadius(14)
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
     .border({ width: 0.5, color: this.c.border })
   }
 }

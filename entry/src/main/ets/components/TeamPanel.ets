@@ -108,7 +108,8 @@ export struct TeamPanel {
     }
     .padding({ left: 8, right: 8, top: 3, bottom: 3 })
     .borderRadius(10)
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
+    .border({ width: 0.5, color: this.c.border })
     .margin({ right: 6, bottom: 6 })
   }
 
@@ -184,7 +185,8 @@ export struct TeamPanel {
       .width('100%')
       .padding({ left: 12, right: 12, top: 9, bottom: 9 })
       .borderRadius(10)
-      .backgroundColor(this.c.surface)
+      .backgroundColor(this.c.card)
+      .border({ width: 0.5, color: this.c.border })
       .alignItems(VerticalAlign.Center)
       .onClick(() => { this.toggle(); })
 
@@ -227,7 +229,8 @@ export struct TeamPanel {
         .padding({ left: 12, right: 12, top: 6, bottom: 8 })
         .margin({ top: 4 })
         .borderRadius(10)
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.card)
+        .border({ width: 0.5, color: this.c.border })
         .alignItems(HorizontalAlign.Start)
       }
     }
