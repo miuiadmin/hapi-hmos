@@ -222,7 +222,6 @@ export const zhCN: Record<string, string> = {
   'chat.messageActions': '消息操作',
   'chat.config': '配置',
   'chat.search': '搜索',
-  'chat.more': '更多',
   'chat.defaultTitle': '对话',
   'session.item.worktree': '工作树',
   'chat.exportUser': '{time} 用户',
@@ -265,6 +264,7 @@ export const zhCN: Record<string, string> = {
 
   // —— 文件浏览页 ——
   'files.page.title': '文件',
+  'files.refresh': '刷新',
   'files.tab.changes': '改动',
   'files.tab.files': '文件',
   'files.tab.search': '搜索',
@@ -301,7 +301,6 @@ export const zhCN: Record<string, string> = {
   'terminal.paste': '粘贴',
   'terminal.selectAll': '全选',
   'terminal.find': '查找',
-  'terminal.actions': '终端操作',
   'terminal.findPlaceholder': '查找…',
   'terminal.copySuccess': '已复制',
   'terminal.copyFailed': '复制失败',
@@ -338,6 +337,7 @@ export const zhCN: Record<string, string> = {
 
   // —— 文件查看页 ——
   'fileViewer.fallbackTitle': '文件',
+  'fileViewer.copy': '复制',
   'fileViewer.loading': '加载文件…',
   'fileViewer.readFailed': '读取文件失败',
   'fileViewer.binary': '二进制文件',

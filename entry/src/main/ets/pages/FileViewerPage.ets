@@ -5,8 +5,8 @@ import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeServi
 import { t } from '../i18n/I18nService';
 import { CodeBlock } from '../components/CodeBlock';
 import { getLayoutState } from '../state/LayoutState';
-import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
-import { hdsTitleBarStyle } from '../components/HdsTitleBarStyle';
+import { HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitleBarOptions, HdsNavigationMenuItemOptions } from '@kit.UIDesignKit';
+import { buildNativePageTitleBar, nativeMenuItem, nativeMenuIcon } from '../components/HdsTitleBarStyle';
 
 // 文件查看页（NavDestination）—— 对照 hapi web /sessions/$sessionId/file
 //   readSessionFile → content(base64)：图片扩展名→Image(data:mime;base64,...)；
@@ -85,7 +85,23 @@ struct FileViewerPage {
   private get isDark(): boolean { return getThemeState().isDark; }
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
-  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
+
+  // 原生 titleBar 配置（系统原生返回钮 + mainTitle=文件名 + menu=[复制]；滚动联动磨砂）。
+  //   根因：systemMaterialEffect 仅官方 titleBar 容器可用——不再手搓 Button+backgroundBlurStyle 假液态钮。
+  private get titleBarOpts(): HdsNavigationTitleBarOptions {
+    return buildNativePageTitleBar(this.c, {
+      title: this.fileName !== '' ? this.fileName : t('fileViewer.fallbackTitle'),
+      backAction: (): void => { if (this.navPathStack !== null) { this.navPathStack.pop(); } },
+      menuItems: this.copyMenuItems(),
+      menuMaxCount: 1
+    });
+  }
+  // 复制菜单项（copied?checkmark:doc_filled_on_doc；canCopy 由 copyContent 内部守卫）
+  private copyMenuItems(): Array<HdsNavigationMenuItemOptions> {
+    return [nativeMenuItem(t('fileViewer.copy'),
+      nativeMenuIcon(this.copied ? $r('sys.symbol.checkmark') : $r('sys.symbol.doc_filled_on_doc')),
+      (): void => { this.copyContent(); })];
+  }
 
   private get fileName(): string {
     const idx: number = this.filePath.lastIndexOf('/');
@@ -252,48 +268,6 @@ struct FileViewerPage {
     }
   }
 
-  // 液态顶栏内容（HdsNavDestination titleBar.stackBuilder 调用）。不在此设 padding-top/底色/border——
-  //   系统 titleBar avoidLayoutSafeArea 自避让状态栏，磨砂底色由 HDS style 提供（systemMaterialEffect + GRADIENT_BLUR）。
-  //   ‹返回 + 文件名 + 复制（液态圆钮 SymbolGlyph；copied?checkmark:doc_filled_on_doc）。
-  @Builder
-  private TopBar() {
-    Row({ space: 8 }) {
-      // 返回（液态圆钮；hideBackButton 去掉系统返回，必须有）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textPrimary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
-
-      // 文件名（layoutWeight 撑开，ellipsis）
-      Text(this.fileName !== '' ? this.fileName : t('fileViewer.fallbackTitle'))
-        .fontSize(fs(16))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      // 复制（液态圆钮；copied?checkmark:doc_filled_on_doc，canCopy 控制字色）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph(this.copied ? $r('sys.symbol.checkmark') : $r('sys.symbol.doc_filled_on_doc'))
-          .fontSize(fs(18))
-          .fontColor([this.canCopy ? this.c.textPrimary : this.c.textTertiary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .onClick(() => { this.copyContent(); })
-    }
-    .width('100%')
-    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 液态背景由系统 HDS titleBar 提供；本 Builder 仅渲染顶栏内容，不设根 backgroundColor/border。
-  }
-
   build() {
     HdsNavDestination() {
       Scroll(this.scroller) {
@@ -327,22 +301,12 @@ struct FileViewerPage {
       .scrollBar(BarState.Auto)
       .backgroundColor(this.c.bg)
     }
-    // HDS 液态 titleBar（stackBuilder 渲染 TopBar）+ bindToScrollable 滚动联动磨砂 +
-    //   ignoreLayoutSafeArea 顶延伸状态栏（液态顶栏）/底自管安全区（Scroll 末尾占位补）。
-    .titleBar({
-      content: {
-        title: { mainTitle: ' ' },                          // 占位（真内容走 stackBuilder）
-        divider: { showType: DividerShowType.OFF },         // 关分割线（否则又出硬线）
-        stackBuilder: (): void => { this.TopBar(); }        // 自建顶栏塞进系统 titleBar
-      },
-      style: this.titleBarStyle,
-      avoidLayoutSafeArea: true,                            // titleBar 自身避让状态栏
-      enableComponentSafeArea: false
-    })
+    // HDS 原生 titleBar（系统返回钮 + 文件名 + 复制 menu；systemMaterialEffect 真液态钮）+
+    //   bindToScrollable 滚动联动磨砂 + ignoreLayoutSafeArea 顶延伸状态栏/底自管安全区。
+    .titleBar(this.titleBarOpts)
     .bindToScrollable([this.scroller])
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .hideTitleBar(false, true)
-    .hideBackButton(true)   // 隐藏系统返回箭头：返回走 stackBuilder 内 TopBar 自建液态圆钮
     .systemBarStyle(
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }

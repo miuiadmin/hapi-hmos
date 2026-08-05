@@ -221,7 +221,6 @@ export const en: Record<string, string> = {
   'chat.messageActions': 'Message actions',
   'chat.config': 'Configure',
   'chat.search': 'Search',
-  'chat.more': 'More',
   'chat.defaultTitle': 'Conversation',
   'session.item.worktree': 'Worktree',
   'chat.exportUser': '{time} User',
@@ -264,6 +263,7 @@ export const en: Record<string, string> = {
 
   // —— Files ——
   'files.page.title': 'Files',
+  'files.refresh': 'Refresh',
   'files.tab.changes': 'Changes',
   'files.tab.files': 'Files',
   'files.tab.search': 'Search',
@@ -300,7 +300,6 @@ export const en: Record<string, string> = {
   'terminal.paste': 'Paste',
   'terminal.selectAll': 'Select all',
   'terminal.find': 'Find',
-  'terminal.actions': 'Terminal actions',
   'terminal.findPlaceholder': 'Find…',
   'terminal.copySuccess': 'Copied',
   'terminal.copyFailed': 'Copy failed',
@@ -337,6 +336,7 @@ export const en: Record<string, string> = {
 
   // —— File viewer ——
   'fileViewer.fallbackTitle': 'File',
+  'fileViewer.copy': 'Copy',
   'fileViewer.loading': 'Loading file…',
   'fileViewer.readFailed': 'Failed to read file',
   'fileViewer.binary': 'Binary file',

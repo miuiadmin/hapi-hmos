@@ -16,8 +16,8 @@ import { formatVoiceStartedContext, formatNewSingleMessage, formatReadyEvent,
   formatPermissionRequest, extractLastAssistantSpeakable } from '../chat/VoiceFormatters';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { getElevenLabsCodeFromPreference } from '../chat/VoiceLanguages';
-import { HdsNavDestination, HdsNavDestinationTitleMode, DividerShowType, TitleBarStyleOptions } from '@kit.UIDesignKit';
-import { hdsTitleBarStyle } from '../components/HdsTitleBarStyle';
+import { HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitleBarOptions } from '@kit.UIDesignKit';
+import { buildNativePageTitleBar } from '../components/HdsTitleBarStyle';
 
 // 语音页（NavDestination）—— 对照 hapi web/src/realtime/RealtimeVoiceSession.tsx
 //   Web 组件托管 ElevenLabs Conversational AI（rawfile/voice/voice.html + elevenlabs-client.min.js）：
@@ -501,54 +501,40 @@ struct VoicePage {
     return this.sessionTitle !== '' ? this.sessionTitle : t('voice.title');
   }
 
-  // 液态 titleBar 样式（静止磨砂：Web 容器页无 ArkUI Scroller，不滚动联动；systemMaterialEffect + E6 半透明兜底）。
-  private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg, true); }
+  // 原生 titleBar 配置（系统返回钮 + 标题列含染色状态；静止磨砂；无 menu）。
+  //   根因：systemMaterialEffect 仅官方 titleBar 容器可用——不再手搓 Button+backgroundBlurStyle 假液态钮。
+  private get titleBarOpts(): HdsNavigationTitleBarOptions {
+    return buildNativePageTitleBar(this.c, {
+      title: this.titleText(),
+      backAction: (): void => { if (this.navPathStack !== null) { this.navPathStack.pop(); } },
+      staticBlur: true,
+      stackBuilder: (): void => { this.TitleColumn(); }
+    });
+  }
   private get isDark(): boolean { return getThemeState().isDark; }
 
-  // —— 顶栏：返回 + 标题/状态 + 状态色点（液态圆钮；HdsNavDestination titleBar.stackBuilder 调用）——
+  // 标题列（stackBuilder 调用；仅标题 + 染色状态文案，无钮——返回走系统原生）。
+  //   左 padding 56 让位原生返回钮；无 menu 故右仅 12；状态副标题随 statusColor() 动态染色。
   @Builder
-  private TopBar() {
-    Row({ space: 8 }) {
-      // 返回（液态圆钮；hideBackButton 去掉系统返回，必须有）
-      Button({ type: ButtonType.Circle, stateEffect: true }) {
-        SymbolGlyph($r('sys.symbol.chevron_backward'))
-          .fontSize(fs(18))
-          .fontColor([this.c.textPrimary])
-      }
-      .width(36)
-      .height(36)
-      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-      .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
-
-      // 标题 + 状态文案（双行）
-      Column({ space: 2 }) {
-        Text(this.titleText())
-          .fontSize(fs(15))
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.c.textPrimary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        Text(this.statusLabel())
-          .fontSize(fs(12))
-          .fontColor(this.statusColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      // 状态色点（对照上游；非按钮，保留圆点）
-      Column()
-        .width(9)
-        .height(9)
-        .borderRadius(4.5)
-        .backgroundColor(this.statusColor())
+  private TitleColumn() {
+    Column({ space: 1 }) {
+      Text(this.titleText())
+        .fontSize(fs(15))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+      Text(this.statusLabel())
+        .fontSize(fs(12))
+        .fontColor(this.statusColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
     }
     .width('100%')
-    .padding({ left: 8, right: 8, top: 8, bottom: 8 })
-    // 液态背景由系统 HDS titleBar 提供；本 Builder 仅渲染顶栏内容，不设根 backgroundColor/border。
+    .padding({ left: 56, right: 12, top: 8, bottom: 8 })
+    .alignItems(HorizontalAlign.Start)
   }
 
   // 错误 / 未授权 / 非活跃 横幅（含重试按钮；mic 未授权单独提示去设置授权）
@@ -695,22 +681,16 @@ struct VoicePage {
       .width('100%')
       .height('100%')
       .backgroundColor(this.c.bg)
+      // HDS titleBar 浮动 overlay 不占位 → Web 语音内容默认沉到静止磨砂栏后，顶部被盖且居中偏上。
+      //   显式 padding 把内容压到 titleBar 底下：top = 状态栏高 + 标题栏内容高(56vp)。
+      //   底部由 VoiceBar 自带 padding(bottomAvoidHeight+12) 补偿手势条。
+      .padding({ top: getLayoutState().topAvoidHeight + 56 })
     }
-    // HDS 液态 titleBar（静止磨砂：Web 容器无 Scroller 不滚动联动；stackBuilder 渲染 TopBar）+
+    // HDS 原生 titleBar（系统返回钮 + 标题列含染色状态；静止磨砂）+
     //   ignoreLayoutSafeArea 顶延伸状态栏（液态顶栏）/底自管安全区（VoiceBar padding 补）。
-    .titleBar({
-      content: {
-        title: { mainTitle: ' ' },                          // 占位（真内容走 stackBuilder）
-        divider: { showType: DividerShowType.OFF },         // 关分割线（否则又出硬线）
-        stackBuilder: (): void => { this.TopBar(); }        // 自建顶栏塞进系统 titleBar
-      },
-      style: this.titleBarStyle,
-      avoidLayoutSafeArea: true,                            // titleBar 自身避让状态栏
-      enableComponentSafeArea: false
-    })
+    .titleBar(this.titleBarOpts)
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .hideTitleBar(false, true)
-    .hideBackButton(true)   // 隐藏系统返回箭头：返回走 stackBuilder 内 TopBar 自建液态圆钮
     .systemBarStyle(
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }

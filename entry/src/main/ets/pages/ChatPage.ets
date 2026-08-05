@@ -132,7 +132,6 @@ struct ChatPage {
   @Local copilotAgentMode: string = '';          // copilot agent 模式（/copilot-agent-mode v0.26.0；首屏/SSE 播种）
   @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改；⋯ 下拉「配置」开）
   @Local outlineOpen: boolean = false;           // 对话大纲抽屉显隐（📋 用户提问列表，tap 跳转）
-  @Local moreSheetOpen: boolean = false;         // 标题栏「更多」动作 sheet 显隐（⋯ 常驻钮开；承载配置/文件/终端/…/归档·删除）
   @Local outlineItems: ConversationOutlineItem[] = [];  // 大纲项（recomputeBlocks 随 blocks 重算）
   @Local entryLastSeenAt: number = 0;            // 进入会话时的「上次已看」时间戳（markSeen 前捕获；滚到首条未读 + 未读分隔依据）
   @Local newMessagesCount: number = 0;           // 滚在上方时累计的新消息数（>0 显「↓N条新消息」浮标）
@@ -2098,9 +2097,9 @@ struct ChatPage {
   @Builder
   private NewMessagesButton() {
     Row({ space: 6 }) {
-      Text('↓')
+      SymbolGlyph($r('sys.symbol.chevron_down'))
         .fontSize(fs(13))
-        .fontColor(this.c.primary)
+        .fontColor([this.c.primary])
       Text(this.newMessagesCount > 0 ? t('chat.newMessages', kv('n', this.newMessagesCount)) : t('chat.newMessagesShort'))
         .fontSize(fs(13))
         .fontColor(this.c.primary)
@@ -2797,9 +2796,9 @@ struct ChatPage {
               .fontSize(fs(15))
               .fontColor(this.c.primary)
               .layoutWeight(1)
-            Text('›')
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
               .fontSize(fs(18))
-              .fontColor(this.c.textTertiary)
+              .fontColor([this.c.textTertiary])
           }
           .width('100%')
           .height(48)
@@ -2912,13 +2911,6 @@ struct ChatPage {
     const ov: SheetOverrides = {
       detents: [SheetSize.FIT_CONTENT],
       onDisappear: (): void => { this.closeMessageMenu(); }
-    };
-    return buildSheetOptions(this.c.bg, ov);
-  }
-  private get moreSheetOpts(): SheetOptions {
-    const ov: SheetOverrides = {
-      detents: [SheetSize.FIT_CONTENT],
-      onDisappear: (): void => { this.moreSheetOpen = false; }
     };
     return buildSheetOptions(this.c.bg, ov);
   }
@@ -3044,13 +3036,13 @@ struct ChatPage {
     return icon;
   }
 
-  // 系统原生菜单项（对齐 berry3 BookmarksPage：仅 2 项常驻栏【直接图标】——搜索 + 更多）。
-  //   不走 maxCount 系统溢出（item 多时搜索易被收进⋯）→ 搜索恒为直接图标；「更多」开 MoreActionsSheet
-  //   （配置/文件/终端/语音/导出/大纲/重命名/切换远程/归档·删除，破坏项红色，恢复原生溢出丢失的字色）。
+  // 系统原生菜单项（titleBar.content.menu.value，对齐 chatcube getTitleBarMenuItems + berry3 BookmarksPage）。
+  //   第 1 项=搜索(maxCount=1 常驻栏直接图标，searchMode 翻 xmark)；其余溢出到系统⋯ 下拉面板。
+  //   active 门控不变（终端/语音/切换远程仅活跃；归档↔删除二选一）。
   private titleBarMenuItems(): Array<HdsNavigationMenuItemOptions> {
     const menus: Array<HdsNavigationMenuItemOptions> = [];
 
-    // 搜索（常驻直接图标；searchMode 时翻 xmark）
+    // 搜索（常驻栏直接图标位；searchMode 时翻 xmark）
     const searchIcon: SymbolGlyphModifier =
       new SymbolGlyphModifier(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'));
     searchIcon.fontSize(20);
@@ -3063,15 +3055,89 @@ struct ChatPage {
     };
     menus.push(searchItem);
 
-    // 更多（常驻直接图标 → 开 MoreActionsSheet，承载其余动作）
-    const moreItem: HdsNavigationMenuItemOptions = {
+    const configItem: HdsNavigationMenuItemOptions = {
       content: {
-        label: t('chat.more'),
-        icon: this.titleBarMenuIcon($r('sys.symbol.ellipsis_circle')),
-        action: () => { this.moreSheetOpen = true; }
+        label: t('chat.config'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.gearshape')),
+        action: () => { this.configSheetOpen = true; }
       }
     };
-    menus.push(moreItem);
+    menus.push(configItem);
+
+    const filesItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('sessionMenu.files'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.folder')),
+        action: () => { this.openFiles(); }
+      }
+    };
+    menus.push(filesItem);
+
+    if (this.isActive) {
+      const terminalItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.terminal'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.keyboard')),
+          action: () => { this.openTerminal(); }
+        }
+      };
+      menus.push(terminalItem);
+      const voiceItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.voice'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.mic')),
+          action: () => { this.openVoice(); }
+        }
+      };
+      menus.push(voiceItem);
+    }
+
+    const exportItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('chat.exportTitle'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.share')),
+        action: () => { this.exportConversation(); }
+      }
+    };
+    menus.push(exportItem);
+
+    const outlineItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('outline.title'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.list_bullet')),
+        action: () => { this.outlineOpen = true; }
+      }
+    };
+    menus.push(outlineItem);
+
+    const renameItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: t('sessionMenu.rename'),
+        icon: this.titleBarMenuIcon($r('sys.symbol.square_and_pencil')),
+        action: () => { this.startRename(); }
+      }
+    };
+    menus.push(renameItem);
+
+    if (this.isActive) {
+      const switchItem: HdsNavigationMenuItemOptions = {
+        content: {
+          label: t('sessionMenu.switchRemote'),
+          icon: this.titleBarMenuIcon($r('sys.symbol.swap')),
+          action: () => { this.startSwitchRemote(); }
+        }
+      };
+      menus.push(switchItem);
+    }
+
+    const destructiveItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: this.isActive ? t('sessionMenu.archive') : t('sessionMenu.delete'),
+        icon: this.titleBarMenuIcon(this.isActive ? $r('sys.symbol.archivebox') : $r('sys.symbol.trash')),
+        action: () => { this.onDestructiveTap(); }
+      }
+    };
+    menus.push(destructiveItem);
 
     return menus;
   }
@@ -3151,92 +3217,6 @@ struct ChatPage {
         .backgroundColor(this.c.surface)
         .alignItems(VerticalAlign.Center)
         .onClick(() => { this.shareMessageMenu(); })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 12, bottom: 20 })
-      .backgroundColor(this.c.bg)
-    }
-    .width('100%')
-  }
-
-  // 「更多」动作面板（⋯ 常驻钮开；承载原标题栏菜单的全部动作：配置/文件/终端/语音/导出/大纲/重命名/
-  //   切换远程/归档·删除）。对齐 MessageMenuSheet 范式：SheetDialog 白头 + 灰身白胶囊行；
-  //   破坏项（归档/删除）红字 c.error。每项先收 more sheet 再触发，避与他 sheet（配置/大纲/重命名）双挂。
-  @Builder
-  private MoreActionsSheet() {
-    Column() {
-      SheetDialog({
-        title: t('chat.more'),
-        showCloseButton: true,
-        onClose: () => { this.moreSheetOpen = false; }
-      })
-      Column() {
-        Row() {
-          Text(t('chat.config')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.configSheetOpen = true; })
-
-        Row() {
-          Text(t('sessionMenu.files')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.openFiles(); })
-
-        if (this.isActive) {
-          Row() {
-            Text(t('sessionMenu.terminal')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-          }
-          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => { this.moreSheetOpen = false; this.openTerminal(); })
-          Row() {
-            Text(t('sessionMenu.voice')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-          }
-          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => { this.moreSheetOpen = false; this.openVoice(); })
-        }
-
-        Row() {
-          Text(t('chat.exportTitle')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.exportConversation(); })
-
-        Row() {
-          Text(t('outline.title')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.outlineOpen = true; })
-
-        Row() {
-          Text(t('sessionMenu.rename')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.startRename(); })
-
-        if (this.isActive) {
-          Row() {
-            Text(t('sessionMenu.switchRemote')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
-          }
-          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
-          .onClick(() => { this.moreSheetOpen = false; this.startSwitchRemote(); })
-        }
-
-        Row() {
-          Text(this.isActive ? t('sessionMenu.archive') : t('sessionMenu.delete'))
-            .fontSize(fs(15)).fontColor(this.c.error).layoutWeight(1)
-        }
-        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
-        .backgroundColor(this.c.surface).alignItems(VerticalAlign.Center)
-        .onClick(() => { this.moreSheetOpen = false; this.onDestructiveTap(); })
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 20 })
@@ -3493,11 +3473,6 @@ struct ChatPage {
         .width(0)
         .height(0)
         .bindSheet(this.showRename, this.RenameSheet(), this.renameSheetOpts)
-      // 「更多」动作 sheet（⋯ 常驻钮开；独立 0×0 锚点，承载配置/文件/…/归档·删除）
-      Column() {}
-        .width(0)
-        .height(0)
-        .bindSheet(this.moreSheetOpen, this.MoreActionsSheet(), this.moreSheetOpts)
       }
       .width('100%')
       .height('100%')
@@ -3515,7 +3490,8 @@ struct ChatPage {
         title: { mainTitle: ' ' },                         // 占位（真标题走 stackBuilder）
         divider: { showType: DividerShowType.OFF },        // 关闭滚动分割线（否则又出硬线）
         backIcon: this.titleBarBackIcon(),                 // 系统原生液态返回钮（替代自建圆钮）
-        menu: {                                            // 系统原生液态菜单：搜索 + 更多 均常驻栏直接图标（berry3 同款，无 maxCount 溢出）
+        menu: {                                            // 系统原生液态菜单：搜索常驻栏直接图标 + 其余溢出到系统⋯ 下拉
+          maxCount: 1,
           value: this.titleBarMenuItems()
         },
         stackBuilder: (): void => { this.ChatTopBar(); }   // 仅标题列（flavor 徽章 + 标题/副标题）

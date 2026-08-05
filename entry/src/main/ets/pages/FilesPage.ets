@@ -6,6 +6,8 @@ import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeServi
 import { FileViewerRouteParams } from './FileViewerPage';
 import { t, kv2 } from '../i18n/I18nService';
 import { getLayoutState } from '../state/LayoutState';
+import { HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitleBarOptions, HdsNavigationMenuItemOptions } from '@kit.UIDesignKit';
+import { buildNativePageTitleBar, nativeMenuItem, nativeMenuIcon } from '../components/HdsTitleBarStyle';
 
 // 会话文件浏览页（NavDestination）—— 对照 hapi web /sessions/$sessionId/files（全量：git 变更 + 目录树 + 搜索）
 //   3 Tab：① 改动（getGitStatus porcelain v2 + git-diff-numstat ×2 → buildGitStatusFiles）
@@ -46,7 +48,31 @@ struct FilesPage {
   @Local hasSearched: boolean = false;
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
+  private get isDark(): boolean { return getThemeState().isDark; }
   private navPathStack: NavPathStack | null = null;
+  private scroller: Scroller = new Scroller();
+
+  // 原生 titleBar 配置（系统返回钮 + mainTitle=文件 + menu=[刷新]；滚动联动磨砂）。
+  //   根因：systemMaterialEffect 仅官方 titleBar 容器可用——不再自建 TopBar 方案 D 手搓钮。
+  private get titleBarOpts(): HdsNavigationTitleBarOptions {
+    return buildNativePageTitleBar(this.c, {
+      title: t('files.page.title'),
+      backAction: (): void => { if (this.navPathStack !== null) { this.navPathStack.pop(); } },
+      menuItems: this.refreshMenuItems(),
+      menuMaxCount: 1
+    });
+  }
+  // 刷新菜单项（按当前 Tab 刷新对应数据；arrow_2_circlepath）
+  private refreshMenuItems(): Array<HdsNavigationMenuItemOptions> {
+    return [nativeMenuItem(t('files.refresh'),
+      nativeMenuIcon($r('sys.symbol.arrow_2_circlepath')),
+      (): void => { this.refreshActive(); })];
+  }
+  private refreshActive(): void {
+    if (this.activeTab === 'changes') { this.loadGitStatus(); }
+    else if (this.activeTab === 'files') { this.loadDirectory(this.dirPath); }
+    else { this.doSearch(); }
+  }
 
   // sessionId 在 onReady 从路由 param 取；aboutToAppear 时未就绪，加载统一在 onReady 触发（早期 return 守卫防空载）。
 
@@ -168,49 +194,10 @@ struct FilesPage {
     this.loadDirectory(segs.slice(0, i + 1).join('/'));
   }
 
-  // 自定义 TopBar（方案 D：hideTitleBar + ignoreLayoutSafeArea + 自建栏 padding topAvoidHeight）。
-  //   全屏 setWindowLayoutFullScreen 后普通 NavDestination 系统 titleBar 避让异常→飞进状态栏；
-  //   走 Terminal/Voice 同款自建 TopBar：‹返回 + 标题 + ↻刷新（刷新逻辑同原 RefreshMenu）。
-  @Builder
-  private TopBar() {
-    Row({ space: 10 }) {
-      Text('‹')
-        .fontSize(fs(26))
-        .fontColor(this.c.textSecondary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => { if (this.navPathStack !== null) { this.navPathStack.pop(); } })
-      Text(t('files.page.title'))
-        .fontSize(fs(16))
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.c.textPrimary)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text('↻')
-        .fontSize(fs(20))
-        .fontColor(this.c.textPrimary)
-        .width(36)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          if (this.activeTab === 'changes') { this.loadGitStatus(); }
-          else if (this.activeTab === 'files') { this.loadDirectory(this.dirPath); }
-          else { this.doSearch(); }
-        })
-    }
-    .width('100%')
-    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
-    .backgroundColor(this.c.bg)
-    .border({ width: { bottom: 0.5 }, color: this.c.border })
-  }
-
   @Builder
   private HeaderBar() {
     if (this.gitStatus !== null && this.gitStatus.branch !== '') {
       Row({ space: 6 }) {
-        Text('⎇').fontSize(fs(13)).fontColor(this.c.primary)
         Text(this.gitStatus.branch)
           .fontSize(fs(13))
           .fontColor(this.c.primary)
@@ -378,7 +365,7 @@ struct FilesPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
       if (e.type === 'directory') {
-        Text('›').fontSize(fs(16)).fontColor(this.c.textTertiary)
+        SymbolGlyph($r('sys.symbol.chevron_forward')).fontSize(fs(16)).fontColor([this.c.textTertiary])
       }
     }
     .width('100%')
@@ -512,12 +499,11 @@ struct FilesPage {
   }
 
   build() {
-    NavDestination() {
+    HdsNavDestination() {
       Column() {
-        this.TopBar()
         this.HeaderBar()
         this.Segmented()
-        Scroll() {
+        Scroll(this.scroller) {
           Column() {
             if (this.activeTab === 'changes') {
               this.ChangesView()
@@ -536,9 +522,21 @@ struct FilesPage {
       .width('100%')
       .height('100%')
       .backgroundColor(this.c.bg)
-      .padding({ bottom: getLayoutState().bottomAvoidHeight })
+      // HDS titleBar 是浮动 overlay（不占布局位）→ 内容默认沉到磨砂栏后，固定 Segmented 标签会与
+      //   mainTitle 叠字。显式 padding 把内容压到 titleBar 底下：top = 状态栏高(topAvoidHeight) +
+      //   标题栏内容高(56vp 标准)；bottom = 手势条高。
+      .padding({ top: getLayoutState().topAvoidHeight + 56, bottom: getLayoutState().bottomAvoidHeight })
     }
-    .hideTitleBar(true)
+    // HDS 原生 titleBar（系统返回钮 + 文件标题 + 刷新 menu；systemMaterialEffect 真液态钮）+
+    //   bindToScrollable 滚动联动磨砂 + ignoreLayoutSafeArea 顶延伸状态栏（液态顶栏）/底自管安全区。
+    .titleBar(this.titleBarOpts)
+    .bindToScrollable([this.scroller])
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false, true)
+    .systemBarStyle(
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
+      { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }
+    )
     .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
