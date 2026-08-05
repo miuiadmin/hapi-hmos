@@ -196,16 +196,10 @@ struct ChatPage {
   }
   // 玻璃底半透明（surface + 暗 '14'/亮 '1A'）。
   // 顶栏圆钮底色：surfaceSelected 实色（对齐 chatcube ChatNavigationBar 按钮 comp_background_tertiary 实色）。
-  //   ⚠️ 不用 backgroundBlurStyle：① 模拟器 blur 虽 no-op，但其默认底色(近白)会盖掉 backgroundColor → 钮恒白隐形
-  //   （实测 surfaceSelected 72% alpha + COMPONENT_REGULAR，钮心仍 253≈白，diff 仅 3）；
-  //   ② chatcube 顶栏钮本就不用 blur，只顶栏容器液态。故钮走实色 surfaceSelected(#ECEEF1浅 Δ19 / #2E2E33深 Δ22 vs bg)，
-  //   叠 border + shadow 即可辨；真机钮浮在顶栏 GRADIENT_BLUR 液态层之上（chatcube 同款观感）。
+  //   ⚠️ 不用 backgroundBlurStyle：模拟器 blur 虽 no-op，但其默认底色(近白)会盖掉 backgroundColor → 钮恒白隐形。
+  //   chatcube 顶栏钮本就无 blur、无 border、无 shadow——只顶栏容器液态(GRADIENT_BLUR)；
+  //   钮走实色 surfaceSelected 浮于液态顶栏之上（chatcube 同款观感）。真机才出液态，模拟器只见实色圆。
   private glassBg(): string { return this.c.surfaceSelected; }
-  // 未选中描边（border + 暗 'A6'/亮 '73'）。
-  private glassBorderInactive(): string { return this.withAlpha(this.c.border, this.isDark ? 'A6' : '73'); }
-  // 阴影色（暗 0.18 / 亮 rgba(15,23,42,0.06)）。
-  // 圆钮投影：浅色对齐 chatcube ChatNavigationBar shadow rgba(0,0,0,0.1)（原 0.06 过淡，模拟器圆钮无浮起感）。
-  private glassShadow(): string { return this.isDark ? 'rgba(0, 0, 0, 0.18)' : 'rgba(15, 23, 42, 0.10)'; }
 
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
@@ -2984,8 +2978,8 @@ struct ChatPage {
   // 液态顶栏（HDS 沉浸光感：渲染在 HdsNavDestination 的 titleBar.stackBuilder 内）。
   //   液态背景（systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变 + maskExtraHeight 过渡带）由系统 titleBar 提供；
   //   本 Builder 仅渲染顶栏内容：左返回(液态圆钮) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 液态 chip。
-  //   chip 自带 backgroundBlurStyle 液态圆钮样式保留（chatcube 同款）；根容器不设 backgroundColor/backdropBlur，
-  //   避免与 titleBar 液态层叠加遮挡。
+  //   圆钮走实色 surfaceSelected（chatcube comp_background_tertiary 同款：无 border、无 shadow）；液态由 titleBar
+  //   (systemMaterialEffect + GRADIENT_BLUR) 提供，根容器不设 backgroundColor/backdropBlur 避免与液态层叠加遮挡。
   @Builder
   private ChatTopBar() {
     Row({ space: 8 }) {
@@ -2998,8 +2992,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .border({ width: 1, color: this.glassBorderInactive() })
-      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
       .onClick(() => {
         if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); return; }
         if (this.navPathStack !== null) { this.navPathStack.pop(); }
@@ -3031,8 +3023,8 @@ struct ChatPage {
       .layoutWeight(1)
       .alignItems(VerticalAlign.Center)
 
-      // 搜索（液态 chip；searchMode 时 primary 描边高亮 + xmark）
-      Button({ type: ButtonType.Circle, stateEffect: false }) {
+      // 搜索（实色圆钮，chatcube 同款；searchMode 时 primary 字色 + xmark）
+      Button({ type: ButtonType.Circle, stateEffect: true }) {
         SymbolGlyph(this.searchMode ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'))
           .fontSize(fs(18))
           .fontColor([this.searchMode ? this.c.primary : this.c.textSecondary])
@@ -3040,9 +3032,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .border({ width: 1, color: this.searchMode ? this.c.primary : this.glassBorderInactive() })
-      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
-      .animation({ duration: 200, curve: Curve.EaseOut })
       .onClick(() => { this.toggleSearch(); })
 
       // ⋯ 下拉（液态 chip + bindMenu frosted 气泡；替换原 SessionActionMenu 底部 sheet）
@@ -3054,8 +3043,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .border({ width: 1, color: this.glassBorderInactive() })
-      .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
       .bindMenu(this.ChatTopMenu(), {
         placement: Placement.BottomRight,
         offset: { x: 0, y: 8 },
