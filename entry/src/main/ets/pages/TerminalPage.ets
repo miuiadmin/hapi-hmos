@@ -425,24 +425,51 @@ struct TerminalPage {
   }
 
   // 一行快捷键（修饰键 Ctrl/Alt 高亮当前切换态）
+  //   箭头键(↑↓←→)走原生 SymbolGlyph（禁 Unicode 字符当图标，对齐全局 sys.symbol.* 规则）；
+  //   其余键(Esc/Tab/Ctrl/...)走 Text 文案。两支共享几何/背景/按压态。
   @Builder
   private QuickKeyRow(row: QuickKey[]) {
     Row({ space: 0 }) {
       ForEach(row, (k: QuickKey) => {
-        Text(k.label)
-          .fontSize(fs(13))
-          .fontColor(this.quickKeyActive(k) ? this.c.bubbleUserText : this.c.textPrimary)
-          .backgroundColor(this.quickKeyActive(k) ? this.c.primary : this.c.surface)
-          .layoutWeight(1)
-          .height(38)
-          .textAlign(TextAlign.Center)
-          .margin({ left: 2, right: 2 })
-          .borderRadius(6)
-          .opacity(this.inputEnabled() ? 1 : 0.4)
-          .onClick(() => { this.onQuickKey(k); })
+        if (this.isArrowKey(k.label)) {
+          SymbolGlyph(this.arrowSymbol(k.label))
+            .fontSize(fs(14))
+            .fontColor([this.quickKeyActive(k) ? this.c.bubbleUserText : this.c.textPrimary])
+            .backgroundColor(this.quickKeyActive(k) ? this.c.primary : this.c.surface)
+            .layoutWeight(1)
+            .height(38)
+            .margin({ left: 2, right: 2 })
+            .borderRadius(6)
+            .opacity(this.inputEnabled() ? 1 : 0.4)
+            .onClick(() => { this.onQuickKey(k); })
+        } else {
+          Text(k.label)
+            .fontSize(fs(13))
+            .fontColor(this.quickKeyActive(k) ? this.c.bubbleUserText : this.c.textPrimary)
+            .backgroundColor(this.quickKeyActive(k) ? this.c.primary : this.c.surface)
+            .layoutWeight(1)
+            .height(38)
+            .textAlign(TextAlign.Center)
+            .margin({ left: 2, right: 2 })
+            .borderRadius(6)
+            .opacity(this.inputEnabled() ? 1 : 0.4)
+            .onClick(() => { this.onQuickKey(k); })
+        }
       }, (k: QuickKey) => k.label)
     }
     .width('100%')
+  }
+
+  // 箭头键 label 判定（其余键一律走 Text）
+  private isArrowKey(label: string): boolean {
+    return label === '↑' || label === '↓' || label === '←' || label === '→';
+  }
+  // 箭头键 label → 系统符号（调用方先经 isArrowKey 守卫；默认回落 arrow_right）
+  private arrowSymbol(label: string): Resource {
+    if (label === '↑') { return $r('sys.symbol.arrow_up'); }
+    if (label === '↓') { return $r('sys.symbol.arrow_down'); }
+    if (label === '←') { return $r('sys.symbol.arrow_left'); }
+    return $r('sys.symbol.arrow_right');   // '→'
   }
 
   // 修饰键是否处于激活高亮
