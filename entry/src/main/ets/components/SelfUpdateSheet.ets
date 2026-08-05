@@ -142,24 +142,29 @@ export struct SelfUpdateSheet {
     .margin({ top: 16 })
   }
 
-  /** downloading：进度条 + 百分比/已下 + 提示 + 取消 —— 对齐 berry3 downloadingContent */
+  /** downloading：进度条 + 百分比/已下 + 提示 + 取消。
+   *  ⚠️ 偏离 berry3：原版进度文字仅「45%」极短、与 hint 同行（百分比左 / hint 右）。
+   *    本项目 progressText 增强为「45% · 12.3 MB / 25.6 MB」，加上长中文 hint，两段同行在 Row 里
+   *    Text 不会自动换行 → 挤压/溢出。故改为纵向：百分比行在上、hint 下行（maxLines 允许换行）。 */
   @Builder downloadingContent() {
     Column({ space: 16 }) {
       Progress({ value: this.percent, total: 100, type: ProgressType.Linear })
         .width('100%')
         .color(this.c.primary)
         .backgroundColor(this.c.border)
-      Row() {
+      Column({ space: 4 }) {
         Text(this.progressText)
           .fontSize(fs(13))
           .fontColor(this.c.textTertiary)
-        Blank()
+          .width('100%')
         Text(t('ota.downloadHint'))
           .fontSize(fs(12))
           .fontColor(this.c.textTertiary)
+          .width('100%')
+          .maxLines(2)
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .alignItems(HorizontalAlign.Start)
 
       Button({ type: ButtonType.Capsule, stateEffect: true }) {
         Text(t('ota.cancel'))
