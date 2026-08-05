@@ -13,8 +13,6 @@ import { TerminalToolDisplayMode } from '../../chat/TerminalToolDisplay';
 import { TerminalFontSizeService } from '../../services/TerminalFontSizeService';
 import { VALID_TERMINAL_FONT_SIZES } from '../../chat/TerminalFontSize';
 import { SessionPreviewLimitService } from '../../services/SessionPreviewLimitService';
-import { SessionListStatusModeService } from '../../services/SessionListStatusModeService';
-import { SessionListStatusMode } from '../../chat/SessionListStatusMode';
 import { PinInProgressService } from '../../services/PinInProgressService';
 import { HapticService } from '../../services/HapticService';
 import {
@@ -53,7 +51,6 @@ struct ChatSettingsPage {
   private get terminalToolMode(): TerminalToolDisplayMode { return TerminalToolDisplayService.currentMode; }
   private get terminalFontSize(): number { return TerminalFontSizeService.currentSize; }
   private get sessionPreviewLimit(): number { return SessionPreviewLimitService.currentLimit; }
-  private get sessionListStatusMode(): SessionListStatusMode { return SessionListStatusModeService.currentMode; }
   private get pinInProgressEnabled(): boolean { return PinInProgressService.currentEnabled; }
 
   aboutToAppear(): void {
@@ -72,7 +69,6 @@ struct ChatSettingsPage {
   private setHapticsEnabled(isOn: boolean): void { HapticService.setEnabled(isOn); }
   private selectTerminalToolDisplay(mode: TerminalToolDisplayMode): void { TerminalToolDisplayService.setMode(mode); }
   private selectTerminalFontSize(size: number): void { TerminalFontSizeService.setSize(size); }
-  private selectSessionListStatusMode(mode: SessionListStatusMode): void { SessionListStatusModeService.setMode(mode); }
   private setPinInProgress(on: boolean): void { PinInProgressService.setEnabled(on); }
   private onPreviewLimitChange(value: string): void {
     const n: number = parseInt(value, 10);
@@ -232,25 +228,11 @@ struct ChatSettingsPage {
         })
         .backgroundColor(this.c.bg).borderRadius($r('app.float.setting_card_radius')).clip(true)
 
-        // ── 会话列表（预览行数 + 状态模式 + 置顶进行中）──
+        // ── 会话列表（预览行数 + 置顶进行中）──
         ListItem() { SettingSectionTitle({ text: t('settings.chat.sessionList') }) }
         ListItemGroup() {
           // 预览行数：自定义 TextInput 行（SettingCard 无 TextInput suffix，局部 Row 对齐卡片尺寸）
           ListItem() { this.previewLimitRow() }
-          ListItem() {
-            SettingCard({
-              primaryText: t('statusMode.standard'), suffixType: 'check',
-              isChecked: this.sessionListStatusMode === 'standard', rowPosition: 'middle',
-              onItemClick: () => { this.selectSessionListStatusMode('standard'); }
-            })
-          }
-          ListItem() {
-            SettingCard({
-              primaryText: t('statusMode.detailed'), suffixType: 'check',
-              isChecked: this.sessionListStatusMode === 'detailed', rowPosition: 'middle',
-              onItemClick: () => { this.selectSessionListStatusMode('detailed'); }
-            })
-          }
           // 置顶进行中会话（对照上游 pinInProgressSessions：活跃会话抽到「进行中」分区）
           ListItem() {
             SettingCard({

@@ -16,7 +16,6 @@ import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
 import { PinInProgressService } from '../services/PinInProgressService';
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
-import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
 import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
 import { DeviceNetworkService } from '../services/DeviceNetworkService';
@@ -110,8 +109,6 @@ export default class EntryAbility extends UIAbility {
     await PinInProgressService.init();
     // 终端字号须在 loadContent 前从持久化读回（TerminalPage boot 即用，避默认 13 闪一下）
     await TerminalFontSizeService.init();
-    // 会话列表状态模式须在 loadContent 前从持久化读回（Index SessionItem 首帧即用，避默认 standard 闪一下）
-    await SessionListStatusModeService.init();
     // 触感反馈开关须在 loadContent 前从持久化读回（各交互 tap 即用正确 enabled，避默认开闪一下）
     await HapticService.init();
     // 设备网络探测须在 loadContent 前注册（hasDefaultNet 初始探测 + netAvailable/netUnavailable 监听），

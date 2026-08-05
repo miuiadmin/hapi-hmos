@@ -31,7 +31,7 @@ import voiceFormattersTest from './VoiceFormatters.test';
 import voiceLanguagesTest from './VoiceLanguages.test';
 import voiceVoicesTest from './VoiceVoices.test';
 import terminalFontSizeTest from './TerminalFontSize.test';
-import sessionListStatusModeTest from './SessionListStatusMode.test';
+import sessionStatusTest from './SessionStatus.test';
 import syncResyncTest from './SyncResync.test';
 import directorySuggestionsTest from './DirectorySuggestions.test';
 import spawnErrorTest from './SpawnError.test';
@@ -93,7 +93,7 @@ export default function testsuite() {
   voiceLanguagesTest();
   voiceVoicesTest();
   terminalFontSizeTest();
-  sessionListStatusModeTest();
+  sessionStatusTest();
   syncResyncTest();
   directorySuggestionsTest();
   spawnErrorTest();

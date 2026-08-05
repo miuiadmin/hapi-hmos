@@ -175,8 +175,6 @@ export const en: Record<string, string> = {
   'sessions.group.other': 'Other',
   'sessions.group.unknownMachine': 'Unknown machine',
   'sessions.showMore': 'Show more ({n})',
-  'statusMode.standard': 'Standard',
-  'statusMode.detailed': 'Detailed',
   'sessions.runningSection': 'In progress',
   'sessions.running.working': 'Working',
   'sessions.running.pending': 'Pending',

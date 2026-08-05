@@ -176,8 +176,6 @@ export const zhCN: Record<string, string> = {
   'sessions.group.other': '其他目录',
   'sessions.group.unknownMachine': '未知机器',
   'sessions.showMore': '展开更多 ({n})',
-  'statusMode.standard': '标准',
-  'statusMode.detailed': '详细',
   'sessions.runningSection': '进行中',
   'sessions.running.working': '运行中',
   'sessions.running.pending': '待处理',

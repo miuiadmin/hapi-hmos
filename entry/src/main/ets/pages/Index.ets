@@ -23,10 +23,11 @@ import { SessionActionMenu } from '../components/SessionActionMenu';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SyncingBanner } from '../components/SyncingBanner';
 import { ServerToastOverlay } from '../components/ServerToastOverlay';
-import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
+import { getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
+import { classifySessionStatus, SessionStatusKind } from '../chat/SessionStatus';
+import { StatusDot } from '../components/StatusDot';
 import { SessionPreviewLimitService, getSessionPreviewLimitState } from '../services/SessionPreviewLimitService';
 import { getPinInProgressState } from '../services/PinInProgressService';
-import { getSessionListStatusModeState } from '../services/SessionListStatusModeService';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { ToastService } from '../services/ToastService';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -508,21 +509,21 @@ struct Index {
     return this.c.textTertiary;
   }
 
-  // 会话注意力分级（对照 web lib/sessionAttention）：thinking 不打扰；返回左侧色点类型。
-  //   detailed 模式才显 attention 指示器（对照上游 showDetailedStatus ? classify : null）；standard 隐藏色点。
-  private attentionFor(session: SessionSummary): AttentionKind | null {
-    // 读 @Trace mode 建立 V2 刷新依赖（设置页切 detailed/standard 即重渲染），同 theme `c` getter 模式
-    if (getSessionListStatusModeState().mode !== 'detailed') { return null; }
-    // 移动端栈式导航：列表可见时用户不在任何会话内 → selected 恒 false（thinking 由 classify 内部抑制）。
+  // 会话四态判定（paseo 语义 → hapi 字段；默认显示，无 detailed 门控）。
+  //   pending 琥珀（待回复）/ running 蓝+脉冲（进行中）/ unread 绿（完成请看）/ idle 灰（空闲）。
+  private statusKindFor(session: SessionSummary): SessionStatusKind {
     const seen: SessionSeenService = getSessionSeenService();
-    // 读 @Trace revision 建立 V2 刷新依赖：ChatPage markSeen 自增 → 列表重渲染 → 重读 lastSeen 拿最新时间戳。
+    // 读 @Trace revision 建立 V2 刷新依赖：ChatPage markSeen 自增 → 列表重渲染 → 重读 lastSeen。
     const _observeRevision: number = seen.revision;
-    return classifySessionAttention(session, false, seen.lastSeen(session.id));
+    return classifySessionStatus(session, seen.lastSeen(session.id));
   }
 
-  // 注意力色点颜色：permission→琥珀（需授权）；input/background/unread→主色（蓝）。
-  private attentionDotColor(kind: AttentionKind): string {
-    return kind === 'permission' ? this.c.warning : this.c.primary;
+  // 四态 → 颜色（走调色板 c.*）。
+  private statusDotColor(kind: SessionStatusKind): string {
+    if (kind === 'pending') { return this.c.warning; }
+    if (kind === 'running') { return this.c.primary; }
+    if (kind === 'unread') { return this.c.success; }
+    return this.c.textTertiary;   // idle
   }
 
   // 统一会话标签胶囊（对照 chatcube 样式化 Text pill；禁 emoji，按语义着色）。
@@ -557,16 +558,13 @@ struct Index {
       // 中段：标题 + 时间 / 摘要 + 角标
       Column({ space: 6 }) {
         Row() {
-          // 注意力色点（对照 web SessionAttentionIndicator：permission→琥珀/其余→主色；thinking 不显）
-          if (this.attentionFor(session) !== null) {
-            // 用 Column+尺寸+borderRadius 画圆点（项目无 Circle 先例，沿用既有 badge 样式范式）
-            Column()
-              .width(7)
-              .height(7)
-              .borderRadius(4)
-              .backgroundColor(this.attentionDotColor(this.attentionFor(session) as AttentionKind))
-              .margin({ right: 6 })
-          }
+          // 四态状态点（paseo：pending 琥珀 / running 蓝+脉冲 / unread 绿 / idle 灰；默认显示）
+          StatusDot({
+            color: this.statusDotColor(this.statusKindFor(session)),
+            pulsing: this.statusKindFor(session) === 'running',
+            dotSize: 8
+          })
+            .margin({ right: 6 })
           Text(session.title)
             .fontSize(fs(15))
             .fontWeight(FontWeight.Medium)
