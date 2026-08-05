@@ -94,6 +94,12 @@ struct ChatPage {
 
   @Local messages: ChatMessage[] = [];
   @Local blocks: ChatBlock[] = [];            // 由 messages+agentState 派生的渲染单元（reducer 产出）
+  // build() 空态门控：仅 length 过 0 边界翻转，避免流式期间 this.blocks / this.messages 每 ~150ms 被重赋（新引用）
+  //   触发整页 build() 重渲——重渲与 LazyForEach 的 notifyDataChange 同帧撞车 → 列表重声明 / 中帧灰闪
+  //   （发送瞬间、排队时常驻的「灰色长方形板满屏」根因；b2b49f0 只修了 nowTick 这一路，漏了 blocks/messages）。
+  //   流式改走纯 dataSource 增量通知（notifyDataChange / onDataAdd），build() 不再读这两个热 @Local → 不重渲 → 无灰闪。
+  @Local chatEmpty: boolean = true;           // blocks 是否为空（content 分支空态判定）
+  @Local messagesEmpty: boolean = true;       // messages 是否为空（loading / error 分支判定）
   @Local toolActionStates: Record<string, ToolActionState> = {} as Record<string, ToolActionState>;  // 审批态（上提自 ToolCard，按 block.id 索引；V2 整体替换触发刷新）
   @Local detailOpenSigs: Record<string, string> = {} as Record<string, string>;  // tool 详情 sheet 展开态：key=block.id、value=展开瞬间冻结的 childSig（存在=开；冻结→blockSignature 不变→父卡不刷新→sheet/滚动稳定无闪烁）
   @Local inputText: string = '';
@@ -328,6 +334,7 @@ struct ChatPage {
 
   private setMessages(list: ChatMessage[]): void {
     this.messages = list;
+    this.messagesEmpty = list.length === 0;
     this.recomputeBlocks();
   }
 
@@ -407,6 +414,7 @@ struct ChatPage {
     }
     // 同 id 复用旧实例 + copyFrom 原地改 @Trace 字段 → Repeat 同 key 项内部精确刷新（流式根治，对照官方示例3/5）。
     this.blocks = this.reconcileBlocks(grouped);
+    this.chatEmpty = this.blocks.length === 0;
     // 大纲项随 blocks 一起重算（只索引 user-text 块；大纲抽屉直接读 outlineItems）
     this.outlineItems = buildConversationOutline(grouped);
     // 灌入 LazyForEach 数据源：按签名 diff，结构变→全刷、同结构→仅变项 onDataChange 原地重渲染（流式根治）
@@ -1048,6 +1056,7 @@ struct ChatPage {
     try {
       const page = await getHubClient().fetchMessagesPage(this.sessionId);
       this.messages = page.messages;
+      this.messagesEmpty = page.messages.length === 0;
       this.recomputeBlocks();
       this.hasMoreMessages = page.hasMore;
       this.nextBeforeAt = page.nextBeforeAt;
@@ -1116,6 +1125,7 @@ struct ChatPage {
       }
       // 旧消息在前（fresh 已升序），prepend 到现有消息之前
       this.messages = fresh.concat(this.messages);
+      this.messagesEmpty = false;              // prepend 后必非空（fresh 至少一条 + 原有消息）
       this.recomputeBlocks();
       // 视口锚定：把「之前的首个 block」重新对齐到视口顶部，新增的更旧块在其上方（向上滚可见）
       const addedBlocks = this.blocks.length - prevBlocksCount;
@@ -3144,14 +3154,14 @@ struct ChatPage {
         Column() {
           ConnectionBanner()
           SyncingBanner()
-        if (this.isLoading && this.messages.length === 0) {
+        if (this.isLoading && this.messagesEmpty) {
           Column() {
             LoadingProgress().width(36).height(36).color(this.c.primary)
           }
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
-        } else if (this.loadError !== '' && this.messages.length === 0) {
+        } else if (this.loadError !== '' && this.messagesEmpty) {
           Column({ space: 10 }) {
             Text(t('chat.loadFailed')).fontSize(fs(15)).fontColor(this.c.error)
             Text(this.loadError).fontSize(fs(12)).fontColor(this.c.textTertiary).textAlign(TextAlign.Center)
@@ -3164,9 +3174,9 @@ struct ChatPage {
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
-        } else if (this.isLoading && this.blocks.length === 0) {
+        } else if (this.isLoading && this.chatEmpty) {
           this.MessageSkeleton()
-        } else if (this.blocks.length === 0 && !this.isThinking) {
+        } else if (this.chatEmpty && !this.isThinking) {
           this.EmptyState()
         } else {
           Column() {
