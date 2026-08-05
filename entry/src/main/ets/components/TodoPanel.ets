@@ -63,9 +63,9 @@ export struct TodoPanel {
         Text(`${this.completedCount()}/${this.todos.length}`)
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
-        Text('▾')
+        SymbolGlyph($r('sys.symbol.chevron_down'))
           .fontSize(fs(11))
-          .fontColor(this.c.textTertiary)
+          .fontColor([this.c.textTertiary])
           .rotate({ angle: this.expanded ? 180 : 0 })
       }
       .width('100%')

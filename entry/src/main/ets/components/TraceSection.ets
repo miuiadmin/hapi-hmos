@@ -185,8 +185,8 @@ struct TraceSection {
   @Builder
   Header() {
     Row({ space: 6 }) {
-      Text(this.open ? '▾' : '▸')
-        .fontSize(fs(11)).fontColor(this.c.textTertiary)
+      SymbolGlyph(this.open ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
+        .fontSize(fs(11)).fontColor([this.c.textTertiary])
       Text(this.headerLabel)
         .fontSize(fs(12)).fontWeight(FontWeight.Medium).fontColor(this.c.textSecondary)
         .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })

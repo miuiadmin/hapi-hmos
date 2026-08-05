@@ -295,9 +295,9 @@ struct ToolCard {
               .fontSize(fs(13))
               .fontColor([this.statusColor()])
           }
-          Text('›')
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
             .fontSize(fs(18))
-            .fontColor(this.c.textTertiary)
+            .fontColor([this.c.textTertiary])
             .margin({ left: 4 })
         }
         .alignItems(VerticalAlign.Center)

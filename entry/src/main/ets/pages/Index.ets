@@ -630,15 +630,15 @@ struct Index {
     .justifyContent(FlexAlign.Center)
   }
 
-  // 机器组头行（▼/▶ + 💻 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
-  // 「进行中」置顶分区头（▼/▶ + 绿点 + 标题 + 计数；点击折叠/展开，对照上游 running-section 头）。
+  // 机器组头行（chevron + pc 图标 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
+  // 「进行中」置顶分区头（chevron + 绿点 + 标题 + 计数；点击折叠/展开，对照上游 running-section 头）。
   //   绿点=success（活跃指示；上游 animate-pulse，本项目静态点免列表回收动画坑）。
   @Builder
   private PinnedHeader(row: RenderRow) {
     Row({ space: 6 }) {
-      Text(this.pinSectionCollapsed && !this.isSearching() ? '▶' : '▼')
+      SymbolGlyph(this.pinSectionCollapsed && !this.isSearching() ? $r('sys.symbol.chevron_right') : $r('sys.symbol.chevron_down'))
         .fontSize(fs(11))
-        .fontColor(this.c.textTertiary)
+        .fontColor([this.c.textTertiary])
       Column()
         .width(7)
         .height(7)
@@ -695,9 +695,9 @@ struct Index {
   @Builder
   private MachineHeader(mg: MachineGroup) {
     Row({ space: 6 }) {
-      Text(this.machineCollapsed(mg) ? '▶' : '▼')
+      SymbolGlyph(this.machineCollapsed(mg) ? $r('sys.symbol.chevron_right') : $r('sys.symbol.chevron_down'))
         .fontSize(fs(11))
-        .fontColor(this.c.textTertiary)
+        .fontColor([this.c.textTertiary])
       SymbolGlyph($r('sys.symbol.pc')).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Text(this.resolveMachineLabel(mg))
         .fontSize(fs(13))
@@ -715,14 +715,14 @@ struct Index {
     .alignItems(VerticalAlign.Center)
   }
 
-  // 目录组头行（▼/▶ + 📁 + label + 本组会话数 +「本目录新建」+；点击折叠/展开，对照上游 directory 分组头）。
+  // 目录组头行（chevron + folder 图标 + label + 本组会话数 +「本目录新建」+；点击折叠/展开，对照上游 directory 分组头）。
   //   + 按钮 hitTestBehavior(Block)：拦截点透传，避免同时触发父行折叠 toggle（对照上游 onNewSessionInDirectory）。
   @Builder
   private DirectoryHeader(dg: DirectoryGroup) {
     Row({ space: 6 }) {
-      Text(this.directoryCollapsed(dg) ? '▶' : '▼')
+      SymbolGlyph(this.directoryCollapsed(dg) ? $r('sys.symbol.chevron_right') : $r('sys.symbol.chevron_down'))
         .fontSize(fs(11))
-        .fontColor(this.c.textTertiary)
+        .fontColor([this.c.textTertiary])
       SymbolGlyph($r('sys.symbol.folder')).fontSize(fs(13)).fontColor([this.c.textSecondary])
       Text(this.resolveDirectoryLabel(dg))
         .fontSize(fs(13))

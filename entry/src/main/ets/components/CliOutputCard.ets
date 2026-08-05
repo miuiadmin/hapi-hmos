@@ -54,9 +54,9 @@ export struct CliOutputCard {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        Text('›')
+        SymbolGlyph($r('sys.symbol.chevron_forward'))
           .fontSize(fs(18))
-          .fontColor(this.c.textTertiary)
+          .fontColor([this.c.textTertiary])
           .margin({ left: 4 })
       }
       .width('100%')

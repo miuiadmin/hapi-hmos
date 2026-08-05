@@ -176,9 +176,9 @@ export struct TeamPanel {
           .fontSize(fs(11))
           .fontColor(this.c.textTertiary)
           .maxLines(1)
-        Text('▾')
+        SymbolGlyph($r('sys.symbol.chevron_down'))
           .fontSize(fs(11))
-          .fontColor(this.c.textTertiary)
+          .fontColor([this.c.textTertiary])
           .rotate({ angle: this.expanded ? 180 : 0 })
       }
       .width('100%')

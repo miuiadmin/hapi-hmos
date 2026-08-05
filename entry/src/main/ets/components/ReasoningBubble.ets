@@ -27,9 +27,9 @@ export struct ReasoningBubble {
     Column() {
       // header：箭头 + 标签 + 流式指示
       Row() {
-        Text(this.expanded || this.isStreaming ? '▾' : '▸')
+        SymbolGlyph(this.expanded || this.isStreaming ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
           .fontSize(fs(11))
-          .fontColor(this.c.textTertiary)
+          .fontColor([this.c.textTertiary])
           .margin({ right: 6 })
         Text(t('reasoning.label'))
           .fontSize(fs(12))

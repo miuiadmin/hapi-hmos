@@ -123,9 +123,9 @@ struct ToolGroupCard {
       // chevron + 标题 + 副标题
       Column() {
         Row({ space: 6 }) {
-          Text(this.open ? '▾' : '▸')
+          SymbolGlyph(this.open ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
             .fontSize(fs(11))
-            .fontColor(this.c.textTertiary)
+            .fontColor([this.c.textTertiary])
           if (this.headerTitle !== '') {
             Text(this.headerTitle)
               .fontSize(fs(13))
