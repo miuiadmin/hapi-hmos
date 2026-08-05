@@ -3,6 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { getHubClient } from '../api/HubClient';
 import { getSSEClient } from '../api/SSEClient';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeState } from '../theme/ThemeService';
+import { getLayoutState } from '../state/LayoutState';
 import { t } from '../i18n/I18nService';
 import { showToast } from '../utils/Toast';
 import { ensureMicrophonePermission } from '../utils/Permission';
@@ -535,7 +536,7 @@ struct VoicePage {
         .backgroundColor(this.statusColor())
     }
     .width('100%')
-    .padding({ left: 8, right: 12, top: 6, bottom: 6 })
+    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
     .backgroundColor(this.c.bg)
     .border({ width: { bottom: 0.5 }, color: this.c.border })
   }
@@ -633,7 +634,7 @@ struct VoicePage {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 8, bottom: 12 })
+    .padding({ left: 10, right: 10, top: 8, bottom: getLayoutState().bottomAvoidHeight + 12 })
     .backgroundColor(this.c.bg)
     .border({ width: { top: 0.5 }, color: this.c.border })
   }
@@ -687,6 +688,7 @@ struct VoicePage {
       .backgroundColor(this.c.bg)
     }
     .hideTitleBar(true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as VoiceRouteParams;

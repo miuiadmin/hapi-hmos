@@ -3,6 +3,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { getHubClient } from '../api/HubClient';
 import { getConnectionService } from '../services/ConnectionService';
 import { fs, paletteOf, PaletteColors, getThemeState, ThemeState } from '../theme/ThemeService';
+import { getLayoutState } from '../state/LayoutState';
 import { t, kv } from '../i18n/I18nService';
 import { showToast } from '../utils/Toast';
 import { SheetDialog } from '../components/settings/SheetDialog';
@@ -367,7 +368,7 @@ struct TerminalPage {
         .onClick(() => { this.actionSheetOpen = true; })
     }
     .width('100%')
-    .padding({ left: 8, right: 12, top: 6, bottom: 6 })
+    .padding({ left: 8, right: 12, top: getLayoutState().topAvoidHeight + 6, bottom: 6 })
     .backgroundColor(this.c.bg)
     .border({ width: { bottom: 0.5 }, color: this.c.border })
   }
@@ -560,7 +561,7 @@ struct TerminalPage {
       }, (row: QuickKey[], idx: number) => `qk-${idx}`)
     }
     .width('100%')
-    .padding({ left: 10, right: 10, top: 6, bottom: 10 })
+    .padding({ left: 10, right: 10, top: 6, bottom: getLayoutState().bottomAvoidHeight + 10 })
     .backgroundColor(this.c.bg)
     .border({ width: { top: 0.5 }, color: this.c.border })
   }
@@ -598,6 +599,7 @@ struct TerminalPage {
       .bindSheet(this.actionSheetOpen, this.TerminalActionSheet(), this.actionSheetOpts)
     }
     .hideTitleBar(true)
+    .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as TerminalRouteParams;
