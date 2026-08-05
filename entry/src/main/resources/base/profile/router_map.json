@@ -59,6 +59,11 @@
       "name": "AboutPage",
       "pageSourceFile": "src/main/ets/pages/settings/AboutPage.ets",
       "buildFunction": "AboutPageBuilder"
+    },
+    {
+      "name": "UsagePage",
+      "pageSourceFile": "src/main/ets/pages/settings/UsagePage.ets",
+      "buildFunction": "UsagePageBuilder"
     }
   ]
 }

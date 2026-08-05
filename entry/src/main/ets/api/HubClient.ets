@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t, kv } from '../i18n/I18nService';
@@ -789,6 +789,21 @@ export class HubClient {
     if (dk.length > 0) { body['details'] = ev.details as Object; }
     const resp = await this.request(http.RequestMethod.POST, '/api/voice/telemetry', body, 'jwt');
     return resp.success;
+  }
+
+  // —— 用量看板（v0.26.0 新增，对照 web client.ts getUsageSummary）——
+  //   GET /api/usage/summary?range=&timeZone=（仅 hub owner=namespace 'default'；非 owner → 403 {error}）。
+  //   range ∈ '7d'(默认)/'30d'/'all'（hub：'30d'→30天, 'all'→全部, 其余→7天）；timeZone 默认 UTC（IANA 名）。
+  //   失败（403 非 owner / 网络 / 损坏体）也解析：parseUsageSummaryResponse 提取上游 {error} 或挂 httpError → r.error。
+  async getUsageSummary(range: string, timeZone: string = ''): Promise<UsageSummaryResponse> {
+    let path: string = `/api/usage/summary?range=${encodeURIComponent(range)}`;
+    if (timeZone !== '') {
+      path += `&timeZone=${encodeURIComponent(timeZone)}`;
+    }
+    const resp = await this.request(http.RequestMethod.GET, path, undefined, 'jwt');
+    const httpError: string = resp.success ? '' :
+      (resp.errorMessage !== undefined ? resp.errorMessage : t('api.usage.loadFailed', kv('code', resp.statusCode)));
+    return parseUsageSummaryResponse(resp.data, httpError);
   }
 }
 

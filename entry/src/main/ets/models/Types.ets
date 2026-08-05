@@ -1153,3 +1153,107 @@ export function parseVoicesResponse(json: string): VoiceItem[] {
   }
   return out;
 }
+
+// —— 用量看板（对齐 shared/src/apiTypes.ts v0.26.0 UsageSummaryBucket / UsageSummaryResponse）——
+//   GET /api/usage/summary?range=&timeZone=（仅 hub owner=namespace 'default'，非 owner 403）。
+//   桶（bucket）= 某 key（日期/agent/model）的 token 计数；totals 额外含 sessions 计数；range.from/to 为 epoch ms（null→0）。
+export class UsageSummaryBucket {
+  key: string = '';
+  inputTokens: number = 0;
+  outputTokens: number = 0;
+  cacheReadTokens: number = 0;
+  cacheCreationTokens: number = 0;
+  totalTokens: number = 0;
+  uncachedTokens: number = 0;
+  requests: number = 0;
+}
+
+export class UsageSummaryTotals {
+  inputTokens: number = 0;
+  outputTokens: number = 0;
+  cacheReadTokens: number = 0;
+  cacheCreationTokens: number = 0;
+  totalTokens: number = 0;
+  uncachedTokens: number = 0;
+  requests: number = 0;
+  sessions: number = 0;
+}
+
+// error 为客户端合成字段（HTTP 失败 / 非 owner 403 / 损坏体），上游响应无此字段。
+export class UsageSummaryResponse {
+  rangeFrom: number = 0;
+  rangeTo: number = 0;
+  totals: UsageSummaryTotals = new UsageSummaryTotals();
+  daily: UsageSummaryBucket[] = [];
+  byAgent: UsageSummaryBucket[] = [];
+  byModel: UsageSummaryBucket[] = [];
+  error: string = '';
+}
+
+// 从单个桶 Record 填充 UsageSummaryBucket（key + 7 计数）。
+function fillUsageBucket(r: Record<string, Object>): UsageSummaryBucket {
+  const b: UsageSummaryBucket = new UsageSummaryBucket();
+  b.key = pickStr(r, 'key');
+  b.inputTokens = pickNum(r, 'inputTokens');
+  b.outputTokens = pickNum(r, 'outputTokens');
+  b.cacheReadTokens = pickNum(r, 'cacheReadTokens');
+  b.cacheCreationTokens = pickNum(r, 'cacheCreationTokens');
+  b.totalTokens = pickNum(r, 'totalTokens');
+  b.uncachedTokens = pickNum(r, 'uncachedTokens');
+  b.requests = pickNum(r, 'requests');
+  return b;
+}
+
+// 解析桶数组字段（字段名 → UsageSummaryBucket[]；缺失/非数组 → []）。
+function parseUsageBuckets(raw: Record<string, Object>, field: string): UsageSummaryBucket[] {
+  const arr = raw[field];
+  if (arr === null || arr === undefined || !Array.isArray(arr)) { return []; }
+  const list: Object[] = arr as Object[];
+  const out: UsageSummaryBucket[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (item !== null && item !== undefined && typeof item === 'object') {
+      out.push(fillUsageBucket(item as Record<string, Object>));
+    }
+  }
+  return out;
+}
+
+// 解析 GET /api/usage/summary → UsageSummaryResponse（HTTP 失败/非 owner 403/损坏体合成 error，桶全空）。
+//   httpError 非空（如 403 文案 / 网络错）→ 直接挂 error 返回；正常体按 range/totals/daily/byAgent/byModel 解析。
+export function parseUsageSummaryResponse(json: string, httpError: string): UsageSummaryResponse {
+  const r: UsageSummaryResponse = new UsageSummaryResponse();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.error = httpError !== '' ? httpError : t('types.usage.parseFailed');
+    return r;
+  }
+  // 上游错误响应 { error: '...' }（如非 owner 403 的 JSON 体）
+  const upstreamErr = pickStr(raw, 'error');
+  if (upstreamErr !== '') {
+    r.error = upstreamErr;
+    return r;
+  }
+  const rangeRaw = pickObj(raw, 'range');
+  if (rangeRaw !== null) {
+    r.rangeFrom = pickNum(rangeRaw, 'from');
+    r.rangeTo = pickNum(rangeRaw, 'to');
+  }
+  const totalsRaw = pickObj(raw, 'totals');
+  if (totalsRaw !== null) {
+    r.totals.inputTokens = pickNum(totalsRaw, 'inputTokens');
+    r.totals.outputTokens = pickNum(totalsRaw, 'outputTokens');
+    r.totals.cacheReadTokens = pickNum(totalsRaw, 'cacheReadTokens');
+    r.totals.cacheCreationTokens = pickNum(totalsRaw, 'cacheCreationTokens');
+    r.totals.totalTokens = pickNum(totalsRaw, 'totalTokens');
+    r.totals.uncachedTokens = pickNum(totalsRaw, 'uncachedTokens');
+    r.totals.requests = pickNum(totalsRaw, 'requests');
+    r.totals.sessions = pickNum(totalsRaw, 'sessions');
+  }
+  r.daily = parseUsageBuckets(raw, 'daily');
+  r.byAgent = parseUsageBuckets(raw, 'byAgent');
+  r.byModel = parseUsageBuckets(raw, 'byModel');
+  return r;
+}

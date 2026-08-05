@@ -12,6 +12,7 @@ import { getLayoutState } from '../state/LayoutState';
 import { hdsTitleBarStyle } from '../components/HdsTitleBarStyle';
 import { t } from '../i18n/I18nService';
 import { getConnectionService } from '../services/ConnectionService';
+import { DEFAULT_NAMESPACE } from '../models/HubConfig';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { getSSEClient } from '../api/SSEClient';
 import { AppStorageKeys } from '../config/Keys';
@@ -97,8 +98,17 @@ struct SettingsPage {
     const connGroup: SettingsGroup = {
       key: 'connection', title: t('settings.section.connection'), items: [connection]
     };
+    // 用量看板入口仅 hub owner（namespace=default）可见（对照 hub /api/usage/summary 非 owner 返 403）。
+    const aboutItems: SettingsEntry[] = [about];
+    if (getConnectionService().namespace === DEFAULT_NAMESPACE) {
+      const usage: SettingsEntry = {
+        key: 'usage', title: t('settings.usage.title'), subtitle: '',
+        symbol: $r('sys.symbol.hourglass'), morandi: 'yellow', target: 'UsagePage'
+      };
+      aboutItems.unshift(usage);
+    }
     const aboutGroup: SettingsGroup = {
-      key: 'about', title: t('settings.section.about'), items: [about]
+      key: 'about', title: t('settings.section.about'), items: aboutItems
     };
     const all: SettingsGroup[] = [general, connGroup, aboutGroup];
     return all;
