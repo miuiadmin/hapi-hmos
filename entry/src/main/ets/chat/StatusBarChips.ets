@@ -23,8 +23,9 @@ function permissionModesForFlavor(flavor: string): string[] {
 // 权限模式 → 语义色调（对照 modes.ts:61-70 PERMISSION_MODE_TONES）。
 //   plan/ask→info、acceptEdits/read-only/safe-yolo→warning、bypassPermissions/yolo→danger、default/未知→neutral。
 export function permissionModeTone(mode: string): string {
-  if (mode === 'plan' || mode === 'ask') { return 'info'; }
-  if (mode === 'acceptEdits' || mode === 'read-only' || mode === 'safe-yolo') { return 'warning'; }
+  if (mode === 'plan' || mode === 'ask' || mode === 'debug') { return 'info'; }
+  if (mode === 'acceptEdits' || mode === 'auto' || mode === 'autoReview'
+    || mode === 'read-only' || mode === 'safe-yolo') { return 'warning'; }
   if (mode === 'bypassPermissions' || mode === 'yolo') { return 'danger'; }
   return 'neutral';   // default + 未知
 }

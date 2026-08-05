@@ -1,6 +1,6 @@
 // 斜杠命令补全（对照 shared/src/slashCommands.ts + web useSlashCommands.getSuggestions）
-//   纯逻辑：静态内置命令表（claude/codex/gemini）+ 服务端命令合并（mergeSlashCommands，server 覆盖同名 builtin）
-//   + getSuggestions 评分（精确/前缀/包含/Levenshtein）。
+//   纯逻辑：静态内置命令表（claude/codex/gemini/grok/opencode/cursor/copilot；kimi/pi 空）+ 服务端命令合并
+//   （mergeSlashCommands，server 覆盖同名 builtin）+ getSuggestions 评分（精确/前缀/包含/Levenshtein）。
 //
 // 服务端命令：Hub GET /api/sessions/:id/slash-commands 返回用户/项目/插件命令（source != 'builtin'），
 //   合并进内置表（同名 server 覆盖 builtin），使设备端无 CLI 也能拿到活命令。失败静默回落内置（不阻塞输入）。
@@ -29,6 +29,7 @@ export const BUILTIN_CLAUDE_COMMANDS: SlashCommand[] = [
   cmd('status', 'Show Claude Code status including version, model, account, and API connectivity')
 ];
 export const BUILTIN_CODEX_COMMANDS: SlashCommand[] = [
+  cmd('agent', 'Toggle proactive Codex multi-agent delegation'),
   cmd('clear', 'Clear current Codex thread context'),
   cmd('compact', 'Compact current Codex thread context'),
   cmd('goal', 'Set, view, pause, resume, or clear a persistent Codex goal'),
@@ -40,6 +41,7 @@ export const BUILTIN_CODEX_COMMANDS: SlashCommand[] = [
   cmd('model', 'Show or set Codex model, e.g. /model gpt-5.5'),
   cmd('reasoning', 'Show or set reasoning effort'),
   cmd('effort', 'Alias for /reasoning'),
+  cmd('personality', 'Show or set response style: friendly, pragmatic, or none'),
   cmd('permissions', 'Show or set permission mode'),
   cmd('permission', 'Alias for /permissions')
 ];
@@ -48,6 +50,50 @@ export const BUILTIN_GEMINI_COMMANDS: SlashCommand[] = [
   cmd('clear', 'Clear the screen and conversation history'),
   cmd('compress', 'Compress the context by replacing it with a summary'),
   cmd('stats', 'Check session stats')
+];
+// grok（对照上游 BUILTIN_SLASH_COMMANDS.grok）
+export const BUILTIN_GROK_COMMANDS: SlashCommand[] = [
+  cmd('compact', 'Compress conversation history to save context'),
+  cmd('context', 'Show context window usage and session stats'),
+  cmd('session-info', 'Show Grok session model, turns, and context usage'),
+  cmd('goal', 'Set, manage, or inspect an autonomous goal'),
+  cmd('always-approve', 'Toggle automatic tool approval'),
+  cmd('auto', 'Let Grok classify safe tool calls for automatic approval')
+];
+// opencode（对照上游 BUILTIN_SLASH_COMMANDS.opencode）
+export const BUILTIN_OPENCODE_COMMANDS: SlashCommand[] = [
+  cmd('help', 'Show supported HAPI OpenCode slash commands'),
+  cmd('status', 'Show current OpenCode session config'),
+  cmd('plan', 'Enable plan mode; use /plan off to return to default'),
+  cmd('default', 'Return OpenCode permission mode to default'),
+  cmd('init', 'Generate or refresh AGENTS.md for this project')
+];
+// cursor（对照上游 BUILTIN_SLASH_COMMANDS.cursor；仅 1 条 pass-through）
+export const BUILTIN_CURSOR_COMMANDS: SlashCommand[] = [
+  cmd('compress', 'Compress conversation context to free window space (pass-through to Cursor agent)')
+];
+// copilot（对照上游 BUILTIN_SLASH_COMMANDS.copilot）
+export const BUILTIN_COPILOT_COMMANDS: SlashCommand[] = [
+  cmd('help', 'Show supported Copilot slash commands'),
+  cmd('status', 'Show current Copilot session config'),
+  cmd('plan', 'Start plan mode for structured implementation planning'),
+  cmd('autopilot', 'Start autopilot mode for autonomous multi-step work'),
+  cmd('fleet', 'Run parallel subagents for a task (combine with Interactive/Plan/Autopilot)'),
+  cmd('tasks', 'List or manage fleet tasks'),
+  cmd('subagents', 'Manage Copilot subagents'),
+  cmd('agents', 'Alias for /subagents'),
+  cmd('delegate', 'Delegate work to a subagent'),
+  cmd('agent', 'Select or configure a custom agent'),
+  cmd('rubber-duck', 'Consult the rubber-duck agent for a second opinion on plans, code, and tests'),
+  cmd('security-review', 'Run a focused security review of active local code changes'),
+  cmd('research', 'Run a deep research investigation across the codebase and web'),
+  cmd('review', 'Run the code-review agent on current changes'),
+  cmd('skills', 'List, inspect, add, or remove Copilot skills'),
+  cmd('context', 'Show current context usage'),
+  cmd('model', 'Show or switch the active model'),
+  cmd('permissions', 'Show or set permission mode'),
+  cmd('permission', 'Alias for /permissions'),
+  cmd('usage', 'Show session usage metrics')
 ];
 
 function cmd(name: string, description: string): SlashCommand {
@@ -58,13 +104,17 @@ function cmd(name: string, description: string): SlashCommand {
   return c;
 }
 
-// 某 agent 的内置命令（对照 getBuiltinSlashCommands；返回拷贝）。opencode/cursor 上游空数组（靠 RPC），
-//   未知 agent 回退 claude（对照上游 `?? claude`）。
+// 某 agent 的内置命令（对照 getBuiltinSlashCommands；返回拷贝）。kimi/pi 上游空数组；未知 agent 回退 claude
+//   （对照上游 `?? claude`）。opencode/cursor/copilot/grok 各有专属表（v0.26.0 不再靠 RPC）。
 export function getBuiltinSlashCommands(agent: string): SlashCommand[] {
   if (agent === 'claude') { return BUILTIN_CLAUDE_COMMANDS.slice(); }
   if (agent === 'codex') { return BUILTIN_CODEX_COMMANDS.slice(); }
   if (agent === 'gemini') { return BUILTIN_GEMINI_COMMANDS.slice(); }
-  if (agent === 'opencode' || agent === 'cursor') { return []; }
+  if (agent === 'grok') { return BUILTIN_GROK_COMMANDS.slice(); }
+  if (agent === 'opencode') { return BUILTIN_OPENCODE_COMMANDS.slice(); }
+  if (agent === 'cursor') { return BUILTIN_CURSOR_COMMANDS.slice(); }
+  if (agent === 'copilot') { return BUILTIN_COPILOT_COMMANDS.slice(); }
+  if (agent === 'kimi' || agent === 'pi') { return []; }
   return BUILTIN_CLAUDE_COMMANDS.slice();
 }
 

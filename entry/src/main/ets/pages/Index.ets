@@ -10,8 +10,10 @@ import {
   MachineGroup,
   DirectoryGroup,
   RenderRow,
+  PinnedBucket,
   groupSessionsByDirectory,
   flattenGroups,
+  computePinnedBuckets,
   isGroupCollapsed,
   machineGroupHasActive,
   directoryGroupHasActive,
@@ -23,6 +25,7 @@ import { SyncingBanner } from '../components/SyncingBanner';
 import { ServerToastOverlay } from '../components/ServerToastOverlay';
 import { classifySessionAttention, AttentionKind, getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
 import { SessionPreviewLimitService, getSessionPreviewLimitState } from '../services/SessionPreviewLimitService';
+import { getPinInProgressState } from '../services/PinInProgressService';
 import { getSessionListStatusModeState } from '../services/SessionListStatusModeService';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
 import { ToastService } from '../services/ToastService';
@@ -53,6 +56,7 @@ struct Index {
   @Local machines: Machine[] = [];                                              // 机器列表（机器组头 label 用；MACHINE_UPDATED 刷新）
   @Local collapsedOverride: Map<string, boolean> = new Map<string, boolean>();  // 用户显式折叠/展开态（true=折叠）
   @Local expandedGroups: Set<string> = new Set<string>();   // 用户显式展开的目录组 key（超出预览行数时点「展开更多」登记；reassign 触发 V2）
+  @Local pinSectionCollapsed: boolean = false;              // 「进行中」置顶分区折叠态（pinInProgressSessions 开时；搜索中恒展开）
   // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
   @Local sync: SyncState = getSyncState();
 
@@ -313,12 +317,28 @@ struct Index {
   //   （同 filteredSessions getter / theme `c` getter 模式）。
   get sessionRows(): RenderRow[] {
     // 读 @Trace limit（SessionPreviewLimitService 单例）建立 V2 刷新依赖（设置页改 limit 即重算），同 theme `c` getter 模式。
+    const limit: number = getSessionPreviewLimitState().limit;
+    // 读 @Trace enabled（PinInProgressService 单例）：设置页切换「置顶进行中」即重算（对照 web pinInProgressSessions）。
+    const pinEnabled: boolean = getPinInProgressState().enabled;
+    let pinned: PinnedBucket[] = [];
+    let groupSource: SessionSummary[] = this.filteredSessions;
+    if (pinEnabled) {
+      // 活跃会话抽到置顶分区；目录分组只收非活跃（对照上游 filter !session.active）。
+      pinned = computePinnedBuckets(this.filteredSessions);
+      const inactive: SessionSummary[] = [];
+      for (let i = 0; i < this.filteredSessions.length; i++) {
+        if (!this.filteredSessions[i].active) { inactive.push(this.filteredSessions[i]); }
+      }
+      groupSource = inactive;
+    }
     return flattenGroups(
-      groupSessionsByDirectory(this.filteredSessions),
+      groupSessionsByDirectory(groupSource),
       this.isSearching(),
       this.collapsedOverride,
-      getSessionPreviewLimitState().limit,
-      this.expandedGroups
+      limit,
+      this.expandedGroups,
+      pinned,
+      this.pinSectionCollapsed
     );
   }
 
@@ -611,6 +631,67 @@ struct Index {
   }
 
   // 机器组头行（▼/▶ + 💻 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
+  // 「进行中」置顶分区头（▼/▶ + 绿点 + 标题 + 计数；点击折叠/展开，对照上游 running-section 头）。
+  //   绿点=success（活跃指示；上游 animate-pulse，本项目静态点免列表回收动画坑）。
+  @Builder
+  private PinnedHeader(row: RenderRow) {
+    Row({ space: 6 }) {
+      Text(this.pinSectionCollapsed && !this.isSearching() ? '▶' : '▼')
+        .fontSize(fs(11))
+        .fontColor(this.c.textTertiary)
+      Column()
+        .width(7)
+        .height(7)
+        .borderRadius(4)
+        .backgroundColor(this.c.success)
+      Text(t('sessions.runningSection'))
+        .fontSize(fs(13))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(`(${row.pinnedCount})`)
+        .fontSize(fs(12))
+        .fontColor(this.c.textTertiary)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 置顶分区子桶头（圆点 + 标签 + 计数；对照上游 RUNNING_BUCKETS.map）。
+  //   working→绿(success) / pending→琥珀(warning) / idle→灰(textTertiary)；圆点与标签同色。
+  @Builder
+  private PinnedBucketRow(row: RenderRow) {
+    Row({ space: 5 }) {
+      Column()
+        .width(6)
+        .height(6)
+        .borderRadius(3)
+        .backgroundColor(this.pinnedBucketColor(row.bucketKey))
+      Text(`${this.pinnedBucketLabel(row.bucketKey)} (${row.pinnedCount})`)
+        .fontSize(fs(11))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.pinnedBucketColor(row.bucketKey))
+    }
+    .width('100%')
+    .padding({ left: 40, right: 16, top: 6, bottom: 4 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 子桶圆点/标签色（对照上游 colorClass：working=success / pending=warning / idle=hint）。
+  private pinnedBucketColor(key: string): string {
+    if (key === 'working') { return this.c.success; }
+    if (key === 'pending') { return this.c.warning; }
+    return this.c.textTertiary;
+  }
+  private pinnedBucketLabel(key: string): string {
+    if (key === 'working') { return t('sessions.running.working'); }
+    if (key === 'pending') { return t('sessions.running.pending'); }
+    return t('sessions.running.idle');
+  }
+
   @Builder
   private MachineHeader(mg: MachineGroup) {
     Row({ space: 6 }) {
@@ -803,6 +884,10 @@ struct Index {
                       this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
                     } else if (row.kind === 'show-more') {
                       this.ShowMoreRow(row)
+                    } else if (row.kind === 'pinned-header') {
+                      this.PinnedHeader(row)
+                    } else if (row.kind === 'pinned-bucket') {
+                      this.PinnedBucketRow(row)
                     } else {
                       this.SessionItem(row.session as SessionSummary)
                     }
@@ -814,6 +899,13 @@ struct Index {
                       this.toggleDirectory(row.directoryGroup as DirectoryGroup);
                     } else if (row.kind === 'show-more') {
                       this.expandGroup(row.groupKey);
+                    } else if (row.kind === 'pinned-header') {
+                      // 搜索中恒展开（对照上游 !runningSectionCollapsed || isFiltering），不响应折叠
+                      if (!this.isSearching()) {
+                        this.pinSectionCollapsed = !this.pinSectionCollapsed;
+                      }
+                    } else if (row.kind === 'pinned-bucket') {
+                      // 子桶头非交互（仅展示分组标签）
                     } else {
                       this.openSession(row.session as SessionSummary);
                     }

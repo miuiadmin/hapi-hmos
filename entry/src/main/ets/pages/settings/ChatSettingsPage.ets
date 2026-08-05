@@ -15,6 +15,7 @@ import { VALID_TERMINAL_FONT_SIZES } from '../../chat/TerminalFontSize';
 import { SessionPreviewLimitService } from '../../services/SessionPreviewLimitService';
 import { SessionListStatusModeService } from '../../services/SessionListStatusModeService';
 import { SessionListStatusMode } from '../../chat/SessionListStatusMode';
+import { PinInProgressService } from '../../services/PinInProgressService';
 import { HapticService } from '../../services/HapticService';
 import {
   ChatSurfaceColorPreference,
@@ -53,6 +54,7 @@ struct ChatSettingsPage {
   private get terminalFontSize(): number { return TerminalFontSizeService.currentSize; }
   private get sessionPreviewLimit(): number { return SessionPreviewLimitService.currentLimit; }
   private get sessionListStatusMode(): SessionListStatusMode { return SessionListStatusModeService.currentMode; }
+  private get pinInProgressEnabled(): boolean { return PinInProgressService.currentEnabled; }
 
   aboutToAppear(): void {
     this.loadEnterToSend();
@@ -71,6 +73,7 @@ struct ChatSettingsPage {
   private selectTerminalToolDisplay(mode: TerminalToolDisplayMode): void { TerminalToolDisplayService.setMode(mode); }
   private selectTerminalFontSize(size: number): void { TerminalFontSizeService.setSize(size); }
   private selectSessionListStatusMode(mode: SessionListStatusMode): void { SessionListStatusModeService.setMode(mode); }
+  private setPinInProgress(on: boolean): void { PinInProgressService.setEnabled(on); }
   private onPreviewLimitChange(value: string): void {
     const n: number = parseInt(value, 10);
     if (isNaN(n)) { return; }
@@ -229,7 +232,7 @@ struct ChatSettingsPage {
         })
         .backgroundColor(this.c.bg).borderRadius($r('app.float.setting_card_radius')).clip(true)
 
-        // ── 会话列表（预览行数 + 状态模式）──
+        // ── 会话列表（预览行数 + 状态模式 + 置顶进行中）──
         ListItem() { SettingSectionTitle({ text: t('settings.chat.sessionList') }) }
         ListItemGroup() {
           // 预览行数：自定义 TextInput 行（SettingCard 无 TextInput suffix，局部 Row 对齐卡片尺寸）
@@ -244,8 +247,18 @@ struct ChatSettingsPage {
           ListItem() {
             SettingCard({
               primaryText: t('statusMode.detailed'), suffixType: 'check',
-              isChecked: this.sessionListStatusMode === 'detailed', rowPosition: 'last',
+              isChecked: this.sessionListStatusMode === 'detailed', rowPosition: 'middle',
               onItemClick: () => { this.selectSessionListStatusMode('detailed'); }
+            })
+          }
+          // 置顶进行中会话（对照上游 pinInProgressSessions：活跃会话抽到「进行中」分区）
+          ListItem() {
+            SettingCard({
+              primaryText: t('settings.chat.pinInProgress'),
+              secondaryText: t('settings.chat.pinInProgress.desc'),
+              suffixType: 'switch',
+              switchIsOn: this.pinInProgressEnabled, rowPosition: 'last',
+              onSwitchChange: (v: boolean) => { this.setPinInProgress(v); }
             })
           }
         }

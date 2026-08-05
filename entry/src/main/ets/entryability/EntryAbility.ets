@@ -14,6 +14,7 @@ import { ChatSurfaceColorsService } from '../services/ChatSurfaceColorsService';
 import { TerminalToolDisplayService } from '../services/TerminalToolDisplayService';
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
+import { PinInProgressService } from '../services/PinInProgressService';
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SessionListStatusModeService } from '../services/SessionListStatusModeService';
 import { SyncStateService } from '../services/SyncStateService';
@@ -105,6 +106,8 @@ export default class EntryAbility extends UIAbility {
     await VoiceSettingsService.init();
     // 会话列表每组预览行数须在 loadContent 前从持久化读回（Index sessionRows 首帧即用，避默认 8 闪一下）
     await SessionPreviewLimitService.init();
+    // 置顶进行中会话开关须在 loadContent 前从持久化读回（Index sessionRows 首帧即用正确分区，避默认关闪一下）
+    await PinInProgressService.init();
     // 终端字号须在 loadContent 前从持久化读回（TerminalPage boot 即用，避默认 13 闪一下）
     await TerminalFontSizeService.init();
     // 会话列表状态模式须在 loadContent 前从持久化读回（Index SessionItem 首帧即用，避默认 standard 闪一下）

@@ -15,6 +15,7 @@ export class PreferenceKeys {
   static readonly TOOL_GROUP_BG: string = 'hapi_tool_group_bg';   // 工具组气泡配色偏好串（'default'|'preset:soft-x'|'custom:#hex'）
   static readonly USER_MESSAGE_BG: string = 'hapi_user_message_bg';   // 用户消息气泡配色偏好串
   static readonly SESSION_PREVIEW_LIMIT: string = 'hapi_session_preview_limit';   // 会话列表每组预览行数（整数，默认 8）
+  static readonly PIN_IN_PROGRESS_SESSIONS: string = 'hapi_pin_in_progress_sessions';   // 置顶进行中会话（bool，默认关：活跃会话抽到「进行中」分区）
   static readonly TERMINAL_FONT_SIZE: string = 'hapi_terminal_font_size';   // 终端字号（离散 9/11/13/15/17，默认 13）
   static readonly SESSION_LIST_STATUS_MODE: string = 'hapi_session_list_status_mode';   // 会话列表状态模式（'standard'|'detailed'，默认 standard）
   static readonly HAPTICS_ENABLED: string = 'hapi_haptics_enabled';   // 触感反馈开关（'on'|'off'，默认 on：移动端发送/删除/长按/错误短震动）

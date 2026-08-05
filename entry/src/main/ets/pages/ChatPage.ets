@@ -49,7 +49,7 @@ import { FileViewerRouteParams } from './FileViewerPage';
 import { TerminalRouteParams } from './TerminalPage';
 import { VoiceRouteParams } from './VoicePage';
 import { AgentState, parseAgentState } from '../chat/AgentState';
-import { Session, TeamState, TodoItem, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName, ThreadGoal } from '../models/Types';
+import { Session, TeamState, TodoItem, FileSearchItem, AttachmentMetadata, SkillItem, agentDisplayName, modelDisplayName, ThreadGoal, getSupersedingSessionId } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { shouldShowDateDivider, formatClock, formatDateDivider } from '../utils/DateFormatUtils';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -195,11 +195,17 @@ struct ChatPage {
     return color;
   }
   // 玻璃底半透明（surface + 暗 '14'/亮 '1A'）。
-  private glassBg(): string { return this.withAlpha(this.c.surface, this.isDark ? '14' : '1A'); }
+  // 顶栏圆钮底色：surfaceSelected 实色（对齐 chatcube ChatNavigationBar 按钮 comp_background_tertiary 实色）。
+  //   ⚠️ 不用 backgroundBlurStyle：① 模拟器 blur 虽 no-op，但其默认底色(近白)会盖掉 backgroundColor → 钮恒白隐形
+  //   （实测 surfaceSelected 72% alpha + COMPONENT_REGULAR，钮心仍 253≈白，diff 仅 3）；
+  //   ② chatcube 顶栏钮本就不用 blur，只顶栏容器液态。故钮走实色 surfaceSelected(#ECEEF1浅 Δ19 / #2E2E33深 Δ22 vs bg)，
+  //   叠 border + shadow 即可辨；真机钮浮在顶栏 GRADIENT_BLUR 液态层之上（chatcube 同款观感）。
+  private glassBg(): string { return this.c.surfaceSelected; }
   // 未选中描边（border + 暗 'A6'/亮 '73'）。
   private glassBorderInactive(): string { return this.withAlpha(this.c.border, this.isDark ? 'A6' : '73'); }
   // 阴影色（暗 0.18 / 亮 rgba(15,23,42,0.06)）。
-  private glassShadow(): string { return this.isDark ? 'rgba(0, 0, 0, 0.18)' : 'rgba(15, 23, 42, 0.06)'; }
+  // 圆钮投影：浅色对齐 chatcube ChatNavigationBar shadow rgba(0,0,0,0.1)（原 0.06 过淡，模拟器圆钮无浮起感）。
+  private glassShadow(): string { return this.isDark ? 'rgba(0, 0, 0, 0.18)' : 'rgba(15, 23, 42, 0.10)'; }
 
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
@@ -229,6 +235,9 @@ struct ChatPage {
 
   aboutToAppear(): void {
     this.isDisposed = false;        // 复用兜底：aboutToDisappear 置 true 后，若组件被复用须复位
+    // 取代流观测态复位（复用同实例进新会话时，旧观测态不应残留→否则误判 shouldFollow）
+    this.observedSupSessionId = '';
+    this.observedSupSedingId = '';
     // @Param 在构造时已由 @Builder 注入，aboutToAppear 可读
     this.sessionId = this.routeParamsSeed !== null ? this.routeParamsSeed.sessionId : '';
     this.sessionTitle = this.routeParamsSeed !== null ? this.routeParamsSeed.title : '';
@@ -354,6 +363,10 @@ struct ChatPage {
   private blocksRecomputePending: boolean = false;    // 窗口内有新调用 → 末次兜底
   private sessionRefreshTimer: number = -1;           // session-updated 重拉去抖句柄（200ms 尾沿合并密集事件）
   private isDisposed: boolean = false;                // aboutToDisappear 置位，防销毁后回调跑重算
+  // 会话取代流观测态（对照 web observedSessionRef；shouldFollow 仅当「之前观测本会话且之前无取代」才跟随）。
+  //   首载入直接落到一个已被取代的会话 → 仅播种不跟随；运行中 supersededBySessionId 新增才 replacePath 跟随新会话。
+  private observedSupSessionId: string = '';
+  private observedSupSedingId: string = '';
   // 输入框补全重算（slash/mention/skill）合并延迟标记。TextArea 的 onChange/onTextSelectionChange 在其【自身构建周期内】
   //   触发——若此时同步改 slashSuggestions/mentionItems/skillSuggestionItems（构建中条件渲染的联想浮层），会触发
   //   ArkUI「New UINode added while re-render」（build-phase state change），且TextArea 的 maxHeight 约束可能不生效→输入框撑大。
@@ -1196,6 +1209,31 @@ struct ChatPage {
     this.collaborationMode = session.collaborationMode;
     this.copilotAgentMode = session.copilotAgentMode;
     this.modelReasoningEffort = session.modelReasoningEffort;
+    this.maybeFollowSuperseding(session);   // OpenCode /clear 取代流：检测 supersededBySessionId 变化，必要时跟随新会话
+  }
+
+  // 会话取代流（OpenCode /clear：旧会话被新会话取代；对照 web followSupersedingSession + observedSessionRef）。
+  //   shouldFollow 仅当「之前就在观测本会话 + 之前无取代 + 现在出现取代」→ 首载入已取代的会话只播种、不跟随，
+  //   运行中 supersededBySessionId 新增才 replacePath 跳到新会话（避免历史链接每次都跳走）。
+  private maybeFollowSuperseding(session: Session): void {
+    const supersedingId: string = getSupersedingSessionId(this.sessionId, session.supersededBySessionId);
+    const shouldFollow: boolean = this.observedSupSessionId === this.sessionId
+      && this.observedSupSedingId === ''
+      && supersedingId !== '';
+    // 更新观测态（无论是否跟随，都须记下当前 sessionId + supersedingId 供下次比对）
+    this.observedSupSessionId = this.sessionId;
+    this.observedSupSedingId = supersedingId;
+    if (shouldFollow && !this.isDisposed && this.navPathStack !== null) {
+      this.followSupersedingSession(supersedingId);
+    }
+  }
+
+  // 跟随取代的新会话：replacePath（替换栈顶，不留返回历史，对照 web navigate replace:true）。
+  private followSupersedingSession(newSessionId: string): void {
+    if (this.navPathStack === null) { return; }
+    const params: ChatPageRouteParams = new ChatPageRouteParams();
+    params.sessionId = newSessionId;
+    this.navPathStack.replacePath({ name: 'ChatPage', param: params });
   }
 
   // session-updated 到达 → 尾沿 200ms 去抖后重拉会话全量态。
@@ -1280,7 +1318,7 @@ struct ChatPage {
   private async handleSend(): Promise<void> {
     const text = this.inputText.trim();
     const attachments = this.pendingAttachments;   // 捕获待发附件（发送后清空）
-    if ((text === '' && attachments.length === 0) || this.isSending || this.sessionId === '') {
+    if (this.isSending || this.sessionId === '') {
       return;
     }
     this.localIdCounter = this.localIdCounter + 1;
@@ -2960,7 +2998,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
       .border({ width: 1, color: this.glassBorderInactive() })
       .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
       .onClick(() => {
@@ -3003,7 +3040,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
       .border({ width: 1, color: this.searchMode ? this.c.primary : this.glassBorderInactive() })
       .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
       .animation({ duration: 200, curve: Curve.EaseOut })
@@ -3018,7 +3054,6 @@ struct ChatPage {
       .width(36)
       .height(36)
       .backgroundColor(this.glassBg())
-      .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
       .border({ width: 1, color: this.glassBorderInactive() })
       .shadow({ radius: 10, color: this.glassShadow(), offsetX: 0, offsetY: 2 })
       .bindMenu(this.ChatTopMenu(), {
@@ -3442,6 +3477,8 @@ struct ChatPage {
     .bindToScrollable([this.scroller])
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .hideTitleBar(false, true)
+    .hideBackButton(true)   // 隐藏系统返回箭头：液态背景由系统 titleBar 提供，但返回按钮走 stackBuilder 内
+                             //   ChatTopBar 自建液态圆钮（chatcube 同款）；不隐藏会与系统箭头叠成「左上角两个返回」。
     .systemBarStyle(
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' },
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }

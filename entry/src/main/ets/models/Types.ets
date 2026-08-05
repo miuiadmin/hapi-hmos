@@ -163,6 +163,7 @@ export class Session {
   flavor: string = '';                       // metadata.flavor（claude/codex/…；ContextStatusBar 算预算 + 配置 overlay 门控用）
   path: string = '';                         // metadata.path（会话工作目录；终端页顶栏显示 cwd）
   worktreeBranch: string = '';               // metadata.worktree.branch（git 分支；标题副标题显示，对照 shared WorktreeMetadata.branch）
+  supersededBySessionId: string = '';        // metadata.supersededBySessionId（OpenCode /clear 取代流 v0.26.0；''=无取代）
   agentStateVersion: number = 0;
   // 原始 agentState（{controlledByUser, requests, completedRequests}），由 chat/parseAgentState 解析。
   // 存原始 Record 而非已解析对象，避免 models/ 反向依赖 chat/。
@@ -306,14 +307,15 @@ export function sessionTypeDisplayName(st: string): string {
 }
 
 // —— 会话内即时配置子集（对照 shared/src/modes.ts：各 flavor 的权限/协作/推理努力可选域）——
-//   permission-mode（/permission-mode 端点，全 flavor）：claude 4 / codex·gemini·kimi 4 / opencode 3 / cursor 4 /
-//     copilot 4（同 codex 形 default/read-only/safe-yolo/yolo）/ grok 4（default/auto/plan/bypassPermissions）/ pi 无（[]）。
+//   permission-mode（/permission-mode 端点，全 flavor）：claude 4 / codex·gemini·kimi 4 / opencode 3 / cursor 6
+//     （default/plan/ask/debug/autoReview/yolo）/ copilot 4（同 codex 形 default/read-only/safe-yolo/yolo）
+//     / grok 4（default/auto/plan/bypassPermissions）/ pi 无（[]）。
 export const CLAUDE_PERMISSION_MODES: string[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 export const CODEX_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo'];   // codex/gemini/kimi 共用
 export const COPILOT_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo']; // copilot（同 codex 形，对照 COPILOT_PERMISSION_MODES）
 export const GROK_PERMISSION_MODES: string[] = ['default', 'auto', 'plan', 'bypassPermissions']; // grok（含 'auto' 自动放行模式）
 export const OPENCODE_PERMISSION_MODES: string[] = ['default', 'plan', 'yolo'];
-export const CURSOR_PERMISSION_MODES: string[] = ['default', 'plan', 'ask', 'yolo'];
+export const CURSOR_PERMISSION_MODES: string[] = ['default', 'plan', 'ask', 'debug', 'autoReview', 'yolo'];
 // collaboration-mode（/collaboration-mode 端点，仅 codex）：default/plan。
 export const CODEX_COLLABORATION_MODES: string[] = ['default', 'plan'];
 // copilot-agent-mode（/copilot-agent-mode 端点，仅 copilot；对照 shared/src/copilotModes.ts COPILOT_AGENT_MODES）。
@@ -339,6 +341,8 @@ export function permissionModeDisplayName(mode: string): string {
   if (mode === 'bypassPermissions') { return t('types.permission.bypass'); }
   if (mode === 'plan') { return t('types.permission.planMode'); }
   if (mode === 'ask') { return t('types.permission.ask'); }
+  if (mode === 'debug') { return t('types.permission.debug'); }   // cursor debug 模式
+  if (mode === 'autoReview') { return t('types.permission.autoReview'); }   // cursor 自动审查
   if (mode === 'read-only') { return t('types.permission.readonly'); }
   if (mode === 'safe-yolo') { return t('types.permission.safeYolo'); }
   if (mode === 'yolo') { return t('types.permission.yolo'); }
@@ -417,12 +421,23 @@ export function parseSessionDetail(json: string): Session {
     if (worktreeRaw !== null) {
       s.worktreeBranch = pickStr(worktreeRaw, 'branch');
     }
+    // supersededBySessionId（OpenCode /clear 取代流 v0.26.0；对照 shared SessionMetadataSchema.supersededBySessionId）
+    s.supersededBySessionId = pickStr(detailMeta, 'supersededBySessionId');
   }
   s.agentStateVersion = pickNum(raw, 'agentStateVersion');
   s.agentStateRaw = pickObj(raw, 'agentState');
   s.teamState = parseTeamState(pickObj(raw, 'teamState'));
   s.todos = parseTodoList(raw['todos']);
   return s;
+}
+
+// —— 会话取代流（OpenCode /clear：旧会话被新会话取代；对照 web/src/routes/sessions/followSupersedingSession.ts）——
+//   metadata.supersededBySessionId 指向取代本会话的新会话；''（空/等于自身）= 无取代。
+//   返回 '' 而非 null（ArkTS 无联合 null，简化调用方）。
+export function getSupersedingSessionId(currentSessionId: string, supersededBySessionId: string): string {
+  const replacement: string = supersededBySessionId.trim();
+  if (replacement === '' || replacement === currentSessionId) { return ''; }
+  return replacement;
 }
 
 // —— 安全解析辅助（从 Record 取值，类型不符给默认）——
