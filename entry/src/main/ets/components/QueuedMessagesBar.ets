@@ -47,7 +47,6 @@ export struct QueuedMessagesBar {
               .fontColor(this.c.textPrimary)
               .maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
               .width('100%')
             if (this.scheduleLabel(m) !== '') {
               Row({ space: 4 }) {
