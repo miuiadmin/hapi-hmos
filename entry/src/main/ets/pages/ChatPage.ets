@@ -194,12 +194,8 @@ struct ChatPage {
     }
     return color;
   }
-  // 玻璃底半透明（surface + 暗 '14'/亮 '1A'）。
-  // 顶栏圆钮底色：surfaceSelected 实色（对齐 chatcube ChatNavigationBar 按钮 comp_background_tertiary 实色）。
-  //   ⚠️ 不用 backgroundBlurStyle：模拟器 blur 虽 no-op，但其默认底色(近白)会盖掉 backgroundColor → 钮恒白隐形。
-  //   chatcube 顶栏钮本就无 blur、无 border、无 shadow——只顶栏容器液态(GRADIENT_BLUR)；
-  //   钮走实色 surfaceSelected 浮于液态顶栏之上（chatcube 同款观感）。真机才出液态，模拟器只见实色圆。
-  private glassBg(): string { return this.c.surfaceSelected; }
+  // 顶栏三钮（‹返回 / 🔍 / ⋯）走原生液态玻璃：backgroundBlurStyle(COMPONENT_THIN)，不设实色 backgroundColor
+  //   （实色底会被 blur 默认 activeColor 盖掉→钮隐形，且遮挡玻璃材质）。真机出液态；模拟器 blur no-op 只见平色。
 
   private navPathStack: NavPathStack | null = null;
   private scroller: Scroller = new Scroller();
@@ -2002,6 +1998,11 @@ struct ChatPage {
         if (this.isDisposed) {
           return;
         }
+        // ★ 触发帧重判贴底态：调度（recompute 末）与触发（0/60ms 后）之间，用户可能已上滑离底。
+        //   不重判 → 已离底的延迟 scrollEdge 仍把读历史的用户拽回底部。
+        if (!this.isPinnedToBottom) {
+          return;
+        }
         this.scroller.scrollEdge(Edge.Bottom);
       }, d);
       this.followScrollTimerIds.push(id);
@@ -2978,8 +2979,8 @@ struct ChatPage {
   // 液态顶栏（HDS 沉浸光感：渲染在 HdsNavDestination 的 titleBar.stackBuilder 内）。
   //   液态背景（systemMaterialEffect ADAPTIVE + GRADIENT_BLUR 渐变 + maskExtraHeight 过渡带）由系统 titleBar 提供；
   //   本 Builder 仅渲染顶栏内容：左返回(液态圆钮) + 标题列(flavor 徽章 + 标题/副标题) + 搜索/⋯ 液态 chip。
-  //   圆钮走实色 surfaceSelected（chatcube comp_background_tertiary 同款：无 border、无 shadow）；液态由 titleBar
-  //   (systemMaterialEffect + GRADIENT_BLUR) 提供，根容器不设 backgroundColor/backdropBlur 避免与液态层叠加遮挡。
+  //   圆钮走原生 backgroundBlurStyle(COMPONENT_THIN) 液态玻璃（无实色底、无 border、无 shadow）；液态也由
+  //   titleBar(systemMaterialEffect + GRADIENT_BLUR) 提供，根容器不设 backgroundColor/backdropBlur 避免叠加遮挡。
   @Builder
   private ChatTopBar() {
     Row({ space: 8 }) {
@@ -2991,7 +2992,7 @@ struct ChatPage {
       }
       .width(36)
       .height(36)
-      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
       .onClick(() => {
         if (this.attachmentPanelOpen) { this.closeAttachmentPanel(); return; }
         if (this.navPathStack !== null) { this.navPathStack.pop(); }
@@ -3031,7 +3032,7 @@ struct ChatPage {
       }
       .width(36)
       .height(36)
-      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
       .onClick(() => { this.toggleSearch(); })
 
       // ⋯ 下拉（液态 chip + bindMenu frosted 气泡；替换原 SessionActionMenu 底部 sheet）
@@ -3042,7 +3043,7 @@ struct ChatPage {
       }
       .width(36)
       .height(36)
-      .backgroundColor(this.glassBg())
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
       .bindMenu(this.ChatTopMenu(), {
         placement: Placement.BottomRight,
         offset: { x: 0, y: 8 },
@@ -3328,15 +3329,26 @@ struct ChatPage {
               }
             })
             .onScroll((_scrollOffset: number, scrollState: ScrollState) => {
-              // ★ 逐帧判定用户是否上滑离底 → 立即取消贴底跟随（对照 chatcube handleMessageListDidScroll
-              //   的 isMovingAwayFromBottom → clearBottomFollowState）。旧 isPinnedToBottom 仅 onScrollStop（滚动
-              //   【停止后】）更新，用户上滑过程中仍 true，进会话后异步加载（图片/元数据/setMessages）触发
-              //   recompute → doRecomputeBlocks 末尾的 followScroll 把正在上滑读历史的用户拽回底部（"进会话上滑
-              //   又被重置滚到最新"根因）。此处逐帧置 false → followScroll 守卫失败 → 不再拽回。
-              //   程序 scrollEdge 瞬移到底 isAtEnd()=true 不会误判；仅用户主动滚动(Scroll/Fling)且离底才翻 false。
-              if ((scrollState === ScrollState.Scroll || scrollState === ScrollState.Fling) &&
-                this.isPinnedToBottom && !this.scroller.isAtEnd()) {
+              // ★ 逐帧判定用户是否上滑离底，命中即两件事都做（不只翻 isPinnedToBottom）：
+              //   ① isPinnedToBottom=false → followScroll 守卫失败，不再拽回（对照 chatcube
+              //      handleMessageListDidScroll 的 isMovingAwayFromBottom → clearBottomFollowState）。
+              //   ② cancelSettling → 进会话定锚的剩余重试 timer 放弃后续 scrollEdge。
+              //   旧实现仅 onScrollStop 才 cancelSettling，但程序 scrollEdge 自身会触发 onScrollStop(isAtEnd=true)
+              //   反复重钉底，且 settle timer 在遮罩揭幕后仍持续 1.8s 滚底 → 进会话后用户上滑被反复拽回最新
+              //   （「要等一下再滑才不拽」根因）。必须在用户【拖动首帧】即取消，而非等滚动停止。
+              //   程序 scrollEdge 瞬移到底 isAtEnd()=true → 不误判；仅用户主动滚动(Scroll/Fling)且离底才触发。
+              if (scrollState !== ScrollState.Scroll && scrollState !== ScrollState.Fling) {
+                return;
+              }
+              if (this.scroller.isAtEnd()) {
+                return;
+              }
+              if (this.isPinnedToBottom) {
                 this.isPinnedToBottom = false;
+              }
+              if (!this.settlingCancelled) {
+                this.cancelSettling();
+                this.isEntrySettling = false;   // 用户已介入 → 立即揭幕，勿再遮罩
               }
             })
 
