@@ -222,6 +222,7 @@ export const zhCN: Record<string, string> = {
   'chat.messageActions': '消息操作',
   'chat.config': '配置',
   'chat.search': '搜索',
+  'chat.more': '更多',
   'chat.defaultTitle': '对话',
   'session.item.worktree': '工作树',
   'chat.exportUser': '{time} 用户',

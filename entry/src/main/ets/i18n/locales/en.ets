@@ -221,6 +221,7 @@ export const en: Record<string, string> = {
   'chat.messageActions': 'Message actions',
   'chat.config': 'Configure',
   'chat.search': 'Search',
+  'chat.more': 'More',
   'chat.defaultTitle': 'Conversation',
   'session.item.worktree': 'Worktree',
   'chat.exportUser': '{time} User',
