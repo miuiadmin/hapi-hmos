@@ -129,6 +129,7 @@ struct ChatPage {
   @Local modelReasoningEffort: string = '';      // codex/opencode 推理努力（/model-reasoning-effort；首屏/SSE 播种）
   @Local permissionMode: string = '';            // 权限模式（/permission-mode；首屏/SSE 播种）
   @Local collaborationMode: string = '';         // codex 协作模式（/collaboration-mode；首屏/SSE 播种）
+  @Local copilotAgentMode: string = '';          // copilot agent 模式（/copilot-agent-mode v0.26.0；首屏/SSE 播种）
   @Local configSheetOpen: boolean = false;       // 会话配置 overlay 显隐（模型/权限/effort 即时改；⋯ 下拉「配置」开）
   @Local outlineOpen: boolean = false;           // 对话大纲抽屉显隐（📋 用户提问列表，tap 跳转）
   @Local outlineItems: ConversationOutlineItem[] = [];  // 大纲项（recomputeBlocks 随 blocks 重算）
@@ -1040,6 +1041,7 @@ struct ChatPage {
         this.effort = session.effort;
         this.permissionMode = session.permissionMode;
         this.collaborationMode = session.collaborationMode;
+        this.copilotAgentMode = session.copilotAgentMode;
         this.modelReasoningEffort = session.modelReasoningEffort;
       }).catch(() => {});
     }, 200);
@@ -1192,6 +1194,7 @@ struct ChatPage {
     this.effort = session.effort;
     this.permissionMode = session.permissionMode;
     this.collaborationMode = session.collaborationMode;
+    this.copilotAgentMode = session.copilotAgentMode;
     this.modelReasoningEffort = session.modelReasoningEffort;
   }
 
@@ -1759,6 +1762,12 @@ struct ChatPage {
     this.collaborationMode = mode;
     const ok = await getHubClient().setCollaborationMode(this.sessionId, mode);
     if (!ok) { this.collaborationMode = prev; showToast(t('chat.setCollaborationFailed')); }
+  }
+  private async applyCopilotAgentMode(mode: string): Promise<void> {
+    const prev = this.copilotAgentMode;
+    this.copilotAgentMode = mode;
+    const ok = await getHubClient().setCopilotAgentMode(this.sessionId, mode);
+    if (!ok) { this.copilotAgentMode = prev; showToast(t('chat.setCopilotAgentFailed')); }
   }
   private async applyEffort(effort: string): Promise<void> {
     const prev = this.effort;
@@ -2808,11 +2817,13 @@ struct ChatPage {
       modelReasoningEffort: this.modelReasoningEffort,
       permissionMode: this.permissionMode,
       collaborationMode: this.collaborationMode,
+      copilotAgentMode: this.copilotAgentMode,
       onSetModel: (m: string): void => { this.applyModel(m); },
       onSetEffort: (e: string): void => { this.applyEffort(e); },
       onSetReasoningEffort: (e: string): void => { this.applyReasoningEffort(e); },
       onSetPermissionMode: (m: string): void => { this.applyPermissionMode(m); },
       onSetCollaborationMode: (m: string): void => { this.applyCollaborationMode(m); },
+      onSetCopilotAgentMode: (m: string): void => { this.applyCopilotAgentMode(m); },
       onClose: (): void => { this.configSheetOpen = false; }
     })
   }

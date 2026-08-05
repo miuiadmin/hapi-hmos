@@ -275,9 +275,12 @@ export class HubClient {
 
   // 浏览远端目录（POST /api/machines/:id/list-directory body { path } → { entries }，对照 web listMachineDirectory）
   //   新建会话「选择文件夹」树浏览用；entry 无绝对 path，UI 拼 currentPath + '/' + name 进入子目录。
-  async listMachineDirectory(machineId: string, path: string): Promise<DirEntry[]> {
+  // 浏览远端目录（POST /api/machines/:id/list-directory body { path, includeHidden? } → { entries }，对照 web listMachineDirectory v0.26.0）
+  //   includeHidden=true 时返回隐藏目录（. 开头）；默认 false。仅 includeHidden=true 时随 body 发该字段（向后兼容）。
+  async listMachineDirectory(machineId: string, path: string, includeHidden: boolean = false): Promise<DirEntry[]> {
     const body = new ListDirectoryRequest();
     body.path = path;
+    if (includeHidden) { body.includeHidden = true; }
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/list-directory`, body, 'jwt');
     if (!resp.success) {
@@ -314,6 +317,7 @@ export class HubClient {
   // 新建会话：spawn agent（POST /api/machines/:id/spawn → { type, sessionId }，对照 web spawnSession）
   //   在指定 machine 的 directory 上启动 agent 产生新 session。body 由 buildSpawnBody 条件化：
   //   model/effort 'auto' 省略、yolo 恒发、sessionType 恒发（默认 simple）、worktreeName 仅 worktree 时发。
+  //   copilotAgentMode（v0.26.0）仅 copilot flavor 非空发（默认 interactive=省略）；其余 flavor 恒空。
   //   成功返回 sessionId；HTTP 失败或业务 error 抛 Error。
   async spawnSession(
     machineId: string,
@@ -324,9 +328,10 @@ export class HubClient {
     yolo: boolean = false,
     sessionType: string = 'simple',
     worktreeName: string = '',
-    modelReasoningEffort: string = ''
+    modelReasoningEffort: string = '',
+    copilotAgentMode: string = ''
   ): Promise<string> {
-    const body: Record<string, Object> = buildSpawnBody(directory, agent, model, effort, yolo, sessionType, worktreeName, modelReasoningEffort);
+    const body: Record<string, Object> = buildSpawnBody(directory, agent, model, effort, yolo, sessionType, worktreeName, modelReasoningEffort, copilotAgentMode);
     const resp = await this.request(http.RequestMethod.POST,
       `/api/machines/${machineId}/spawn`, body, 'jwt');
     if (!resp.success) {
@@ -383,6 +388,25 @@ export class HubClient {
   async getSessionOpencodeModels(sessionId: string): Promise<ModelOption[]> {
     const resp = await this.request(http.RequestMethod.GET,
       `/api/sessions/${sessionId}/opencode-models`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
+    }
+    return parseOpencodeModelsResponse(resp.data);
+  }
+
+  // copilot 的 model 列表（v0.26.0 新增，GET .../copilot-models）：machine 作用域带 ?cwd=（同 opencode，按目录探测）；
+  //   响应 { availableModels: [{modelId,name?}], currentModelId? } 同 OpencodeModelsResponse → 复用 parseOpencodeModelsResponse。
+  async getMachineCopilotModels(machineId: string, cwd: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/machines/${machineId}/copilot-models?cwd=${encodeURIComponent(cwd)}`, undefined, 'jwt');
+    if (!resp.success) {
+      throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
+    }
+    return parseOpencodeModelsResponse(resp.data);
+  }
+  async getSessionCopilotModels(sessionId: string): Promise<ModelOption[]> {
+    const resp = await this.request(http.RequestMethod.GET,
+      `/api/sessions/${sessionId}/copilot-models`, undefined, 'jwt');
     if (!resp.success) {
       throw new Error(resp.errorMessage !== undefined ? resp.errorMessage : t('api.loadModelsFailed', kv('code', resp.statusCode)));
     }
@@ -600,6 +624,16 @@ export class HubClient {
     body['mode'] = mode;
     const resp = await this.request(http.RequestMethod.POST,
       `/api/sessions/${sessionId}/collaboration-mode`, body, 'jwt');
+    return resp.success;
+  }
+
+  // copilot agent 模式（POST /sessions/:id/copilot-agent-mode {mode}，v0.26.0 新增，仅 copilot）
+  //   mode ∈ interactive/plan/autopilot（调用方传合法值；历史值 'fleet' 已在解析侧归一）。
+  async setCopilotAgentMode(sessionId: string, mode: string): Promise<boolean> {
+    const body: Record<string, string> = {};
+    body['mode'] = mode;
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/copilot-agent-mode`, body, 'jwt');
     return resp.success;
   }
 

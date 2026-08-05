@@ -53,6 +53,7 @@ export function buildDenyBody(decision?: string): Record<string, string> {
 //   sessionType 恒发（默认 'simple'）；worktreeName 仅 sessionType==='worktree' 且 trim 非空发；
 //   modelReasoningEffort 仅非空发（上游第 5 位 optional，undefined 省略；区别于 session 侧
 //   setModelReasoningEffort 的 nullable 复位——spawn 侧新建无「清空」语义，空串即省略）。
+//   copilotAgentMode 仅非空发（v0.26.0 新增；空串=省略→agent 默认 interactive；copilot 之外 flavor 恒空）。
 export function buildSpawnBody(
   directory: string,
   agent: string,
@@ -61,7 +62,8 @@ export function buildSpawnBody(
   yolo: boolean,
   sessionType: string,
   worktreeName: string,
-  modelReasoningEffort: string = ''
+  modelReasoningEffort: string = '',
+  copilotAgentMode: string = ''
 ): Record<string, Object> {
   const body: Record<string, Object> = {};
   body['directory'] = directory;
@@ -75,6 +77,7 @@ export function buildSpawnBody(
     if (wt !== '') { body['worktreeName'] = wt; }
   }
   if (modelReasoningEffort !== '') { body['modelReasoningEffort'] = modelReasoningEffort; }
+  if (copilotAgentMode !== '') { body['copilotAgentMode'] = copilotAgentMode; }
   return body;
 }
 

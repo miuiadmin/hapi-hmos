@@ -159,6 +159,7 @@ export class Session {
   modelReasoningEffort: string = '';         // codex 推理努力（/model-reasoning-effort 端点；nullable → ''）
   permissionMode: string = '';               // 权限模式（/permission-mode 端点；optional → ''；claude: default/acceptEdits/bypassPermissions/plan）
   collaborationMode: string = '';            // codex 协作模式（/collaboration-mode 端点；optional → ''；default/plan）
+  copilotAgentMode: string = '';             // copilot agent 模式（/copilot-agent-mode 端点 v0.26.0；optional → ''；interactive/plan/autopilot）
   flavor: string = '';                       // metadata.flavor（claude/codex/…；ContextStatusBar 算预算 + 配置 overlay 门控用）
   path: string = '';                         // metadata.path（会话工作目录；终端页顶栏显示 cwd）
   worktreeBranch: string = '';               // metadata.worktree.branch（git 分支；标题副标题显示，对照 shared WorktreeMetadata.branch）
@@ -199,9 +200,11 @@ export class SpawnSessionRequest {
   worktreeName: string = '';      // 仅 worktree 时发
 }
 
-// —— 浏览远端目录请求体（对齐 MachineListDirectoryRequest：path 非空）——
+// —— 浏览远端目录请求体（对齐 MachineListDirectoryRequest：path 非空 + 可选 includeHidden v0.26.0）——
+//   includeHidden=true 时返回隐藏目录（. 开头）；默认 false（隐藏项不返）。HubClient 仅在非空 true 时随 body 发。
 export class ListDirectoryRequest {
   path: string = '';
+  includeHidden: boolean = false;
 }
 
 // —— 批量校验远端路径存在性请求体（对齐 MachinePathsExistsRequest：paths 非空数组，上限 1000）——
@@ -228,17 +231,23 @@ export class SkillItem {
   description: string = '';
 }
 
-// —— Agent 类型（对齐 shared/src/modes.ts AGENT_FLAVORS）——
-export const AGENT_FLAVORS: string[] = ['claude', 'codex', 'cursor', 'gemini', 'kimi', 'opencode'];
+// —— Agent 类型（对齐 shared/src/modes.ts AGENT_FLAVORS v0.26.0：claude/codex/copilot/cursor/gemini/grok/kimi/opencode/pi）——
+//   v0.26.0 相对 v0.25.4 新增 copilot（GitHub Copilot via ACP）；本次一并补齐此前未建模的 grok / pi 到上游全 9 项。
+//   grok 仅有 flavor 识别 + 权限模式 + 显示名（其 grok-models / reasoning-effort 端点属 v0.25.4 既有，未在本次移植范围）。
+//   pi 无运行时权限切换（上游 getPermissionModesForFlavor('pi') 返回 []）。
+export const AGENT_FLAVORS: string[] = ['claude', 'codex', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi'];
 
-// Agent 显示名（下拉用）
+// Agent 显示名（下拉用；对照 shared/src/flavors.ts FLAVOR_LABELS，claude 沿用本项目「Claude Code」旧称）
 export function agentDisplayName(flavor: string): string {
   if (flavor === 'claude') { return 'Claude Code'; }
   if (flavor === 'codex') { return 'Codex'; }
+  if (flavor === 'copilot') { return 'Copilot'; }
   if (flavor === 'cursor') { return 'Cursor'; }
   if (flavor === 'gemini') { return 'Gemini CLI'; }
+  if (flavor === 'grok') { return 'Grok Build'; }
   if (flavor === 'kimi') { return 'Kimi'; }
   if (flavor === 'opencode') { return 'OpenCode'; }
+  if (flavor === 'pi') { return 'Pi'; }
   return flavor;
 }
 
@@ -297,21 +306,31 @@ export function sessionTypeDisplayName(st: string): string {
 }
 
 // —— 会话内即时配置子集（对照 shared/src/modes.ts：各 flavor 的权限/协作/推理努力可选域）——
-//   permission-mode（/permission-mode 端点，全 flavor）：claude 4 / codex·gemini·kimi 4 / opencode 3 / cursor 4。
+//   permission-mode（/permission-mode 端点，全 flavor）：claude 4 / codex·gemini·kimi 4 / opencode 3 / cursor 4 /
+//     copilot 4（同 codex 形 default/read-only/safe-yolo/yolo）/ grok 4（default/auto/plan/bypassPermissions）/ pi 无（[]）。
 export const CLAUDE_PERMISSION_MODES: string[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 export const CODEX_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo'];   // codex/gemini/kimi 共用
+export const COPILOT_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo']; // copilot（同 codex 形，对照 COPILOT_PERMISSION_MODES）
+export const GROK_PERMISSION_MODES: string[] = ['default', 'auto', 'plan', 'bypassPermissions']; // grok（含 'auto' 自动放行模式）
 export const OPENCODE_PERMISSION_MODES: string[] = ['default', 'plan', 'yolo'];
 export const CURSOR_PERMISSION_MODES: string[] = ['default', 'plan', 'ask', 'yolo'];
 // collaboration-mode（/collaboration-mode 端点，仅 codex）：default/plan。
 export const CODEX_COLLABORATION_MODES: string[] = ['default', 'plan'];
+// copilot-agent-mode（/copilot-agent-mode 端点，仅 copilot；对照 shared/src/copilotModes.ts COPILOT_AGENT_MODES）。
+//   'fleet' 为历史值，上游 coerce→interactive；我们只发合法三值，收到 fleet 时归一到 interactive（见 normalizeCopilotAgentMode）。
+export const COPILOT_AGENT_MODES: string[] = ['interactive', 'plan', 'autopilot'];
+export const COPILOT_AGENT_MODE_DEFAULT: string = 'interactive';
 // model-reasoning-effort（/model-reasoning-effort 端点，codex/opencode）：codex low..xhigh / opencode low..max。
 export const CODEX_REASONING_EFFORTS: string[] = ['low', 'medium', 'high', 'xhigh'];
 export const OPENCODE_REASONING_EFFORTS: string[] = ['low', 'medium', 'high', 'max'];
 
 export function permissionModesForFlavor(flavor: string): string[] {
   if (flavor === 'codex' || flavor === 'gemini' || flavor === 'kimi') { return CODEX_PERMISSION_MODES; }
+  if (flavor === 'copilot') { return COPILOT_PERMISSION_MODES; }
+  if (flavor === 'grok') { return GROK_PERMISSION_MODES; }
   if (flavor === 'opencode') { return OPENCODE_PERMISSION_MODES; }
   if (flavor === 'cursor') { return CURSOR_PERMISSION_MODES; }
+  if (flavor === 'pi') { return []; }   // pi 无运行时权限切换（上游恒 auto-approve）
   return CLAUDE_PERMISSION_MODES;   // claude + 未知回退
 }
 export function permissionModeDisplayName(mode: string): string {
@@ -323,12 +342,26 @@ export function permissionModeDisplayName(mode: string): string {
   if (mode === 'read-only') { return t('types.permission.readonly'); }
   if (mode === 'safe-yolo') { return t('types.permission.safeYolo'); }
   if (mode === 'yolo') { return t('types.permission.yolo'); }
+  if (mode === 'auto') { return t('types.permission.auto'); }   // grok 自动放行模式
   return mode;
 }
 export function collaborationModeDisplayName(mode: string): string {
   if (mode === 'default') { return t('types.default'); }
   if (mode === 'plan') { return t('types.collaboration.plan'); }
   return mode;
+}
+// copilot agent 模式显示名（对照 COPILOT_AGENT_MODE_LABELS）
+export function copilotAgentModeDisplayName(mode: string): string {
+  if (mode === 'interactive') { return t('types.copilotAgent.interactive'); }
+  if (mode === 'plan') { return t('types.copilotAgent.plan'); }
+  if (mode === 'autopilot') { return t('types.copilotAgent.autopilot'); }
+  return mode;
+}
+// 归一 copilot agent 模式：历史值 'fleet' / 非法值 → interactive（对照 normalizeCopilotAgentMode）。
+export function normalizeCopilotAgentMode(value: string): string {
+  if (value === 'fleet') { return 'interactive'; }
+  if (value === 'interactive' || value === 'plan' || value === 'autopilot') { return value; }
+  return 'interactive';
 }
 export function reasoningEffortsForFlavor(flavor: string): string[] {
   return flavor === 'opencode' ? OPENCODE_REASONING_EFFORTS : CODEX_REASONING_EFFORTS;
@@ -368,6 +401,12 @@ export function parseSessionDetail(json: string): Session {
   s.modelReasoningEffort = pickStr(raw, 'modelReasoningEffort');
   s.permissionMode = pickStr(raw, 'permissionMode');
   s.collaborationMode = pickStr(raw, 'collaborationMode');
+  // copilotAgentMode 是 Session 顶层字段（SessionSchema.copilotAgentMode v0.26.0）；'' 表示非 copilot 会话（保持空），
+  //   有值时归一（历史 'fleet' → interactive）。仅 copilot 会话该字段有意义。
+  {
+    const copilotModeRaw = pickStr(raw, 'copilotAgentMode');
+    s.copilotAgentMode = copilotModeRaw !== '' ? normalizeCopilotAgentMode(copilotModeRaw) : '';
+  }
   // flavor 在 metadata.flavor（MetadataSchema.flavor 可空 → ''）：供 ContextStatusBar 算预算上限
   const detailMeta = pickObj(raw, 'metadata');
   if (detailMeta !== null) {

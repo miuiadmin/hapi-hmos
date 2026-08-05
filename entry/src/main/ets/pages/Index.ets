@@ -186,7 +186,8 @@ struct Index {
       || evtType === SyncEventType.SESSION_UPDATED
       || evtType === SyncEventType.SESSION_REMOVED
       || evtType === SyncEventType.SESSION_ENDED
-      || evtType === SyncEventType.SCHEDULED_MATURED) {
+      || evtType === SyncEventType.SCHEDULED_MATURED
+      || evtType === SyncEventType.MESSAGES_INVALIDATED) {   // v0.26.0：消息失效（global）→ 列表摘要可能过期，重拉（对照 web shouldInvalidateSessionListForEvent）
       this.loadSessions();
     } else if (evtType === SyncEventType.MACHINE_UPDATED) {
       this.loadMachines();

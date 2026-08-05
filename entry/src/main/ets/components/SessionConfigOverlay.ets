@@ -5,6 +5,7 @@ import {
   EFFORT_OPTIONS, effortDisplayName,
   permissionModesForFlavor, permissionModeDisplayName,
   CODEX_COLLABORATION_MODES, collaborationModeDisplayName,
+  COPILOT_AGENT_MODES, copilotAgentModeDisplayName,
   reasoningEffortsForFlavor, reasoningEffortDisplayName
 } from '../models/Types';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -26,12 +27,14 @@ export struct SessionConfigOverlay {
   @Param modelReasoningEffort: string = '';          // codex/opencode 推理努力
   @Param permissionMode: string = '';
   @Param collaborationMode: string = '';
-  @Local dynamicModels: ModelOption[] = [];          // codex/cursor/opencode 拉 session 作用域 live 模型；其余 flavor 留空
+  @Param copilotAgentMode: string = '';           // copilot agent 模式（interactive/plan/autopilot；v0.26.0）
+  @Local dynamicModels: ModelOption[] = [];          // codex/cursor/opencode/copilot 拉 session 作用域 live 模型；其余 flavor 留空
   @Event onSetModel: (m: string) => void = (m: string): void => {};
   @Event onSetEffort: (e: string) => void = (e: string): void => {};
   @Event onSetReasoningEffort: (e: string) => void = (e: string): void => {};
   @Event onSetPermissionMode: (m: string) => void = (m: string): void => {};
   @Event onSetCollaborationMode: (m: string) => void = (m: string): void => {};
+  @Event onSetCopilotAgentMode: (m: string) => void = (m: string): void => {};
   /** 标题栏 ✕ 关闭（ChatPage 收 configSheetOpen） */
   @Event onClose: () => void = (): void => {};
 
@@ -58,7 +61,7 @@ export struct SessionConfigOverlay {
   private async refreshModels(): Promise<void> {
     const sid: string = this.sessionId;
     const flavor: string = this.flavor;
-    if (sid === '' || (flavor !== 'codex' && flavor !== 'cursor' && flavor !== 'opencode')) {
+    if (sid === '' || (flavor !== 'codex' && flavor !== 'cursor' && flavor !== 'opencode' && flavor !== 'copilot')) {
       this.dynamicModels = [];
       return;
     }
@@ -68,6 +71,8 @@ export struct SessionConfigOverlay {
         models = await getHubClient().getSessionCodexModels(sid);
       } else if (flavor === 'cursor') {
         models = await getHubClient().getSessionCursorModels(sid);
+      } else if (flavor === 'copilot') {
+        models = await getHubClient().getSessionCopilotModels(sid);
       } else {   // opencode
         models = await getHubClient().getSessionOpencodeModels(sid);
       }
@@ -88,6 +93,7 @@ export struct SessionConfigOverlay {
   private showEffort(): boolean { return this.flavor === 'claude'; }
   private showReasoningEffort(): boolean { return this.flavor === 'codex' || this.flavor === 'opencode'; }
   private showCollaboration(): boolean { return this.flavor === 'codex'; }
+  private showCopilotAgentMode(): boolean { return this.flavor === 'copilot'; }
 
   // optionRow 用 field 字符串分发到对应 @Event（避免 @Builder 传函数参数——ArkUI 按值捕获函数型参不稳）。
   private dispatch(field: string, value: string): void {
@@ -96,6 +102,7 @@ export struct SessionConfigOverlay {
     else if (field === 'reasoning') { this.onSetReasoningEffort(value); }
     else if (field === 'permission') { this.onSetPermissionMode(value); }
     else if (field === 'collaboration') { this.onSetCollaborationMode(value); }
+    else if (field === 'copilotAgent') { this.onSetCopilotAgentMode(value); }
   }
 
   @Builder
@@ -168,6 +175,14 @@ export struct SessionConfigOverlay {
             this.sectionTitle(t('sessionConfig.collaborationMode'))
             ForEach(CODEX_COLLABORATION_MODES, (mode: string) => {
               this.optionRow(collaborationModeDisplayName(mode), mode, this.collaborationMode, 'collaboration')
+            }, (mode: string) => mode)
+          }
+
+          // —— Copilot agent 模式（仅 copilot；interactive/plan/autopilot）——
+          if (this.showCopilotAgentMode()) {
+            this.sectionTitle(t('sessionConfig.copilotAgentMode'))
+            ForEach(COPILOT_AGENT_MODES, (mode: string) => {
+              this.optionRow(copilotAgentModeDisplayName(mode), mode, this.copilotAgentMode, 'copilotAgent')
             }, (mode: string) => mode)
           }
 
