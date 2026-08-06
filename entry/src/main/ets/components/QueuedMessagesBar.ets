@@ -94,7 +94,7 @@ export struct QueuedMessagesBar {
     .margin({ top: 2, bottom: 6 })
     .padding({ left: 12, right: 6, top: 10, bottom: 10 })
     .borderRadius(14)
-    .backgroundColor(this.c.surface)
+    .backgroundColor(this.c.card)
     .border({ width: 0.5, color: this.c.border })
     .shadow({ radius: 12, color: this.panelShadow(), offsetX: 0, offsetY: 3 })
   }

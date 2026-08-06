@@ -2681,7 +2681,7 @@ struct ChatPage {
         }
         .width('100%')
         .borderRadius(24)
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.card)
         .backgroundBlurStyle(BlurStyle.COMPONENT_REGULAR)
         .border({ width: 0.5, color: this.c.border })
         .shadow({ radius: 32, color: 'rgba(0,0,0,0.1)', offsetX: 0, offsetY: 8 })
@@ -2701,7 +2701,7 @@ struct ChatPage {
         .alignItems(HorizontalAlign.Center)
         .height(this.attachmentPanelHeightVp)
         .opacity(this.attachmentPanelOpen ? 1 : 0)
-        .backgroundColor(this.c.surface)
+        .backgroundColor(this.c.card)
         .borderRadius({ bottomLeft: 24, bottomRight: 24 })
         .clip(true)
         .enabled(this.attachmentPanelOpen)
@@ -2711,7 +2711,7 @@ struct ChatPage {
     }
     .width('100%')
     .padding({ left: 12, right: 12, bottom: getLayoutState().bottomAvoidHeight })
-    .backgroundColor(this.c.bg)
+    .backgroundColor(this.c.canvas)
   }
 
   // 定时选择 sheet（对照 web ScheduleTimePicker 预设：+5m/+30m/+1h/+4h；MVP 仅预设，绝对时间后续加）
@@ -3563,7 +3563,7 @@ struct ChatPage {
       { statusBarContentColor: this.isDark ? '#F5F7FA' : '#1F2329' }
     )
     .ignoreLayoutSafeArea([LayoutSafeAreaType.SYSTEM], [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM])
-    .backgroundColor(this.c.bg)
+    .backgroundColor(this.c.canvas)
     .onReady((context: NavDestinationContext) => {
       this.navPathStack = context.pathStack;
       const param = context.pathInfo.param as ChatPageRouteParams;
