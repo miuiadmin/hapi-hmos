@@ -26,6 +26,7 @@ import { ServerToastOverlay } from '../components/ServerToastOverlay';
 import { getSessionSeenService, SessionSeenService } from '../services/SessionAttention';
 import { classifySessionStatus, SessionStatusKind } from '../chat/SessionStatus';
 import { StatusDot } from '../components/StatusDot';
+import { SyncedLoader } from '../components/SyncedLoader';
 import { SessionPreviewLimitService, getSessionPreviewLimitState } from '../services/SessionPreviewLimitService';
 import { getPinInProgressState } from '../services/PinInProgressService';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
@@ -561,13 +562,18 @@ struct Index {
       // 中段：标题 + 时间 / 摘要 + 角标
       Column({ space: 6 }) {
         Row() {
-          // 四态状态点（paseo：pending 琥珀 / running 蓝+脉冲 / unread 绿 / idle 灰；默认显示）
-          StatusDot({
-            color: this.statusDotColor(this.statusKindFor(session)),
-            pulsing: this.statusKindFor(session) === 'running',
-            dotSize: 8
-          })
-            .margin({ right: 6 })
+          // 四态状态点（paseo：pending 琥珀 / running 蓝 / unread 绿 / idle 灰；默认显示）。
+          //   running 用 SyncedLoader 蓝点波（替代呼吸点，移植 paseo synced-loader）；其余三态静态 StatusDot。
+          if (this.statusKindFor(session) === 'running') {
+            SyncedLoader({ color: this.c.primary, boxSize: 14 })
+              .margin({ right: 6 })
+          } else {
+            StatusDot({
+              color: this.statusDotColor(this.statusKindFor(session)),
+              dotSize: 8
+            })
+              .margin({ right: 6 })
+          }
           Text(session.title)
             .fontSize(fs(15))
             .fontWeight(FontWeight.Medium)

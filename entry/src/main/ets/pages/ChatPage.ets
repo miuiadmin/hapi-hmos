@@ -16,6 +16,7 @@ import { QueuedMessagesBar } from '../components/QueuedMessagesBar';
 import { ConnectionBanner } from '../components/ConnectionBanner';
 import { SyncingBanner } from '../components/SyncingBanner';
 import { ComposerToolbar } from '../components/ComposerToolbar';
+import { StatusChip } from '../components/StatusChip';
 import { ChatSendButton } from '../components/ChatSendButton';
 import { AttachmentPickerPanel } from '../components/AttachmentPickerPanel';
 import { SyncStateService, getSyncState, SyncState } from '../services/SyncStateService';
@@ -225,6 +226,7 @@ struct ChatPage {
   private nextBeforeAt: number = 0;              // 下一页「加载更旧」游标（服务端 page.nextBeforeAt，0=无更旧）
   private nextBeforeSeq: number = 0;             // 下一页游标 seq（与 nextBeforeAt 成对，禁止本地重算）
   private nextAttachmentSeq: number = 0;         // 附件 id 自增序号（多文件并发 upload 防撞键，替代 Date.now()+length）
+  private lastSessionUpdatedAt: number = 0;      // 最近一次 applySessionState 拿到的服务端 updatedAt（aboutToDisappear 兜底补标已看用）
 
   aboutToAppear(): void {
     this.isDisposed = false;        // 复用兜底：aboutToDisappear 置 true 后，若组件被复用须复位
@@ -244,10 +246,8 @@ struct ChatPage {
     this.loadEnterToSend();          // 读「回车发送」偏好（默认关；onChange 据此决定 Enter=发送/换行）
     this.addSSEListener();
     this.startTicker();
-    // 标记本会话已看（清未读角标；列表据此判断 updatedAt>lastSeenAt）
-    if (this.sessionId !== '') {
-      getSessionSeenService().markSeen(this.sessionId);
-    }
+    // 已看标记不在此处理：applySessionState（loadMessages + 每次 session-updated）已用服务端 updatedAt 标记，
+    //   对齐上游 router.tsx markSessionSeen(id, updatedAt)，比 Date.now() 更稳（规避时钟偏移漏检）。
   }
 
   aboutToDisappear(): void {
@@ -259,9 +259,9 @@ struct ChatPage {
       this.draftTimerId = -1;
     }
     this.saveDraft();
-    // 离开时再次标记已看：将在本页期间收到的消息也视作已读（now>=updatedAt → 列表不显未读）
-    if (this.sessionId !== '') {
-      getSessionSeenService().markSeen(this.sessionId);
+    // 离开时再次标记已看（兜底：用户在 refreshSessionState 200ms 去抖窗口内离开时，末次 session-updated 可能未及 apply → 用缓存的 lastSessionUpdatedAt 补标）
+    if (this.sessionId !== '' && this.lastSessionUpdatedAt > 0) {
+      getSessionSeenService().markSeen(this.sessionId, this.lastSessionUpdatedAt);
     }
     if (this.sseListenerId !== -1) {
       getSSEClient().removeListener(this.sseListenerId);
@@ -806,7 +806,11 @@ struct ChatPage {
 
   @Builder ContextStatusBar() {
     Row({ space: 8 }) {
-      Text(this.contextLabel).fontSize(fs(11)).fontColor(this.contextColor)
+      // 状态指示（在线/离线/权限/思考 vibing）——2026-08-06 从 ComposerToolbar 移入，小色点+小字省空间。
+      StatusChip({ isThinking: this.isThinking, agentState: this.agentState })
+      if (this.contextLabel !== '') {
+        Text(this.contextLabel).fontSize(fs(11)).fontColor(this.contextColor)
+      }
       if (this.cacheLabel !== '') {
         Text(this.cacheLabel).fontSize(fs(11)).fontColor(this.c.textTertiary)
       }
@@ -1202,6 +1206,10 @@ struct ChatPage {
     this.collaborationMode = session.collaborationMode;
     this.copilotAgentMode = session.copilotAgentMode;
     this.modelReasoningEffort = session.modelReasoningEffort;
+    // 标记本会话已看（落盘服务端 updatedAt；对齐上游 markSessionSeen(id, updatedAt)）。
+    //   初次加载 + 每次 session-updated（refreshSessionState 去抖后）均经此 → 流式中新消息的 updatedAt 也会被记为已读。
+    this.lastSessionUpdatedAt = session.updatedAt;
+    getSessionSeenService().markSeen(this.sessionId, session.updatedAt);
     this.maybeFollowSuperseding(session);   // OpenCode /clear 取代流：检测 supersededBySessionId 变化，必要时跟随新会话
   }
 
@@ -2524,10 +2532,9 @@ struct ChatPage {
   @Builder
   private InputBar() {
     Column({ space: 4 }) {
-      // 工具条（旧顶部 StatusBar 全部状态下沉：状态点 + 思考强度 chip + 权限 chip + codex fast/goal/collab）
+      // 工具条（思考强度 chip + 权限 chip + codex fast/goal/collab；状态指示已移至 ContextStatusBar 的 StatusChip）
       ComposerToolbar({
         isThinking: this.isThinking,
-        agentState: this.agentState,
         permissionMode: this.permissionMode,
         collaborationMode: this.collaborationMode,
         modelReasoningEffort: this.modelReasoningEffort,
@@ -3425,10 +3432,8 @@ struct ChatPage {
           .width('100%')
           .layoutWeight(1)                    // 内容层占据输入栏以上全部空间（原 Stack layoutWeight 1 等价）
 
-        // Token / 上下文用量条（对照 web AssistantChat/StatusBar：仅在有可见 usage 时显形）
-        if (this.latestUsage !== null) {
-          this.ContextStatusBar()
-        }
+        // Token / 上下文用量条（对照 web AssistantChat/StatusBar）+ 左侧会话状态指示（StatusChip 恒显）。
+        this.ContextStatusBar()
 
         // 排队消息条（已发未被 CLI 消费：即时排队 + 定时；对照 web QueuedMessagesBar，挂 InputBar 正上方）
         if (this.queuedMessages.length > 0) {

@@ -15,6 +15,7 @@ import { TerminalToolDisplayService } from '../services/TerminalToolDisplayServi
 import { VoiceSettingsService } from '../services/VoiceSettingsService';
 import { SessionPreviewLimitService } from '../services/SessionPreviewLimitService';
 import { PinInProgressService } from '../services/PinInProgressService';
+import { getSessionSeenService } from '../services/SessionAttention';
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
@@ -107,6 +108,8 @@ export default class EntryAbility extends UIAbility {
     await SessionPreviewLimitService.init();
     // 置顶进行中会话开关须在 loadContent 前从持久化读回（Index sessionRows 首帧即用正确分区，避默认关闪一下）
     await PinInProgressService.init();
+    // 会话「已看」时间戳须在 loadContent 前从持久化读回（Index 列表首帧即用正确未读态，否则重启后全会话误显未读）
+    await getSessionSeenService().hydrate();
     // 终端字号须在 loadContent 前从持久化读回（TerminalPage boot 即用，避默认 13 闪一下）
     await TerminalFontSizeService.init();
     // 触感反馈开关须在 loadContent 前从持久化读回（各交互 tap 即用正确 enabled，避默认开闪一下）
