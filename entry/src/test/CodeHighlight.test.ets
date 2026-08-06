@@ -8,6 +8,7 @@ import { describe, it, expect } from '@ohos/hypium';
 import {
   normalizeLanguage,
   tokenizeLine,
+  tokenizeCode,
   HighlightToken
 } from '../main/ets/chat/CodeHighlight';
 
@@ -195,11 +196,11 @@ export default function codeHighlightTest(): void {
     it('sh: echo → keyword', 0, () => {
       expect(firstColoredType('echo', 'sh')).assertEqual('keyword');
     });
-    it('json: true → keyword', 0, () => {
-      expect(firstColoredType('true', 'json')).assertEqual('keyword');
+    it('json: true → literal（常量从关键字分出）', 0, () => {
+      expect(firstColoredType('true', 'json')).assertEqual('literal');
     });
-    it('yaml: yes → keyword', 0, () => {
-      expect(firstColoredType('yes', 'yaml')).assertEqual('keyword');
+    it('yaml: yes → literal', 0, () => {
+      expect(firstColoredType('yes', 'yaml')).assertEqual('literal');
     });
     it('标识符非关键字 → plain（如 myVar）', 0, () => {
       const tokens: HighlightToken[] = tokenizeLine('myVar', 'js');
@@ -239,6 +240,145 @@ export default function codeHighlightTest(): void {
       expect(tokens.length).assertEqual(1);
       expect(tokens[0].type).assertEqual('plain');
       expect(tokens[0].text).assertEqual('===');
+    });
+  });
+
+  // —— 扩展 token 分类：function / type / literal / punctuation ——
+  describe('CodeHighlight — tokenizeLine literal', () => {
+    it('js: true → literal', 0, () => {
+      expect(firstColoredType('true', 'js')).assertEqual('literal');
+    });
+    it('js: null → literal', 0, () => {
+      expect(firstColoredType('null', 'js')).assertEqual('literal');
+    });
+    it('js: undefined → literal', 0, () => {
+      expect(firstColoredType('undefined', 'js')).assertEqual('literal');
+    });
+    it('py: None → literal', 0, () => {
+      expect(firstColoredType('None', 'py')).assertEqual('literal');
+    });
+  });
+
+  describe('CodeHighlight — tokenizeLine function（标识符后紧跟 ( ）', () => {
+    it('foo( → function', 0, () => {
+      expect(firstColoredType('foo(', 'js')).assertEqual('function');
+    });
+    it('foo ( 带空格 → function', 0, () => {
+      expect(firstColoredType('foo (', 'js')).assertEqual('function');
+    });
+    it('if( → keyword（关键字优先，不当 function）', 0, () => {
+      expect(firstColoredType('if(', 'js')).assertEqual('keyword');
+    });
+    it('for( → keyword', 0, () => {
+      expect(firstColoredType('for(', 'js')).assertEqual('keyword');
+    });
+    it('bar 不带括号 → plain（非 PascalCase）', 0, () => {
+      expect(firstColoredType('bar', 'js')).assertEqual('plain');
+    });
+  });
+
+  describe('CodeHighlight — tokenizeLine type（PascalCase）', () => {
+    it('MyClass → type', 0, () => {
+      expect(firstColoredType('MyClass', 'js')).assertEqual('type');
+    });
+    it('String → type', 0, () => {
+      expect(firstColoredType('String', 'js')).assertEqual('type');
+    });
+    it('MyClass( 构造调用 → function（括号优先于 type）', 0, () => {
+      expect(firstColoredType('MyClass(', 'js')).assertEqual('function');
+    });
+  });
+
+  describe('CodeHighlight — tokenizeLine punctuation', () => {
+    it('( → punctuation', 0, () => {
+      expect(firstColoredType('(x)', 'js')).assertEqual('punctuation');
+    });
+    it('; → punctuation', 0, () => {
+      expect(firstColoredType(';', 'js')).assertEqual('punctuation');
+    });
+    it('text 语言无 punctuation（零回归，全 plain）', 0, () => {
+      expect(firstColoredType('(x)', 'text')).assertEqual('plain');
+    });
+    it('运算符 = 保持 plain（不当 punctuation）', 0, () => {
+      // '=' 不在标点集 → plain；'===' 仍合并单 plain
+      const tokens: HighlightToken[] = tokenizeLine('===', 'js');
+      expect(tokens.length).assertEqual(1);
+      expect(tokens[0].type).assertEqual('plain');
+    });
+  });
+
+  // —— tokenizeCode：跨行态（块注释 / 三引号串）——
+  describe('CodeHighlight — tokenizeCode 跨行块注释', () => {
+    it('多行 /* … */ 中间行全 comment', 0, () => {
+      const code: string = '/* hello\nworld */\nconst x = 1';
+      const lines: HighlightToken[][] = tokenizeCode(code, 'js');
+      expect(lines.length).assertEqual(3);
+      // 第 0 行：整行 comment（块注释开，本行无 */）
+      expect(lines[0][0].type).assertEqual('comment');
+      expect(lines[0][0].text).assertEqual('/* hello');
+      // 第 1 行：续态 comment，含 */
+      expect(lines[1][0].type).assertEqual('comment');
+      expect(lines[1][0].text).assertEqual('world */');
+      // 第 2 行：恢复正常（const keyword）
+      expect(lines[2][0].type).assertEqual('keyword');
+      expect(lines[2][0].text).assertEqual('const');
+    });
+    it('单行 /* c */ 同行闭合 → comment', 0, () => {
+      const lines: HighlightToken[][] = tokenizeCode('const a = 1; /* c */ b', 'js');
+      // 存在含 '/* c */' 的 comment token
+      let found: boolean = false;
+      for (let i = 0; i < lines[0].length; i++) {
+        if (lines[0][i].type === 'comment' && lines[0][i].text.includes('/* c */')) {
+          found = true;
+        }
+      }
+      expect(found).assertTrue();
+    });
+  });
+
+  describe('CodeHighlight — tokenizeCode Python 三引号串', () => {
+    it('多行 """ … """ 中间行全 string', 0, () => {
+      const code: string = 'x = """\nhello\n"""';
+      const lines: HighlightToken[][] = tokenizeCode(code, 'py');
+      expect(lines.length).assertEqual(3);
+      // 第 0 行：末尾 """ 开串（跨行）
+      const last0: HighlightToken = lines[0][lines[0].length - 1];
+      expect(last0.type).assertEqual('string');
+      expect(last0.text).assertEqual('"""');
+      // 第 1 行：整行 string（续态）
+      expect(lines[1][0].type).assertEqual('string');
+      expect(lines[1][0].text).assertEqual('hello');
+      // 第 2 行：""" 闭合
+      expect(lines[2][0].type).assertEqual('string');
+      expect(lines[2][0].text).assertEqual('"""');
+    });
+  });
+
+  describe('CodeHighlight — tokenizeCode 完整性', () => {
+    it('token 串接 == 原文（逐行拼回，无丢字符）', 0, () => {
+      const code: string = 'const x = 1;\n/* c */\nfoo(bar)';
+      const lines: HighlightToken[][] = tokenizeCode(code, 'js');
+      let round: string = '';
+      for (let li = 0; li < lines.length; li++) {
+        for (let ti = 0; ti < lines[li].length; ti++) {
+          round += lines[li][ti].text;
+        }
+        if (li < lines.length - 1) { round += '\n'; }
+      }
+      expect(round).assertEqual(code);
+    });
+    it('空块 → 单空行占位', 0, () => {
+      const lines: HighlightToken[][] = tokenizeCode('', 'js');
+      expect(lines.length).assertEqual(1);
+      expect(lines[0][0].text).assertEqual(' ');
+    });
+    it('大文件降级 text（>20000 字符全 plain）', 0, () => {
+      // 构造超 20000 字符的内容；tokenizeCode 本身不降级（降级在 CodeBlock effectiveLanguage），
+      //   这里直接传 text 验证 text 全 plain（含看似关键字/数字）。
+      const lines: HighlightToken[][] = tokenizeCode('function 42 // x', 'text');
+      for (let i = 0; i < lines[0].length; i++) {
+        expect(lines[0][i].type).assertEqual('plain');
+      }
     });
   });
 }

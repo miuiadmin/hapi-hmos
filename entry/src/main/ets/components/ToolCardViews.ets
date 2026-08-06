@@ -222,7 +222,7 @@ struct ToolInputView {
       } else if (isAskUserQuestionToolName(this.tool.name)) {
         AskUserQuestionView({ tool: this.tool })
       } else {
-        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline, showCopy: true })
       }
     }
     .width('100%')
@@ -260,7 +260,7 @@ struct ToolInputView {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
-        CodeBlock({ code: this.writeContent(), language: 'text', title: t('tool.draft'), collapseLongContent: false })
+        CodeBlock({ code: this.writeContent(), language: 'text', title: t('tool.draft'), collapseLongContent: false, showCopy: true })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -277,7 +277,7 @@ struct ToolInputView {
   @Builder
   BashInput() {
     if (this.bashCommand() !== '') {
-      CodeBlock({ code: this.bashCommand(), language: 'bash', title: t('tool.command'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.bashCommand(), language: 'bash', title: t('tool.command'), collapseLongContent: this.isInline, showCopy: true })
     }
   }
 
@@ -293,7 +293,7 @@ struct ToolInputView {
         density: this.isInline ? 'compact' : 'comfortable'
       })
     } else {
-      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline, showCopy: true })
     }
   }
 
@@ -315,7 +315,7 @@ struct ToolInputView {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     } else {
-      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline, showCopy: true })
     }
   }
 
@@ -337,7 +337,7 @@ struct ToolInputView {
         if (this.notebookEditFields().cellType === 'markdown') {
           MarkdownText({ content: this.notebookEditFields().newSource })
         } else {
-          CodeBlock({ code: this.notebookEditFields().newSource, language: 'text', title: t('tool.source'), collapseLongContent: this.isInline })
+          CodeBlock({ code: this.notebookEditFields().newSource, language: 'text', title: t('tool.source'), collapseLongContent: this.isInline, showCopy: true })
         }
       }
       .width('100%')
@@ -350,7 +350,7 @@ struct ToolInputView {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
     } else {
-      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline, showCopy: true })
     }
   }
 
@@ -399,7 +399,7 @@ struct ToolInputView {
         }
         .width('100%')
       } else {
-        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline })
+        CodeBlock({ code: this.jsonInput(), language: 'json', title: t('tool.input'), collapseLongContent: this.isInline, showCopy: true })
       }
     }
     .width('100%')
@@ -639,16 +639,16 @@ struct ToolResultView {
     } else if (this.bashStdout() !== '' || this.bashStderr() !== '') {
       Column({ space: 6 }) {
         if (this.bashStdout() !== '') {
-          CodeBlock({ code: this.bashStdout(), language: 'text', title: 'stdout', collapseLongContent: this.isInline })
+          CodeBlock({ code: this.bashStdout(), language: 'text', title: 'stdout', collapseLongContent: this.isInline, showCopy: true })
         }
         if (this.bashStderr() !== '') {
-          CodeBlock({ code: this.bashStderr(), language: 'text', title: 'stderr', collapseLongContent: this.isInline })
+          CodeBlock({ code: this.bashStderr(), language: 'text', title: 'stderr', collapseLongContent: this.isInline, showCopy: true })
         }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     } else if (this.resultText() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline, showCopy: true })
     } else {
       this.Pill(t('tool.noOutput'))
     }
@@ -661,10 +661,10 @@ struct ToolResultView {
     Column({ space: 6 }) {
       this.Pill(this.codexBashExitLabel())
       if (this.codexBashStdout() !== '') {
-        CodeBlock({ code: this.codexBashStdout(), language: 'text', title: 'stdout', collapseLongContent: this.isInline })
+        CodeBlock({ code: this.codexBashStdout(), language: 'text', title: 'stdout', collapseLongContent: this.isInline, showCopy: true })
       }
       if (this.codexBashStderr() !== '') {
-        CodeBlock({ code: this.codexBashStderr(), language: 'text', title: 'stderr', collapseLongContent: this.isInline })
+        CodeBlock({ code: this.codexBashStderr(), language: 'text', title: 'stderr', collapseLongContent: this.isInline, showCopy: true })
       }
       if (this.codexBashStdout() === '' && this.codexBashStderr() === '') {
         this.Pill(this.codexBashDisplayEmptyLabel())
@@ -688,7 +688,7 @@ struct ToolResultView {
         }
       }
       if (this.codexBashParsedOutputText() !== '') {
-        CodeBlock({ code: this.codexBashParsedOutputText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
+        CodeBlock({ code: this.codexBashParsedOutputText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline, showCopy: true })
       } else {
         this.Pill(t('tool.noOutput'))
       }
@@ -702,7 +702,7 @@ struct ToolResultView {
     if (this.tool.result === null) {
       this.Pill(this.placeholderForState())
     } else if (this.resultText() !== '') {
-      CodeBlock({ code: this.resultText(), language: 'text', title: this.readPath() !== '' ? this.readPath() : t('tool.fileContent'), collapseLongContent: this.isInline })
+      CodeBlock({ code: this.resultText(), language: 'text', title: this.readPath() !== '' ? this.readPath() : t('tool.fileContent'), collapseLongContent: this.isInline, showCopy: true })
     } else {
       this.Pill(t('tool.noOutput'))
     }
@@ -722,7 +722,7 @@ struct ToolResultView {
           .fontFamily('Courier New')
           .width('100%')
       } else {
-        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.result'), collapseLongContent: this.isInline })
+        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.result'), collapseLongContent: this.isInline, showCopy: true })
       }
     } else {
       this.Pill(this.tool.state === 'completed' ? t('tool.completed') : t('tool.noOutput'))
@@ -759,7 +759,7 @@ struct ToolResultView {
           filePath: this.codexDiffParsed().fileName
         })
       } else {
-        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline })
+        CodeBlock({ code: this.resultText(), language: 'text', title: t('tool.output'), collapseLongContent: this.isInline, showCopy: true })
       }
     } else {
       this.Pill(t('tool.completed'))
@@ -816,12 +816,12 @@ struct ToolResultView {
       this.Pill(this.placeholderForState())
     } else if (this.resultText() !== '') {
       if (looksLikeJson(this.resultText()) || looksLikeHtml(this.resultText())) {
-        CodeBlock({ code: this.resultText(), language: looksLikeJson(this.resultText()) ? 'json' : 'html', collapseLongContent: this.isInline })
+        CodeBlock({ code: this.resultText(), language: looksLikeJson(this.resultText()) ? 'json' : 'html', collapseLongContent: this.isInline, showCopy: true })
       } else {
         MarkdownText({ content: this.resultText() })
       }
     } else if (this.jsonResult() !== '') {
-      CodeBlock({ code: this.jsonResult(), language: 'json', title: 'JSON', collapseLongContent: this.isInline })
+      CodeBlock({ code: this.jsonResult(), language: 'json', title: 'JSON', collapseLongContent: this.isInline, showCopy: true })
     } else {
       this.Pill(t('tool.noOutput'))
     }

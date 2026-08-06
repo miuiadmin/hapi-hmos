@@ -27,6 +27,9 @@ export interface PaletteColors {
   codeText: string;         // 代码字（吸收 #333333）
   codeBg: string;           // 代码块 / 行内码 背景（吸收 #E8EAED）
   codeMuted: string;        // 代码行号 / header 字（吸收 #6E7681）
+  codeFunction: string;     // 代码函数名 / 调用（标识符后紧跟 '('）
+  codeType: string;         // 代码类型名（PascalCase 标识符）
+  codePunctuation: string;  // 代码标点（括号 / 分号 / 逗号 / 点 — 暗化 codeText）
   diffAdd: string;          // diff 新增字
   diffDelete: string;       // diff 删除字
   bubbleUserText: string;   // 主色用户气泡上的字
@@ -52,6 +55,9 @@ export const LIGHT: PaletteColors = {
   codeText: '#1F2328',
   codeBg: '#F6F8FA',
   codeMuted: '#8C98A4',
+  codeFunction: '#8250DF',     // 紫（取 paseo GitHub palette）
+  codeType: '#0A7B83',         // 青绿（与蓝 keyword 区分）
+  codePunctuation: '#57606A',  // 暗化 codeText
   diffAdd: '#1A7F37',
   diffDelete: '#CF222E',
   bubbleUserText: '#FFFFFF'
@@ -77,6 +83,9 @@ export const DARK: PaletteColors = {
   codeText: '#D6D6D6',
   codeBg: '#1E1E20',
   codeMuted: '#6E6E72',
+  codeFunction: '#D2A8FF',     // 紫（亮）
+  codeType: '#56D4DD',         // 青绿（亮）
+  codePunctuation: '#8B949E',  // 暗化 codeText
   diffAdd: '#3FB950',
   diffDelete: '#F85149',
   bubbleUserText: '#FFFFFF'

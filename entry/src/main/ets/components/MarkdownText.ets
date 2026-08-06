@@ -2,7 +2,9 @@ import {
   CJMarkdown,
   MarkdownConfiguration,
   MarkdownPlugin,
-  MarkdownTheme
+  MarkdownTheme,
+  LatexMathColorFormat,
+  ImageFitType
 } from '@cangjie-tpc/markdown_hybrid'
 import { Want, common } from '@kit.AbilityKit'
 import { pasteboard } from '@kit.BasicServicesKit'
@@ -39,7 +41,7 @@ import { buildSheetOptions, SheetOverrides } from './settings/SheetOptionsFactor
 //     getConfig 在 isDark 变化时丢弃缓存重建（markdown_hybrid 缓存数字配色，无观察钩子 → 手动失效）
 //   - 复制按钮已启用（图标 app.media.markdown_code_copy + setCodeCopyCallback 写系统剪贴板）；
 //     全屏按钮已启用（setIsCodeFullScreen(true) + setCodeFullScreenCallback → bindSheet 大尺寸代码预览，复用 markdown_code_fullscreen 图标）
-//   - 不开 LaTeX 插件（agent 文本罕含公式，且其需额外字号/颜色格式设置），后续需要再补
+//   - 开 LaTeX 插件（对齐 chatcube setIsLatexMathPlugin(true) + setLatex* 主题；库自带数学字体，无需回调）
 //   - 仓颉引擎：useCangjieComponent=true（库本体即 Cangjie 实现，依赖其内置 .so）
 // hapi 简化：每条 message-received 是完整消息（非 token 增量）→ isInputEnded 恒 true，无需增量分析
 // 所有 setter 名逐字对照 chatcube 同版本（1.3.6）源码，禁止臆造
@@ -268,6 +270,20 @@ export struct MarkdownText {
 
     // 分割线 / 暗色模式
     theme.setThematicBreakColor(tableBorderColor);
+
+    // 数学公式 LaTeX（对齐 chatcube setLatex*；库内置渲染生成图片，无需回调）
+    theme.setLatexDefaultText(true);
+    theme.setLatexMathTextSize(Math.max(textSize, 13));
+    theme.setLatexMathTextColor(textColor);
+    theme.setLatexMathBackGroupColor(0x00000000);
+    theme.setLatexMathColorFormat(LatexMathColorFormat.COLOR_FORMAT_BGRA_8888);
+    theme.setLatexMathBlockCenter(false);
+
+    // 图片（圆角 + 上下与块同节奏；不设 maxWidth/fit —— chatcube 亦不设，库默认按容器宽自适应，设硬值反易回归）
+    theme.setImageBorderRadius(8);
+    theme.setImageMarginTop(blockSpacing);
+    theme.setImageMarginBottom(blockSpacing);
+
     theme.setIsDark(isDark);
 
     config.setMarkdownTheme(theme);
@@ -450,6 +466,7 @@ export struct MarkdownText {
     plugin.setIsSupPlugin(true);
     plugin.setIsTocPlugin(true);
     plugin.setIsFootnotePlugin(true);
+    plugin.setIsLatexMathPlugin(true);   // 数学公式（对齐 chatcube；库自带数学字体）
     return plugin;
   }
 

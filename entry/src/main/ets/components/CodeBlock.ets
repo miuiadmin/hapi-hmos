@@ -1,15 +1,17 @@
 // CodeBlock —— 对照 web/src/components/CodeBlock.tsx（上游 Shiki 高亮；本项目自包含轻量扫描器）
 // 等宽文本 + 行号 + 长内容折叠（>18 行或 >1800 字符 → 折叠到 260 + 「已截断」角标）。
-// 宽行按 maxLines(1) 截断（窄屏取舍：完整内容在详情 sheet 可纵向滚动查看）。
-// 语法高亮：逐行 tokenizeLine → 按 token 类型染色的 Span 序列（chat/CodeHighlight 纯层；
-//   keyword=primary/string=success/number=warning/comment=codeMuted/plain=codeText）。
+// 宽行 word-wrap（对齐 chatcube/paseo，从不截断代码；行号顶对齐首行，续行无号）。
+// 语法高亮：整块 tokenizeCode（跨块注释/三引号态）→ 按 token 类型染色的 Span 序列（chat/CodeHighlight 纯层；
+//   keyword=primary / string=success / number=warning / literal=warning / comment=codeMuted /
+//   function=codeFunction / type=codeType / punctuation=codePunctuation / plain=codeText）。
 //   text 语言全 plain（零回归）；大文件（>20k 字符）降级 text 免扫描 jank。
 // V2：@Param code/language/title/collapseLongContent/scrollY/maxHeight/showCopy/showFullScreen + @Event onFullScreen；
-//   @Computed isCollapsed/visibleLines/label。
+//   @Computed isCollapsed/label/lineNumberWidth/highlightedLines。
+//   流式：highlightedLines 按 @Param(code/language) memoize，每 tick O(n) 重算不 remount（父 ForEach key 稳）。
 
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
-import { tokenizeLine, HighlightToken, HighlightTokenType } from '../chat/CodeHighlight';
+import { tokenizeCode, HighlightToken, HighlightTokenType } from '../chat/CodeHighlight';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { showToast } from '../utils/Toast';
 
@@ -76,15 +78,9 @@ struct CodeBlock {
     return Math.max(digits, 2);
   }
 
-  // 折叠时只渲染前 N 行
-  @Computed get visibleLines(): string[] {
-    const all: string[] = splitCodeLines(this.code);
-    if (this.code.length > COLLAPSE_CHAR_THRESHOLD || all.length > COLLAPSE_LINE_THRESHOLD) {
-      if (this.collapseLongContent) {
-        return all.slice(0, Math.min(all.length, COLLAPSE_LINE_THRESHOLD));
-      }
-    }
-    return all;
+  // 整块高亮（跨行块注释/三引号态）；@Computed 按 code/language memoize，流式每 tick O(n) 重算不 remount。
+  @Computed get highlightedLines(): HighlightToken[][] {
+    return tokenizeCode(this.code, this.effectiveLanguage);
   }
 
   private numColWidth(): number {
@@ -96,24 +92,32 @@ struct CodeBlock {
   }
 
   // 大文件降级：超 HIGHLIGHT_CHAR_CAP 字符走 text（免逐行扫描 jank）。
-  //   collapseLongContent 的工具卡走折叠分支不命中；FileViewerPage scrollY 大文件才需此守卫。
   private get effectiveLanguage(): string {
     return this.code.length > HIGHLIGHT_CHAR_CAP ? 'text' : this.language;
   }
 
-  // 逐行 tokenize（chat/CodeHighlight 纯层）。空行透传 ' '（tokenizeLine 自带占位）。
-  private highlight(line: string): HighlightToken[] {
-    return tokenizeLine(line, this.effectiveLanguage);
+  // 折叠时只渲染前 N 行的 token（与 isCollapsed 同判定；plain 方法从 build 调，读 @Computed 不成链）。
+  private visibleTokenLines(): HighlightToken[][] {
+    const all: HighlightToken[][] = this.highlightedLines;
+    if (this.code.length > COLLAPSE_CHAR_THRESHOLD || all.length > COLLAPSE_LINE_THRESHOLD) {
+      if (this.collapseLongContent) {
+        return all.slice(0, Math.min(all.length, COLLAPSE_LINE_THRESHOLD));
+      }
+    }
+    return all;
   }
 
-  // token 类型 → 既有 palette（不新增调色板项）。
-  //   keyword=primary / string=success / number=warning / comment=codeMuted / plain=codeText。
+  // token 类型 → palette。
   private colorForToken(type: HighlightTokenType): string {
     if (type === 'keyword') { return this.c.primary; }
     if (type === 'string') { return this.c.success; }
     if (type === 'number') { return this.c.warning; }
+    if (type === 'literal') { return this.c.warning; }
     if (type === 'comment') { return this.c.codeMuted; }
-    return this.c.codeText;
+    if (type === 'function') { return this.c.codeFunction; }
+    if (type === 'type') { return this.c.codeType; }
+    if (type === 'punctuation') { return this.c.codePunctuation; }
+    return this.c.codeText;   // plain
   }
 
   // 复制整段代码到系统剪贴板（showCopy=true 时 header 复制图标触发；对照 MarkdownText.copyToClipboard）
@@ -194,31 +198,30 @@ struct CodeBlock {
   @Builder
   CodeBody() {
     Column() {
-      ForEach(this.visibleLines, (line: string, idx: number) => {
+      ForEach(this.visibleTokenLines(), (toks: HighlightToken[], idx: number) => {
         Row() {
           Text(String(idx + 1))
             .fontSize(fs(11))
             .fontColor(this.c.codeMuted)
             .width(this.numColWidth())
             .textAlign(TextAlign.End)
-          // 行内容：逐 token 染色 Span 序列（CodeHighlight）；text 语言全 plain 等价旧行为。
-          //   父 Text 持 fontSize/maxLines/textOverflow/margin；Span 仅 fontColor + fontFamily。
+          // 行内容：逐 token 染色 Span 序列（CodeHighlight 整块预高亮）；text 语言全 plain 等价旧行为。
+          //   父 Text 持 fontSize/margin；Span 仅 fontColor + fontFamily。宽行 word-wrap（无 maxLines）。
           Text() {
-            ForEach(this.highlight(line.length > 0 ? line : ' '), (tk: HighlightToken, idx: number) => {
+            ForEach(toks, (tk: HighlightToken, tIdx: number) => {
               Span(tk.text)
                 .fontColor(this.colorForToken(tk.type))
                 .fontFamily('monospace')
-            }, (tk: HighlightToken, idx: number) => `${idx}`)
+            }, (tk: HighlightToken, tIdx: number) => `${tIdx}`)
           }
           .fontSize(fs(11))
           .fontColor(this.c.codeText)
           .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ left: 8 })
         }
         .width('100%')
-      }, (line: string, idx: number) => `${idx}`)
+        .alignItems(VerticalAlign.Top)   // 行号顶对齐首行（包裹续行无号，符合 GitHub 习惯）
+      }, (toks: HighlightToken[], idx: number) => `${idx}`)
     }
     .width('100%')
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
