@@ -226,10 +226,12 @@ struct ChatPage {
   private nextBeforeAt: number = 0;              // 下一页「加载更旧」游标（服务端 page.nextBeforeAt，0=无更旧）
   private nextBeforeSeq: number = 0;             // 下一页游标 seq（与 nextBeforeAt 成对，禁止本地重算）
   private nextAttachmentSeq: number = 0;         // 附件 id 自增序号（多文件并发 upload 防撞键，替代 Date.now()+length）
-  private lastSessionUpdatedAt: number = 0;      // 最近一次 applySessionState 拿到的服务端 updatedAt（aboutToDisappear 兜底补标已看用）
+  private lastSessionUpdatedAt: number = 0;      // 最近一次 applySessionState 拿到的服务端 updatedAt（aboutToDisappear 离开定格用）
+  private markedSeenOnEnter: boolean = false;    // 到场标记旗：仅首次 applySessionState 标记已看基线（到场语义），流式不重复推进
 
   aboutToAppear(): void {
     this.isDisposed = false;        // 复用兜底：aboutToDisappear 置 true 后，若组件被复用须复位
+    this.markedSeenOnEnter = false; // 到场标记复位（复用同实例进新会话须重算到场基线）
     // 取代流观测态复位（复用同实例进新会话时，旧观测态不应残留→否则误判 shouldFollow）
     this.observedSupSessionId = '';
     this.observedSupSedingId = '';
@@ -246,8 +248,8 @@ struct ChatPage {
     this.loadEnterToSend();          // 读「回车发送」偏好（默认关；onChange 据此决定 Enter=发送/换行）
     this.addSSEListener();
     this.startTicker();
-    // 已看标记不在此处理：applySessionState（loadMessages + 每次 session-updated）已用服务端 updatedAt 标记，
-    //   对齐上游 router.tsx markSessionSeen(id, updatedAt)，比 Date.now() 更稳（规避时钟偏移漏检）。
+    // 已看标记不在此处理：到场语义由 applySessionState 首次触发（markedSeenOnEnter 旗）+ aboutToDisappear 离开定格。
+    //   lastSeen 用服务端 updatedAt（同源，规避时钟偏移）；仅到场/离场标记，流式不推进（对齐上游 selectedSession 门控）。
   }
 
   aboutToDisappear(): void {
@@ -259,7 +261,8 @@ struct ChatPage {
       this.draftTimerId = -1;
     }
     this.saveDraft();
-    // 离开时再次标记已看（兜底：用户在 refreshSessionState 200ms 去抖窗口内离开时，末次 session-updated 可能未及 apply → 用缓存的 lastSessionUpdatedAt 补标）
+    // 离开时标记已看到「离开瞬间最新 updatedAt」（到场基线定格；用户在场看过的内容清为已读）。
+    //   之后 ChatPage 销毁不再 markSeen；agent 若再回复（updatedAt 涨过 lastSeen）→ 列表重现 unread 提示（本地真相源判定）。
     if (this.sessionId !== '' && this.lastSessionUpdatedAt > 0) {
       getSessionSeenService().markSeen(this.sessionId, this.lastSessionUpdatedAt);
     }
@@ -1207,9 +1210,17 @@ struct ChatPage {
     this.copilotAgentMode = session.copilotAgentMode;
     this.modelReasoningEffort = session.modelReasoningEffort;
     // 标记本会话已看（落盘服务端 updatedAt；对齐上游 markSessionSeen(id, updatedAt)）。
-    //   初次加载 + 每次 session-updated（refreshSessionState 去抖后）均经此 → 流式中新消息的 updatedAt 也会被记为已读。
+    //   ★本地真相源语义（2026-08-06 修正）：markSeen 绑定「用户到场/离场行为」，不绑定「数据更新」。
+    //     到场=首次进会话→标记入场瞬间 updatedAt 快照（清入场前未读基线，markedSeenOnEnter 旗仅首次触发）；
+    //     流式后续 session-updated 不再标记——agent 新回复保持 unread 提示，待用户到场查看（对齐上游 selectedSession 门控：
+    //     上游 useEffect 仅在 selectedSession==本会话 时 markSeen，切走即停；本地用「到场一次」实现等效门控）。
+    //     旧实现每次 session-updated 都 markSeen → lastSeen 始终追平 updatedAt → updatedAt>lastSeenAt 永不成立 →
+    //     agent 处理完即变灰（idle），吃掉 unread。
     this.lastSessionUpdatedAt = session.updatedAt;
-    getSessionSeenService().markSeen(this.sessionId, session.updatedAt);
+    if (!this.markedSeenOnEnter && this.sessionId !== '') {
+      getSessionSeenService().markSeen(this.sessionId, session.updatedAt);
+      this.markedSeenOnEnter = true;
+    }
     this.maybeFollowSuperseding(session);   // OpenCode /clear 取代流：检测 supersededBySessionId 变化，必要时跟随新会话
   }
 
@@ -3415,7 +3426,7 @@ struct ChatPage {
               .height('100%')
               .justifyContent(FlexAlign.Center)
               .alignItems(HorizontalAlign.Center)
-              .backgroundColor(this.c.bg)
+              .backgroundColor(this.c.canvas)   // 对话区底（非 bg 白卡）：揭幕后切消息列表同底，消除白→灰跳变（c4089aa 漏改处）
             }
 
             if (this.newMessagesCount > 0) {

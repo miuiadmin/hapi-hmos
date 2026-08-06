@@ -9,8 +9,8 @@ import { t, kv } from '../i18n/I18nService';
 //   挂载与 thread 互斥：ChatPage.recomputeBlocks 已把 isQueued 行滤出 thread，故仅在此处可见。
 //
 //   样式（chatcube 对齐 + 对照本项目 ComposerToolbar chip / chatcube ScreenshotBanner 浮卡范式）：
-//     单块悬浮面板——surface 底 + 0.5vp border + 轻 shadow + r14；头「⏲ 排队中 N」+ 每行消息预览
-//     + squircle(r9) 编辑/取消按钮带按压态（surfaceSelected 底 + scale 0.9，对照 composer ModelButton）。
+//     单块悬浮面板——白卡底（深色模式强制 #FFFFFF 强反差，见 panelBg；浅色 c.card 本就是白）+ 0.5vp border +
+//     shadow + r16（对齐聊天气泡）；头「⏲ 排队中 N」+ 每行消息预览 + squircle(r9) 编辑/取消按钮带按压态（panelPressBg 底 + scale 0.9）。
 //   ★ msg 文本 Column 仍 layoutWeight(1)（Row 横轴主方向占宽，正确）；勿给 Text 加 layoutWeight
 //     （曾致满屏灰板，见 commit 1de91a3 / memory chat-queued-grayboard-layoutweight）。
 
@@ -24,9 +24,36 @@ export struct QueuedMessagesBar {
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
   private get isDark(): boolean { return getThemeState().isDark; }
 
-  // 面板阴影色（对照 ComposerToolbar.chipShadow：暗 0.20 / 亮 rgba(15,23,42,0.06)）。
+  // 面板阴影色：深色白卡需更强黑阴影显浮起感（0.28），浅色柔阴（0.06）。
   private panelShadow(): string {
-    return this.isDark ? 'rgba(0, 0, 0, 0.20)' : 'rgba(15, 23, 42, 0.06)';
+    return this.isDark ? 'rgba(0, 0, 0, 0.28)' : 'rgba(15, 23, 42, 0.06)';
+  }
+
+  // ★ 面板配色（用户要求：深色模式做成白卡强反差）。浅色模式 c.card 本就是白底深字，维持原 token；
+  //   深色模式强制白卡 #FFFFFF + 文字配套翻深（白底浅字不可见）。两模式均呈「白卡深字」一致观感。
+  // 面板背景：浅色 c.card(白) / 深色强制 #FFFFFF。
+  private panelBg(): string {
+    return this.isDark ? '#FFFFFF' : this.c.card;
+  }
+  // 主文字（消息正文）：浅色 textPrimary / 深色白底近黑。
+  private panelText(): string {
+    return this.isDark ? '#1A1A1A' : this.c.textPrimary;
+  }
+  // 次文字（编辑按钮）：浅色 textSecondary / 深色中灰。
+  private panelTextSecondary(): string {
+    return this.isDark ? '#6B6B70' : this.c.textSecondary;
+  }
+  // 三级文字（计数 / disabled 取消）：浅色 textTertiary / 深色浅灰。
+  private panelTextTertiary(): string {
+    return this.isDark ? '#9A9AA0' : this.c.textTertiary;
+  }
+  // 边框：深色白卡用淡灰边（纯黑边突兀），浅色 c.border。
+  private panelBorder(): string {
+    return this.isDark ? '#E5E5E5' : this.c.border;
+  }
+  // 按压态底：深色白卡用浅灰按压块，浅色 surfaceSelected。
+  private panelPressBg(): string {
+    return this.isDark ? '#F0F0F2' : this.c.surfaceSelected;
   }
   private isPressed(m: ChatMessage, kind: string): boolean {
     return this.pressedKey === `${m.id}#${kind}`;
@@ -49,10 +76,10 @@ export struct QueuedMessagesBar {
       Row({ space: 5 }) {
         SymbolGlyph($r('sys.symbol.clock'))
           .fontSize(fs(12))
-          .fontColor([this.c.textTertiary])
+          .fontColor([this.panelTextTertiary()])
         Text(t('queued.count', kv('count', this.queued.length)))
           .fontSize(fs(12))
-          .fontColor(this.c.textTertiary)
+          .fontColor(this.panelTextTertiary())
       }
 
       // 消息行
@@ -61,7 +88,7 @@ export struct QueuedMessagesBar {
           Column({ space: 4 }) {
             Text(m.text)
               .fontSize(fs(13))
-              .fontColor(this.c.textPrimary)
+              .fontColor(this.panelText())
               .maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .lineHeight(fs(18))
@@ -92,10 +119,10 @@ export struct QueuedMessagesBar {
     }
     .width('100%')
     .margin({ top: 2, bottom: 6 })
-    .padding({ left: 12, right: 6, top: 10, bottom: 10 })
-    .borderRadius(14)
-    .backgroundColor(this.c.card)
-    .border({ width: 0.5, color: this.c.border })
+    .padding({ left: 14, right: 12, top: 11, bottom: 11 })
+    .borderRadius(16)
+    .backgroundColor(this.panelBg())
+    .border({ width: 0.5, color: this.panelBorder() })
     .shadow({ radius: 12, color: this.panelShadow(), offsetX: 0, offsetY: 3 })
   }
 
@@ -107,18 +134,18 @@ export struct QueuedMessagesBar {
       if (kind === 'edit') {
         SymbolGlyph($r('sys.symbol.square_and_pencil'))
           .fontSize(fs(15))
-          .fontColor([this.c.textSecondary])
+          .fontColor([this.panelTextSecondary()])
       } else {
         SymbolGlyph($r('sys.symbol.xmark'))
           .fontSize(fs(14))
-          .fontColor([disabled ? this.c.textTertiary : this.c.error])
+          .fontColor([disabled ? this.panelTextTertiary() : this.c.error])
       }
     }
     .width(30)
     .height(30)
     .justifyContent(FlexAlign.Center)
     .borderRadius(9)
-    .backgroundColor(this.isPressed(m, kind) ? this.c.surfaceSelected : Color.Transparent)
+    .backgroundColor(this.isPressed(m, kind) ? this.panelPressBg() : Color.Transparent)
     .scale({ x: this.isPressed(m, kind) ? 0.9 : 1, y: this.isPressed(m, kind) ? 0.9 : 1 })
     .animation({ duration: 120, curve: Curve.EaseOut })
     .opacity(disabled ? 0.4 : 1)
