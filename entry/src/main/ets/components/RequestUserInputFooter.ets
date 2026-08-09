@@ -42,7 +42,7 @@ struct RequestUserInputFooter {
     for (let i = 0; i < qs.length; i++) {
       const s: RequestUserInputAnswerState = new RequestUserInputAnswerState();
       s.selected = '';
-      s.userNote = '';
+      s.userNote = qs[i].prefill;   // 预填答案（对照上游 initial userNote: q.prefill ?? ''）
       init[qs[i].id] = s;
     }
     this.stateByQuestion = init;
@@ -87,7 +87,8 @@ struct RequestUserInputFooter {
     return s !== null && s.selected === label;
   }
 
-  // 校验单题：有选项 → 选了或填了备注即过；纯文本题 → 必须填备注
+  // 校验单题：有选项 → 选了或填了备注即过；纯文本题 → editor 题型恒过（空可提交），否则必须填备注
+  //   （对照上游 isRequestUserInputQuestionAnswered：if (inputType === 'editor') return true）
   private validateQuestion(q: RequestUserInputQuestion): boolean {
     const s: Object | undefined = this.stateByQuestion[q.id];
     if (s === undefined) {
@@ -96,6 +97,9 @@ struct RequestUserInputFooter {
     const st: RequestUserInputAnswerState = s as RequestUserInputAnswerState;
     if (q.options.length > 0) {
       return st.selected !== '' || st.userNote.trim().length > 0;
+    }
+    if (q.inputType === 'editor') {
+      return true;
     }
     return st.userNote.trim().length > 0;
   }
@@ -176,7 +180,7 @@ struct RequestUserInputFooter {
     }
     try {
       const opts: ApproveOptions = new ApproveOptions();
-      opts.answers = buildRequestUserInputAnswers(this.stateByQuestion);
+      opts.answers = buildRequestUserInputAnswers(this.stateByQuestion, qs);
       const ok: boolean = await getHubClient().approvePermission(this.sessionId, p.id, opts);
       if (!ok) {
         this.error = t('requestInput.submitFailed');
@@ -262,7 +266,7 @@ struct RequestUserInputFooter {
           Text(t('requestInput.enterAnswer'))
             .fontSize(fs(11))
             .fontColor(this.c.textSecondary)
-          TextArea({ text: this.currentNote, placeholder: t('requestInput.placeholder') })
+          TextArea({ text: this.currentNote, placeholder: this.current.placeholder !== '' ? this.current.placeholder : t('requestInput.placeholder') })
             .fontSize(fs(13))
             .fontColor(this.c.textPrimary)
             .placeholderColor(this.c.textTertiary)

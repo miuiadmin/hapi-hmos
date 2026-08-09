@@ -59,6 +59,8 @@ export const zhCN: Record<string, string> = {
   'settings.voice.voice': '声音',
   'settings.voice.autoDetect': '自动检测',
   'settings.voice.hubDefault': 'Hub 默认',
+  'settings.voice.noVoiceBackend': 'Hub 尚未配置语音助手后端 — 请在下方添加。',
+  'settings.voice.noTranscriptionProvider': 'Hub 尚未配置语音转文字服务商 — 请在下方添加。',
   'settings.voice.credentials.title': '转写凭证',
   'settings.voice.credentials.manageHint': '管理语音转文字服务商的 API 密钥，密钥保存在 Hub 上。',
   'settings.voice.credentials.loading': '正在加载凭证…',

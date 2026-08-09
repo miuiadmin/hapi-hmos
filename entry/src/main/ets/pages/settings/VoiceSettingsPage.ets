@@ -105,6 +105,16 @@ struct VoiceSettingsPage {
     return src !== '' ? src : t('settings.voice.credentials.configured');
   }
 
+  // 是否有已配置的语音后端（realtime 语音；对照上游 configuredBackends：elevenlabs/geminiLive/qwenRealtime）
+  private get hasVoiceBackend(): boolean {
+    return this.creds.elevenlabs.configured || this.creds.geminiLive.configured || this.creds.qwenRealtime.configured;
+  }
+  // 是否有已配置的转写服务商（听写；对照上游 hubProviders：openai/elevenlabs/deepgram/groq/openaiCompatible）
+  private get hasTranscriptionProvider(): boolean {
+    return this.creds.openai.configured || this.creds.elevenlabs.configured
+      || this.creds.deepgram.configured || this.creds.groq.configured || this.creds.openaiCompatible.configured;
+  }
+
   private openCredEditor(p: CredProvider): void {
     if (this.saving) { return; }
     this.editingKey = p.key;
@@ -271,6 +281,29 @@ struct VoiceSettingsPage {
                 })
               }
             } else {
+              // 空态提示（对照上游 voice.tsx：无语音后端 / 无转写服务商时引导「在下方添加」）
+              if (!this.hasVoiceBackend || !this.hasTranscriptionProvider) {
+                ListItem() {
+                  Column({ space: 6 }) {
+                    if (!this.hasVoiceBackend) {
+                      Text(t('settings.voice.noVoiceBackend'))
+                        .fontSize(fs(12))
+                        .fontColor(this.c.textTertiary)
+                    }
+                    if (!this.hasTranscriptionProvider) {
+                      Text(t('settings.voice.noTranscriptionProvider'))
+                        .fontSize(fs(12))
+                        .fontColor(this.c.textTertiary)
+                    }
+                  }
+                  .width('100%')
+                  .padding({
+                    left: $r('app.float.setting_card_padding_h'), right: $r('app.float.setting_card_padding_h'),
+                    top: 10, bottom: 10
+                  })
+                  .alignItems(HorizontalAlign.Start)
+                }.selectable(false)
+              }
               ForEach(CRED_PROVIDERS, (p: CredProvider, idx: number) => {
                 ListItem() {
                   SettingCard({

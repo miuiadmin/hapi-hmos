@@ -2,7 +2,7 @@ import { ChatBlock } from '../chat/ChatBlock';
 import { getHubClient } from '../api/HubClient';
 import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { buildImageCacheKey } from '../services/GeneratedImageCacheUtils';
-import { isInlineVideoMimeType, isInlineAudioMimeType, isInlineImageMimeType, generatedInlineMediaLabel } from '../chat/InlineMedia';
+import { isInlineVideoMimeType, isInlineAudioMimeType, isInlineImageMimeType, generatedInlineMediaLabel, computeTinyImageScale } from '../chat/InlineMedia';
 import { AudioPlayerBar } from './AudioPlayerBar';
 import { fileIo, picker } from '@kit.CoreFileKit';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
@@ -31,6 +31,8 @@ export struct GeneratedImageCard {
   @Local loadMedia: boolean = false;   // 非图片媒体的显式拉取 gate（图片恒真）
   @Local saving: boolean = false;      // 下载进行中
   @Local saveError: string = '';       // 下载失败文案
+  @Local naturalW: number = 0;         // 图片解码原始像素宽（onComplete 探测；tiny 放大判定用）
+  @Local naturalH: number = 0;         // 图片解码原始像素高
 
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
@@ -39,6 +41,19 @@ export struct GeneratedImageCard {
   private get isVideo(): boolean { return isInlineVideoMimeType(this.block.mimeType); }
   private get isAudio(): boolean { return isInlineAudioMimeType(this.block.mimeType); }
   private get isImage(): boolean { return isInlineImageMimeType(this.block.mimeType); }
+
+  // tiny 内联图放大：图片最大边 < 64px 时按 computeTinyImageScale 放大到 64px（封顶 16×），
+  //   避免微小生成图标被拉伸成满宽（对照上游 transform: scale；这里改 .width(px) 落地）。
+  //   naturalW===0（未加载/探测前）→ '100%'（默认满宽；onComplete 探测后 tiny 图重算收缩）。
+  private get imgW(): Length {
+    if (this.naturalW > 0) {
+      const scale: number = computeTinyImageScale(this.naturalW, this.naturalH);
+      if (scale > 1) {
+        return Math.round(this.naturalW * scale);
+      }
+    }
+    return '100%';
+  }
 
   aboutToAppear(): void {
     // 图片自动拉；非图片等用户点 Load（shouldFetch = isImage || loadMedia）。
@@ -134,11 +149,18 @@ export struct GeneratedImageCard {
         // 已就绪：按 mime 分支渲染
         if (this.isImage) {
           Image(this.filePath)
-            .width('100%')
+            .width(this.imgW)
             .objectFit(ImageFit.Contain)
             .borderRadius(10)
-            .constraintSize({ maxHeight: 360 })
+            .constraintSize({ maxHeight: 360, maxWidth: '100%' })
             .draggable(false)
+            .onComplete((e) => {
+              // 探测原始像素尺寸（一次性；tiny 放大判定）。event 可选 → undefined 守卫。
+              if (e !== undefined && this.naturalW === 0 && e.width > 0) {
+                this.naturalW = e.width;
+                this.naturalH = e.height;
+              }
+            })
             .onClick((): void => { this.previewOpen = true; })
         } else if (this.isAudio) {
           AudioPlayerBar({ src: this.filePath })

@@ -23,3 +23,15 @@ export function generatedInlineMediaLabel(mimeType: string): string {
   if (isInlineImageMimeType(mimeType)) { return 'genImage.caption'; }
   return 'genImage.fileCaption';
 }
+
+// 内联图 tiny 放大（对照上游 ToolMessage.tsx computeTinyImageScale，#1405）：
+//   图最大边 < 64px → 放大到 64px（封顶 16×），避免微小生成图标按原始小尺寸难辨；
+//   细长图（一边 ≤0 或最大边 ≥64）恒 1（不放大畸形图）。纯函数，LocalUnit 可测。
+const MIN_INLINE_IMAGE_DIMENSION: number = 64;
+export function computeTinyImageScale(width: number, height: number): number {
+  const maxDim: number = Math.max(width, height);
+  if (width <= 0 || height <= 0 || maxDim >= MIN_INLINE_IMAGE_DIMENSION) {
+    return 1;
+  }
+  return Math.min(MIN_INLINE_IMAGE_DIMENSION / maxDim, 16);
+}

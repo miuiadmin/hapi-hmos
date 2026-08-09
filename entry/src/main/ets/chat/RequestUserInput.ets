@@ -15,6 +15,10 @@ export class RequestUserInputQuestion {
   id: string = '';
   question: string = '';
   options: RequestUserInputOption[] = [];
+  // v0.27.2 #1353 新增三字段（agent 自由格式工具输入的一部分，非 Pi 专属）：
+  placeholder: string = '';   // 自定义占位文案（'' = 未提供；上游 placeholder?）
+  prefill: string = '';        // 预填答案（'' = 未提供；上游 prefill?）
+  inputType: string = '';      // '' = 普通文本题；'editor' = 编辑器题型（恒视为已答 + 不 trim 首尾空格）
 }
 
 // 单题作答态（footer 内部）
@@ -80,25 +84,42 @@ export function parseRequestUserInputInput(input: Record<string, Object> | null)
     q.id = id;
     q.question = question;
     q.options = options;
+    // 三可选字段：placeholder/prefill 不 trim（上游保留原文）；inputType 仅认 'editor'。
+    q.placeholder = typeof rec['placeholder'] === 'string' ? rec['placeholder'] as string : '';
+    q.prefill = typeof rec['prefill'] === 'string' ? rec['prefill'] as string : '';
+    q.inputType = rec['inputType'] === 'editor' ? 'editor' : '';
     questions.push(q);
   }
   return questions;
 }
 
 // 格式化作答态 → 嵌套 answers（赋给 ApproveOptions.answers；body 最终 = { answers: { [id]: { answers: [...] } } }）。
-//   selected 非空 → 入数组；userNote trim 非空 → "user_note: <text>" 追加。
-export function buildRequestUserInputAnswers(stateByQuestion: Record<string, RequestUserInputAnswerState>): Record<string, Object> {
+//   selected 非空 → 入数组；userNote：editor 题型保留首尾空格且空也发，其余 trim 非空才发 "user_note: <text>"。
+//   questions 传入以判定 editor 题型（对照上游 formatRequestUserInputAnswers 的 questionById）。
+export function buildRequestUserInputAnswers(
+  stateByQuestion: Record<string, RequestUserInputAnswerState>,
+  questions: RequestUserInputQuestion[]
+): Record<string, Object> {
+  // editor 题 id 集合（查表 O(1)）
+  const editorIds: Set<string> = new Set<string>();
+  for (let i = 0; i < questions.length; i++) {
+    if (questions[i].inputType === 'editor') {
+      editorIds.add(questions[i].id);
+    }
+  }
   const answers: Record<string, Object> = {};
   const keys: string[] = Object.keys(stateByQuestion);
   for (let i = 0; i < keys.length; i++) {
     const id: string = keys[i];
     const st: RequestUserInputAnswerState = stateByQuestion[id];
+    const isEditor: boolean = editorIds.has(id);
     const arr: string[] = [];
     if (st.selected !== '') {
       arr.push(st.selected);
     }
-    const note: string = st.userNote.trim();
-    if (note.length > 0) {
+    // editor：保留原文（不 trim）+ 空也发；其余：trim 非空才发（对照上游 isEditor ? userNote : userNote.trim()）。
+    const note: string = isEditor ? st.userNote : st.userNote.trim();
+    if (isEditor || note.length > 0) {
       arr.push(`user_note: ${note}`);
     }
     const inner: Record<string, string[]> = { 'answers': arr };
@@ -121,11 +142,39 @@ function pickStrings(arr: Object[]): string[] {
   return out;
 }
 
-// 读回解析（对照上游 requestUserInput.ts:111-146 parseRequestUserInputAnswers）。
+// 精确选项匹配（对照上游 exactOption）：question 的某选项 label 与 item 完全相等。
+function findOptionByLabelExact(q: RequestUserInputQuestion | undefined, label: string): RequestUserInputOption | null {
+  if (q === undefined) { return null; }
+  for (let i = 0; i < q.options.length; i++) {
+    if (q.options[i].label === label) { return q.options[i]; }
+  }
+  return null;
+}
+
+// 归一化匹配（对照上游 normalizedOptions）：trim 后唯一命中才算（避免多义）。
+function findOptionByLabelNormalized(q: RequestUserInputQuestion | undefined, label: string): RequestUserInputOption | null {
+  if (q === undefined) { return null; }
+  const trimmed: string = label.trim();
+  let match: RequestUserInputOption | null = null;
+  let count: number = 0;
+  for (let i = 0; i < q.options.length; i++) {
+    if (q.options[i].label.trim() === trimmed) {
+      match = q.options[i];
+      count++;
+    }
+  }
+  return count === 1 ? match : null;
+}
+
+// 读回解析（对照上游 requestUserInput.ts parseRequestUserInputAnswers）。
 //   入参可为外层 { answers: { [id]: { answers: [...] } } }（body 提交格式）或扁平 { [id]: string[] | {answers:[]} }。
-//   逐条：`user_note: ` 前缀 → userNote（剥前缀 trim）；否则首个 → selected（trim）。null → '' 归一（'' = null 哨兵，与类一致）。
+//   questions 传入以做精确/归一化选项匹配 + editor 题型判定（editor 的 userNote 不 trim，对照上游）。
+//   逐条：精确选项→归一化选项→`user_note: ` 前缀（editor 不 trim）→否则首个入 selected（trim）。null → '' 归一。
 //   非 object 入参 → null。
-export function parseRequestUserInputAnswers(answers: Object): Record<string, RequestUserInputAnswerState> | null {
+export function parseRequestUserInputAnswers(
+  answers: Object,
+  questions: RequestUserInputQuestion[]
+): Record<string, RequestUserInputAnswerState> | null {
   if (!isPlainObject(answers)) {
     return null;
   }
@@ -133,11 +182,19 @@ export function parseRequestUserInputAnswers(answers: Object): Record<string, Re
   const wrapped: Object = outer['answers'];
   const answersObj: Record<string, Object> = isPlainObject(wrapped) ? wrapped as Record<string, Object> : outer;
 
+  // id → question 查表（对照上游 questionById）
+  const questionById: Map<string, RequestUserInputQuestion> = new Map<string, RequestUserInputQuestion>();
+  for (let i = 0; i < questions.length; i++) {
+    questionById.set(questions[i].id, questions[i]);
+  }
+
   const parsed: Record<string, RequestUserInputAnswerState> = {};
   const keys: string[] = Object.keys(answersObj);
   for (let i = 0; i < keys.length; i++) {
     const id: string = keys[i];
     const value: Object = answersObj[id];
+    const question: RequestUserInputQuestion | undefined = questionById.get(id);
+    const isEditor: boolean = question !== undefined && question.inputType === 'editor';
 
     let answerArray: string[] = [];
     if (isPlainObject(value)) {
@@ -153,8 +210,19 @@ export function parseRequestUserInputAnswers(answers: Object): Record<string, Re
     let userNote: string = '';
     for (let j = 0; j < answerArray.length; j++) {
       const item: string = answerArray[j];
+      const exactOpt: RequestUserInputOption | null = findOptionByLabelExact(question, item);
+      if (exactOpt !== null) {
+        if (selected === '') { selected = exactOpt.label; }
+        continue;
+      }
+      const normOpt: RequestUserInputOption | null = findOptionByLabelNormalized(question, item);
+      if (normOpt !== null) {
+        if (selected === '') { selected = normOpt.label; }
+        continue;
+      }
       if (item.startsWith(NOTE_PREFIX)) {
-        userNote = item.substring(NOTE_PREFIX.length).trim();
+        const note: string = item.substring(NOTE_PREFIX.length);
+        userNote = isEditor ? note : note.trim();
       } else if (selected === '') {
         selected = item.trim();
       }

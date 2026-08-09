@@ -40,7 +40,7 @@ struct RequestUserInputView {
     if (source === null) {
       return null;
     }
-    return parseRequestUserInputAnswers(source);
+    return parseRequestUserInputAnswers(source, this.questions);
   }
 
   private get hasAnswers(): boolean {

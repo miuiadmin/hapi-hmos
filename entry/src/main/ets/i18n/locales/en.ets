@@ -58,6 +58,8 @@ export const en: Record<string, string> = {
   'settings.voice.voice': 'Voice',
   'settings.voice.autoDetect': 'Auto-detect',
   'settings.voice.hubDefault': 'Hub default',
+  'settings.voice.noVoiceBackend': 'No voice assistant backend is configured on the hub — add one below.',
+  'settings.voice.noTranscriptionProvider': 'No hub transcription provider yet — add one below.',
   'settings.voice.credentials.title': 'Transcription credentials',
   'settings.voice.credentials.manageHint': 'Manage API keys for speech-to-text providers. Keys are stored on the Hub.',
   'settings.voice.credentials.loading': 'Loading credentials…',
