@@ -336,6 +336,12 @@ export const zhCN: Record<string, string> = {
   'terminal.stdout': '标准输出',
   'terminal.stderr': '标准错误',
   'terminal.output': '终端输出',
+  'terminal.retry': '重试',
+  'terminal.inputMode.label': '输入模式',
+  'terminal.inputMode.command': '命令',
+  'terminal.inputMode.direct': '直发',
+  'terminal.command.placeholder': '输入命令后点运行…',
+  'terminal.command.run': '运行',
 
   // —— 语音页（ElevenLabs Conversational AI）——
   'voice.title': '语音',

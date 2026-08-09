@@ -10,6 +10,52 @@
 
 export type QuickKeyKind = 'seq' | 'ctrl' | 'alt';
 
+// 终端输入模式（对照上游 terminal.tsx:99 TerminalInputMode）：
+//   command = 命令输入框 + Run（整行提交，buildTerminalCommandSequence 规范化换行 + 补 CR）；
+//   direct  = 原始键序列（快捷键栏 / 自由文本逐字发送），用于 TUI 交互（vim/less）。
+export type TerminalInputMode = 'command' | 'direct';
+
+// 命令快捷模板（对照上游 BASIC_COMMANDS，terminal.tsx:187）：tap → 填入命令框（不直接发）。
+export interface BasicCommand {
+  label: string;
+  command: string;
+}
+export const BASIC_COMMANDS: BasicCommand[] = [
+  { label: 'ls', command: 'ls' },
+  { label: 'ls -la', command: 'ls -la' },
+  { label: 'pwd', command: 'pwd' },
+  { label: 'cd', command: 'cd ' },
+  { label: 'git status', command: 'git status' },
+  { label: 'git diff', command: 'git diff' },
+  { label: 'clear', command: 'clear' },
+  { label: 'top', command: 'top' }
+];
+
+// 命令序列规范化（对照上游 buildTerminalCommandSequence，terminal.tsx:116-119）：
+//   \r\n / \n → \r（终端 Enter 发 CR）；末尾补 \r 确保提交执行。
+//   手写扫描（ArkTS 规避 regex）；逐字符：\r\n 或 \n → \r，其余原样；末尾无 \r 则补。
+export function buildTerminalCommandSequence(command: string): string {
+  let out: string = '';
+  for (let i = 0; i < command.length; i++) {
+    const ch: string = command.charAt(i);
+    if (ch === '\r') {
+      // \r 后紧跟 \n → 合并为单个 \r（跳过 \n）
+      if (i + 1 < command.length && command.charAt(i + 1) === '\n') {
+        i++;
+      }
+      out += '\r';
+    } else if (ch === '\n') {
+      out += '\r';
+    } else {
+      out += ch;
+    }
+  }
+  if (out.length === 0 || out.charAt(out.length - 1) !== '\r') {
+    out += '\r';
+  }
+  return out;
+}
+
 // 快捷键定义（纯数据 → interface，ArkTS 对象字面量可直填）
 export interface QuickKey {
   label: string;        // 按钮文案

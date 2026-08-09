@@ -14,7 +14,11 @@ import {
   QuickKey,
   ModifierState,
   classifyTerminalError,
-  TerminalErrorInfo
+  TerminalErrorInfo,
+  buildTerminalCommandSequence,
+  BASIC_COMMANDS,
+  BasicCommand,
+  TerminalInputMode
 } from '../chat/TerminalInput';
 import { TerminalFontSizeService, getTerminalFontSizeState, TerminalFontSizeState } from '../services/TerminalFontSizeService';
 import { HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitleBarOptions, HdsNavigationMenuItemOptions } from '@kit.UIDesignKit';
@@ -88,6 +92,8 @@ struct TerminalPage {
   @Local findOpen: boolean = false;        // FindBar 展开
   @Local findQuery: string = '';           // 查找文本
   @Local findCaseSensitive: boolean = false; // 查找大小写敏感
+  @Local inputMode: TerminalInputMode = 'command';  // 输入模式：command=命令框+Run / direct=原始键序列（对照上游默认 command）
+  @Local commandDraft: string = '';        // command 模式命令框文本（对照上游 commandDraft）
 
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: TerminalHostBridge = new TerminalHostBridge();
@@ -220,6 +226,41 @@ struct TerminalPage {
     this.sendSeq(text);
     this.manualInput = '';
     this.focusTerm();
+  }
+
+  // command 模式「Run」：buildTerminalCommandSequence 规范化换行 + 补 CR 后整行提交（对照上游 handleCommandSubmit）
+  private sendCommand(): void {
+    const draft: string = this.commandDraft;
+    if (draft.trim() === '' || !this.inputEnabled()) { return; }
+    this.sendSeq(buildTerminalCommandSequence(draft));
+    this.commandDraft = '';
+    this.ctrlActive = false;
+    this.altActive = false;
+    this.focusTerm();
+  }
+
+  // 切输入模式（对照上游 handleInputModeChange）：切 command 聚焦命令框，切 direct 聚焦终端 + 复位修饰键
+  private setInputMode(mode: TerminalInputMode): void {
+    if (this.inputMode === mode) { return; }
+    this.inputMode = mode;
+    this.ctrlActive = false;
+    this.altActive = false;
+    if (mode === 'direct') { this.focusTerm(); }
+  }
+
+  // 命令模板 tap：填入命令框（不直接发；对照上游 handleCommandTemplate）
+  private useCommandTemplate(cmd: BasicCommand): void {
+    this.commandDraft = cmd.command;
+  }
+
+  // 重试：错误/配额态后重 boot（对照上游 handleRetry；仅 session 活跃）
+  private retry(): void {
+    if (!this.sessionActive) { return; }
+    this.booted = false;
+    this.state = 'connecting';
+    this.errorMsg = '';
+    this.quotaMax = -1;
+    this.bootIfReady();
   }
 
   private focusTerm(): void { this.runJs('focusTerminal()'); }
@@ -378,7 +419,8 @@ struct TerminalPage {
   }
 
   // 错误/退出/不可用 横幅（对照上游 errorMessage / exitInfo / inactive 提示）
-  //   配额超限（quotaMax>=0）显专用文案 + 琥珀色，区别于 generic 红色错误
+  //   配额超限（quotaMax>=0）显专用文案 + 琥珀色，区别于 generic 红色错误；
+  //   error 态 + session 活跃 → 显「重试」钮（对照上游 handleRetry，重 boot 终端）。
   @Builder
   private StatusBanner() {
     if (!this.sessionActive || this.state === 'error' || this.state === 'exited') {
@@ -394,6 +436,20 @@ struct TerminalPage {
           .layoutWeight(1)
           .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.sessionActive && this.state === 'error') {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(fs(12))
+              .fontColor([this.quotaMax >= 0 ? this.c.warning : this.c.error])
+            Text(t('terminal.retry'))
+              .fontSize(fs(13))
+              .fontColor(this.quotaMax >= 0 ? this.c.warning : this.c.error)
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(6)
+          .border({ width: 1, color: this.quotaMax >= 0 ? this.c.warning : this.c.error })
+          .onClick(() => { this.retry(); })
+        }
       }
       .width('100%')
       .padding({ left: 14, right: 14, top: 10, bottom: 10 })
@@ -528,14 +584,100 @@ struct TerminalPage {
     .border({ width: { top: 0.5 }, color: this.c.border })
   }
 
-  // 底部输入区：自由输入框 + 快捷键栏（对照上游 QUICK_INPUT_ROWS）
+  // 输入模式分段控件（对照上游 inputMode segmented [Command | Direct]）
+  @Builder
+  private ModeToggle() {
+    Row({ space: 0 }) {
+      Text(t('terminal.inputMode.command'))
+        .fontSize(fs(13))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.inputMode === 'command' ? this.c.bubbleUserText : this.c.textSecondary)
+        .backgroundColor(this.inputMode === 'command' ? this.c.primary : this.c.surface)
+        .layoutWeight(1).height(32).textAlign(TextAlign.Center).borderRadius(8)
+        .margin({ right: 3 })
+        .onClick(() => { this.setInputMode('command'); })
+      Text(t('terminal.inputMode.direct'))
+        .fontSize(fs(13))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.inputMode === 'direct' ? this.c.bubbleUserText : this.c.textSecondary)
+        .backgroundColor(this.inputMode === 'direct' ? this.c.primary : this.c.surface)
+        .layoutWeight(1).height(32).textAlign(TextAlign.Center).borderRadius(8)
+        .margin({ left: 3 })
+        .onClick(() => { this.setInputMode('direct'); })
+    }
+    .width('100%')
+  }
+
+  // command 模式：命令框 + Run + 命令快捷模板（对照上游 command 模式 textarea + Run + BASIC_COMMANDS）
+  //   Run 发 buildTerminalCommandSequence（规范化换行 + 补 CR）；模板 tap 填入命令框（不直接发）。
+  @Builder
+  private CommandMode() {
+    Column({ space: 6 }) {
+      Row({ space: 8 }) {
+        TextArea({ text: this.commandDraft, placeholder: t('terminal.command.placeholder') })
+          .fontSize(fs(15))
+          .layoutWeight(1)
+          .backgroundColor(this.c.surface)
+          .borderRadius(8)
+          .constraintSize({ minHeight: 40, maxHeight: 96 })
+          .enabled(this.inputEnabled())
+          .onChange((v: string) => { this.commandDraft = v; })
+        // Run
+        Text(t('terminal.command.run'))
+          .fontSize(fs(14))
+          .fontColor(this.inputEnabled() ? this.c.bubbleUserText : this.c.textTertiary)
+          .backgroundColor(this.inputEnabled() ? this.c.primary : this.c.surface)
+          .borderRadius(8)
+          .height(40)
+          .padding({ left: 16, right: 16 })
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.sendCommand(); })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      // BASIC_COMMANDS 命令模板网格（tap → 填入命令框）
+      Grid() {
+        ForEach(BASIC_COMMANDS, (cmd: BasicCommand) => {
+          GridItem() {
+            Text(cmd.label)
+              .fontSize(fs(12))
+              .fontFamily('monospace')
+              .fontColor(this.c.textPrimary)
+              .backgroundColor(this.c.surface)
+              .borderRadius(6)
+              .height(32)
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .opacity(this.inputEnabled() ? 1 : 0.4)
+              .onClick(() => { this.useCommandTemplate(cmd); })
+          }
+        }, (cmd: BasicCommand) => cmd.label)
+      }
+      .columnsTemplate('1fr 1fr 1fr 1fr')
+      .rowsGap(6)
+      .columnsGap(6)
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  // 底部输入区：模式分段 [Command | Direct] + 按模式分支
+  //   command = 命令框 + Run + 模板；direct = 自由文本 + 快捷键栏（对照上游 compactControls 两模式）
   @Builder
   private InputBar() {
     Column({ space: 6 }) {
-      this.ManualInput()
-      ForEach(QUICK_INPUT_ROWS, (row: QuickKey[]) => {
-        this.QuickKeyRow(row)
-      }, (row: QuickKey[], idx: number) => `qk-${idx}`)
+      this.ModeToggle()
+      if (this.inputMode === 'command') {
+        this.CommandMode()
+      } else {
+        this.ManualInput()
+        ForEach(QUICK_INPUT_ROWS, (row: QuickKey[]) => {
+          this.QuickKeyRow(row)
+        }, (row: QuickKey[], idx: number) => `qk-${idx}`)
+      }
     }
     .width('100%')
     .padding({ left: 10, right: 10, top: 6, bottom: getLayoutState().bottomAvoidHeight + 10 })

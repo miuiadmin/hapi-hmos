@@ -335,6 +335,12 @@ export const en: Record<string, string> = {
   'terminal.stdout': 'Stdout',
   'terminal.stderr': 'Stderr',
   'terminal.output': 'Terminal output',
+  'terminal.retry': 'Retry',
+  'terminal.inputMode.label': 'Input mode',
+  'terminal.inputMode.command': 'Command',
+  'terminal.inputMode.direct': 'Direct',
+  'terminal.command.placeholder': 'Type a command and run…',
+  'terminal.command.run': 'Run',
 
   // —— Voice (ElevenLabs Conversational AI) ——
   'voice.title': 'Voice',
