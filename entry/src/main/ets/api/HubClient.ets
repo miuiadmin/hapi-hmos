@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse, HubSettingsResult, parseHubSettingsResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t, kv } from '../i18n/I18nService';
@@ -804,6 +804,24 @@ export class HubClient {
     const httpError: string = resp.success ? '' :
       (resp.errorMessage !== undefined ? resp.errorMessage : t('api.usage.loadFailed', kv('code', resp.statusCode)));
     return parseUsageSummaryResponse(resp.data, httpError);
+  }
+
+  // —— Hub 设置（v0.27.2 GET/PUT /api/hub-settings，仅 hub owner=namespace 'default'）——
+  //   对照 web client.ts getHubSettings/updateHubSettings。GET → { sessionSummaryContract };
+  //   PUT 同 body → 更新后回新值。非 owner → 403 {error}，parseHubSettingsResponse 提取挂 r.error。
+  async getHubSettings(): Promise<HubSettingsResult> {
+    const resp = await this.request(http.RequestMethod.GET, '/api/hub-settings', undefined, 'jwt');
+    const httpError: string = resp.success ? '' :
+      (resp.errorMessage !== undefined ? resp.errorMessage : t('api.hubSettings.loadFailed', kv('code', resp.statusCode)));
+    return parseHubSettingsResponse(resp.data, httpError);
+  }
+  async updateHubSettings(contract: boolean): Promise<HubSettingsResult> {
+    const body: Record<string, Object> = {};
+    body['sessionSummaryContract'] = contract;
+    const resp = await this.request(http.RequestMethod.PUT, '/api/hub-settings', body, 'jwt');
+    const httpError: string = resp.success ? '' :
+      (resp.errorMessage !== undefined ? resp.errorMessage : t('api.hubSettings.updateFailed', kv('code', resp.statusCode)));
+    return parseHubSettingsResponse(resp.data, httpError);
   }
 }
 

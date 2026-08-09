@@ -1343,3 +1343,31 @@ export function parseUsageSummaryResponse(json: string, httpError: string): Usag
   r.byModel = parseUsageBuckets(raw, 'byModel');
   return r;
 }
+
+// —— Hub 设置（v0.27.2 GET/PUT /api/hub-settings，仅 hub owner=namespace default）——
+//   对照 shared/src/apiTypes.ts HubSettingsResponse { sessionSummaryContract: boolean }。
+//   sessionSummaryContract=true：Claude/Codex/OpenCode/远程 Grok 会话每轮末追加 AGENT_NOTIFY_SUMMARY 行
+//   （更密的就绪通知）。默认关；本地 Grok 与 Cursor 暂不覆盖；对新开/恢复的会话生效。
+export class HubSettingsResult {
+  sessionSummaryContract: boolean = false;
+  error: string = '';   // '' = 成功；非 owner 403 / 网络 / 解析错
+}
+
+export function parseHubSettingsResponse(json: string, httpError: string): HubSettingsResult {
+  const r: HubSettingsResult = new HubSettingsResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.error = httpError !== '' ? httpError : t('types.hubSettings.parseFailed');
+    return r;
+  }
+  // 上游错误响应 { error: '...' }（如非 owner 403）
+  const upstreamErr = pickStr(raw, 'error');
+  if (upstreamErr !== '') {
+    r.error = upstreamErr;
+    return r;
+  }
+  r.sessionSummaryContract = pickBool(raw, 'sessionSummaryContract');
+  return r;
+}
