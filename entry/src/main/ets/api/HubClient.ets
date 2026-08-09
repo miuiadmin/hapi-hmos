@@ -1,7 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
-import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse, HubSettingsResult, parseHubSettingsResponse, SqliteStorageUsageResult, parseSqliteStorageUsageResponse } from '../models/Types';
+import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse, HubSettingsResult, parseHubSettingsResponse, SqliteStorageUsageResult, parseSqliteStorageUsageResponse, TranscriptionCredentialStatus, parseTranscriptionCredentialsResponse } from '../models/Types';
 import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t, kv } from '../i18n/I18nService';
@@ -832,6 +832,23 @@ export class HubClient {
     const httpError: string = resp.success ? '' :
       (resp.errorMessage !== undefined ? resp.errorMessage : t('api.storage.loadFailed', kv('code', resp.statusCode)));
     return parseSqliteStorageUsageResponse(resp.data, httpError);
+  }
+
+  // —— 语音转写凭证（v0.27.2 GET/PUT /api/voice/transcription/credentials，仅 hub owner）——
+  //   对照 web client.ts fetchTranscriptionCredentials / updateTranscriptionCredentials。
+  //   GET → TranscriptionCredentialStatus；非 owner → 403 {error} 挂 r.error。
+  //   PUT body = 调用方构建的稀疏对象（null=清除 / 缺省=不变 / 字符串=设置；schema .strict()）。
+  async fetchTranscriptionCredentials(): Promise<TranscriptionCredentialStatus> {
+    const resp = await this.request(http.RequestMethod.GET, '/api/voice/transcription/credentials', undefined, 'jwt');
+    const httpError: string = resp.success ? '' :
+      (resp.errorMessage !== undefined ? resp.errorMessage : t('api.voiceCreds.loadFailed', kv('code', resp.statusCode)));
+    return parseTranscriptionCredentialsResponse(resp.data, httpError);
+  }
+  async updateTranscriptionCredentials(body: Record<string, Object | null>): Promise<TranscriptionCredentialStatus> {
+    const resp = await this.request(http.RequestMethod.PUT, '/api/voice/transcription/credentials', body, 'jwt');
+    const httpError: string = resp.success ? '' :
+      (resp.errorMessage !== undefined ? resp.errorMessage : t('api.voiceCreds.updateFailed', kv('code', resp.statusCode)));
+    return parseTranscriptionCredentialsResponse(resp.data, httpError);
   }
 }
 

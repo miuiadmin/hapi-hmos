@@ -1405,3 +1405,95 @@ export function parseSqliteStorageUsageResponse(json: string, httpError: string)
   r.totalBytes = pickNum(raw, 'totalBytes');
   return r;
 }
+
+// —— 语音转写凭证（v0.27.2 GET/PUT /api/voice/transcription/credentials，仅 hub owner）——
+//   对照 shared/apiTypes + hub config/providerCredentials.ts。GET → TranscriptionCredentialStatus；
+//   非 owner → 403 {error}。MaskedCredentialStatus = { configured, source, hint, editable }。
+//   source='env'+editable=false = 环境变量锁定（只读，PUT 返 409）；hint = 脱敏密钥（••••+末4）。
+
+export class MaskedCredentialStatus {
+  configured: boolean = false;
+  source: string = '';         // 'env' | 'settings' | 'none'
+  hint: string = '';           // 脱敏密钥（null → ''）
+  editable: boolean = false;
+}
+
+// OpenAI 兼容端点（baseUrl+model 决定 configured；apiKey 独立掩码）
+export class OpenAiCompatibleCredentialStatus {
+  configured: boolean = false;
+  source: string = '';
+  baseUrl: string = '';        // 实际未脱敏 URL（null → ''）
+  model: string = '';          // 实际未脱敏模型 id（null → ''）
+  baseUrlEditable: boolean = false;
+  modelEditable: boolean = false;
+  apiKey: MaskedCredentialStatus = new MaskedCredentialStatus();
+}
+
+export class TranscriptionCredentialStatus {
+  openai: MaskedCredentialStatus = new MaskedCredentialStatus();
+  elevenlabs: MaskedCredentialStatus = new MaskedCredentialStatus();
+  deepgram: MaskedCredentialStatus = new MaskedCredentialStatus();
+  groq: MaskedCredentialStatus = new MaskedCredentialStatus();
+  openaiCompatible: OpenAiCompatibleCredentialStatus = new OpenAiCompatibleCredentialStatus();
+  // voiceBackends 三项（elevenlabs/geminiLive/qwenRealtime）
+  elevenlabsBackend: MaskedCredentialStatus = new MaskedCredentialStatus();
+  geminiLive: MaskedCredentialStatus = new MaskedCredentialStatus();
+  qwenRealtime: MaskedCredentialStatus = new MaskedCredentialStatus();
+  error: string = '';          // 客户端合成（HTTP 失败 / 非 owner 403 / 损坏体）
+}
+
+// 解析单个 MaskedCredentialStatus 子对象
+function parseMasked(r: Record<string, Object>): MaskedCredentialStatus {
+  const m: MaskedCredentialStatus = new MaskedCredentialStatus();
+  m.configured = pickBool(r, 'configured');
+  m.source = pickStr(r, 'source');
+  m.hint = pickStr(r, 'hint');
+  m.editable = pickBool(r, 'editable');
+  return m;
+}
+
+// 解析 GET /api/voice/transcription/credentials → TranscriptionCredentialStatus
+export function parseTranscriptionCredentialsResponse(json: string, httpError: string): TranscriptionCredentialStatus {
+  const r: TranscriptionCredentialStatus = new TranscriptionCredentialStatus();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.error = httpError !== '' ? httpError : t('types.voice.credsParseFailed');
+    return r;
+  }
+  const upstreamErr = pickStr(raw, 'error');
+  if (upstreamErr !== '') {
+    r.error = upstreamErr;
+    return r;
+  }
+  const o: Record<string, Object> | null = pickObj(raw, 'openai');
+  if (o !== null) { r.openai = parseMasked(o); }
+  const e: Record<string, Object> | null = pickObj(raw, 'elevenlabs');
+  if (e !== null) { r.elevenlabs = parseMasked(e); }
+  const d: Record<string, Object> | null = pickObj(raw, 'deepgram');
+  if (d !== null) { r.deepgram = parseMasked(d); }
+  const g: Record<string, Object> | null = pickObj(raw, 'groq');
+  if (g !== null) { r.groq = parseMasked(g); }
+  const compat: Record<string, Object> | null = pickObj(raw, 'openaiCompatible');
+  if (compat !== null) {
+    r.openaiCompatible.configured = pickBool(compat, 'configured');
+    r.openaiCompatible.source = pickStr(compat, 'source');
+    r.openaiCompatible.baseUrl = pickStr(compat, 'baseUrl');
+    r.openaiCompatible.model = pickStr(compat, 'model');
+    r.openaiCompatible.baseUrlEditable = pickBool(compat, 'baseUrlEditable');
+    r.openaiCompatible.modelEditable = pickBool(compat, 'modelEditable');
+    const ak: Record<string, Object> | null = pickObj(compat, 'apiKey');
+    if (ak !== null) { r.openaiCompatible.apiKey = parseMasked(ak); }
+  }
+  const vb: Record<string, Object> | null = pickObj(raw, 'voiceBackends');
+  if (vb !== null) {
+    const el: Record<string, Object> | null = pickObj(vb, 'elevenlabs');
+    if (el !== null) { r.elevenlabsBackend = parseMasked(el); }
+    const gl: Record<string, Object> | null = pickObj(vb, 'geminiLive');
+    if (gl !== null) { r.geminiLive = parseMasked(gl); }
+    const qr: Record<string, Object> | null = pickObj(vb, 'qwenRealtime');
+    if (qr !== null) { r.qwenRealtime = parseMasked(qr); }
+  }
+  return r;
+}
