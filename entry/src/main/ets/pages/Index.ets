@@ -14,6 +14,7 @@ import {
   groupSessionsByDirectory,
   flattenGroups,
   computePinnedBuckets,
+  isPinnedInProgressSession,
   isGroupCollapsed,
   machineGroupHasActive,
   directoryGroupHasActive,
@@ -346,13 +347,14 @@ struct Index {
     let pinned: PinnedBucket[] = [];
     let groupSource: SessionSummary[] = this.filteredSessions;
     if (pinEnabled) {
-      // 活跃会话抽到置顶分区；目录分组只收非活跃（对照上游 filter !session.active）。
+      // 进行中会话（working/pending）抽到置顶分区；目录分组收其余（含空闲 active，对照上游 #1366
+      //   filter !isPinnedInProgressSession —— 安静 active 会话不再被置顶，回落各自目录分组）。
       pinned = computePinnedBuckets(this.filteredSessions);
-      const inactive: SessionSummary[] = [];
+      const rest: SessionSummary[] = [];
       for (let i = 0; i < this.filteredSessions.length; i++) {
-        if (!this.filteredSessions[i].active) { inactive.push(this.filteredSessions[i]); }
+        if (!isPinnedInProgressSession(this.filteredSessions[i])) { rest.push(this.filteredSessions[i]); }
       }
-      groupSource = inactive;
+      groupSource = rest;
     }
     return flattenGroups(
       groupSessionsByDirectory(groupSource),
@@ -750,8 +752,7 @@ struct Index {
   }
   private pinnedBucketLabel(key: string): string {
     if (key === 'working') { return t('sessions.running.working'); }
-    if (key === 'pending') { return t('sessions.running.pending'); }
-    return t('sessions.running.idle');
+    return t('sessions.running.pending');
   }
 
   @Builder

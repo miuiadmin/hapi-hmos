@@ -124,6 +124,7 @@ struct ChatPage {
   @Local teamState: TeamState | null = null;     // 会话内多 agent 团队态（agent 自治上报；非 null 时消息列表上方渲染 TeamPanel）
   @Local todos: TodoItem[] = [];                 // 会话内待办清单（agent TodoWrite 上报；非空时消息列表上方渲染 TodoPanel）
   @Local model: string = '';                     // 会话 model（ContextStatusBar 算预算上限用；首屏/SSE 播种）
+  @Local isModelChanging: boolean = false;       // 模型切换 REST 进行中（对照上游 useIsMutating → ModelChangingStatus「Changing…」）
   @Local flavor: string = '';                    // 会话 flavor（claude/codex/…；getContextBudgetTokens 门控 + 配置 overlay 门控）
   @Local worktreeBranch: string = '';            // 会话 worktree git 分支（metadata.worktree.branch；标题副标题显示）
   @Local effort: string = '';                    // claude 努力度（/effort；首屏/SSE 播种；SessionConfigOverlay 用）
@@ -800,7 +801,9 @@ struct ChatPage {
     // model 始终显：modelDisplayName 对 '' / 'auto' 返回「默认」，与会话配置面板一致——避免模型名不显示。
     const agent: string = this.flavor !== '' ? agentDisplayName(this.flavor) : '';
     const model: string = modelDisplayName(this.flavor, this.model);   // 恒非空
-    let s: string = agent !== '' ? `${agent} · ${model}` : model;
+    // 模型切换进行中：模型名后追加「Changing…」（对照上游 SessionHeader ModelChangingStatus；移动端用文本代替 spinner）。
+    const modelLabel: string = this.isModelChanging ? `${model} · ${t('session.modelChange.pending')}` : model;
+    let s: string = agent !== '' ? `${agent} · ${modelLabel}` : modelLabel;
     if (this.worktreeBranch !== '') { s = `${s} · ${t('session.item.worktree')}: ${this.worktreeBranch}`; }
     return s;
   }
@@ -1798,7 +1801,9 @@ struct ChatPage {
   private async applyModel(model: string): Promise<void> {
     const prev = this.model;
     this.model = model;
+    this.isModelChanging = true;
     const ok = await getHubClient().setModel(this.sessionId, model);
+    this.isModelChanging = false;
     if (!ok) { this.model = prev; showToast(t('chat.setModelFailed')); }
   }
   private async applyPermissionMode(mode: string): Promise<void> {

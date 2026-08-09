@@ -101,6 +101,79 @@ export const QUICK_INPUT_ROWS: QuickKey[][] = [
   ]
 ];
 
+// compact 4 页键盘页（对照上游 DirectKeyPage，terminal.tsx:100）。
+export type DirectKeyPage = 'control' | 'navigation' | 'shell' | 'symbols';
+// 页顺序（对照上游 DIRECT_KEY_PAGE_IDS，terminal.tsx:126）。
+export const DIRECT_KEY_PAGE_IDS: DirectKeyPage[] = ['control', 'navigation', 'shell', 'symbols'];
+
+// compact Direct 键盘 4 页键位（对照上游 COMPACT_DIRECT_INPUTS，terminal.tsx:129-186）。
+//   客户端恒 compact（触屏 → COMPACT_TERMINAL_QUERY 恒命中）；Direct 模式按页 Tab 切换。
+//   上游 QuickInput{label,sequence,modifier} → 客户端 QuickKey{label,seq,kind}：modifier='ctrl'/'alt' → kind，其余 seq。
+//   每页 11-12 键，终端以 6 列 Grid 自适应两行渲染。
+export const COMPACT_DIRECT_CONTROL: QuickKey[] = [
+  { label: 'Esc',   seq: '\x1b',   kind: 'seq' },
+  { label: 'Tab',   seq: '\t',     kind: 'seq' },
+  { label: '⇧Tab',  seq: '\x1b[Z', kind: 'seq' },
+  { label: 'Ctrl',  seq: '',       kind: 'ctrl' },
+  { label: 'Alt',   seq: '',       kind: 'alt' },
+  { label: 'Space', seq: ' ',      kind: 'seq' },
+  { label: 'Enter', seq: '\r',     kind: 'seq' },
+  { label: 'C-c',   seq: '\x03',   kind: 'seq' },
+  { label: 'C-d',   seq: '\x04',   kind: 'seq' },
+  { label: 'C-z',   seq: '\x1a',   kind: 'seq' },
+  { label: 'C-l',   seq: '\x0c',   kind: 'seq' }
+];
+export const COMPACT_DIRECT_NAVIGATION: QuickKey[] = [
+  { label: '←',    seq: '\x1b[D', kind: 'seq' },
+  { label: '↑',    seq: '\x1b[A', kind: 'seq' },
+  { label: '↓',    seq: '\x1b[B', kind: 'seq' },
+  { label: '→',    seq: '\x1b[C', kind: 'seq' },
+  { label: 'Home', seq: '\x1b[H', kind: 'seq' },
+  { label: 'End',  seq: '\x1b[F', kind: 'seq' },
+  { label: 'PgUp', seq: '\x1b[5~', kind: 'seq' },
+  { label: 'PgDn', seq: '\x1b[6~', kind: 'seq' },
+  { label: '⌫',    seq: '\x7f',   kind: 'seq' },
+  { label: 'Del',  seq: '\x1b[3~', kind: 'seq' },
+  { label: 'C-a',  seq: '\x01',   kind: 'seq' },
+  { label: 'C-e',  seq: '\x05',   kind: 'seq' }
+];
+export const COMPACT_DIRECT_SHELL: QuickKey[] = [
+  { label: '/',  seq: '/',  kind: 'seq' },
+  { label: '-',  seq: '-',  kind: 'seq' },
+  { label: '|',  seq: '|',  kind: 'seq' },
+  { label: '~',  seq: '~',  kind: 'seq' },
+  { label: '$',  seq: '$',  kind: 'seq' },
+  { label: '.',  seq: '.',  kind: 'seq' },
+  { label: '..', seq: '..', kind: 'seq' },
+  { label: '\\', seq: '\\', kind: 'seq' },
+  { label: '&',  seq: '&',  kind: 'seq' },
+  { label: ';',  seq: ';',  kind: 'seq' },
+  { label: '>',  seq: '>',  kind: 'seq' },
+  { label: '>>', seq: '>>', kind: 'seq' }
+];
+export const COMPACT_DIRECT_SYMBOLS: QuickKey[] = [
+  { label: '_',  seq: '_',  kind: 'seq' },
+  { label: '"',  seq: '"',  kind: 'seq' },
+  { label: '\'', seq: '\'', kind: 'seq' },
+  { label: '`',  seq: '`',  kind: 'seq' },
+  { label: '(',  seq: '(',  kind: 'seq' },
+  { label: ')',  seq: ')',  kind: 'seq' },
+  { label: '[',  seq: '[',  kind: 'seq' },
+  { label: ']',  seq: ']',  kind: 'seq' },
+  { label: '{',  seq: '{',  kind: 'seq' },
+  { label: '}',  seq: '}',  kind: 'seq' },
+  { label: '=',  seq: '=',  kind: 'seq' },
+  { label: ':',  seq: ':',  kind: 'seq' }
+];
+
+// 取某页键位（Direct 模式 Grid 渲染当前页）。
+export function compactDirectInputsForPage(page: DirectKeyPage): QuickKey[] {
+  if (page === 'control') { return COMPACT_DIRECT_CONTROL; }
+  if (page === 'navigation') { return COMPACT_DIRECT_NAVIGATION; }
+  if (page === 'shell') { return COMPACT_DIRECT_SHELL; }
+  return COMPACT_DIRECT_SYMBOLS;
+}
+
 // 应用修饰键到序列（对照 applyModifierState，terminal.tsx:75-87）：
 //   alt → 前缀 ESC(\x1b)；ctrl 且单字符且大写码落在 64..95(@.._) → 码 - 64 = 控制字符。
 //   注意：alt 前缀会使长度变 2 → 之后 ctrl 分支（length===1）自动跳过，与上游一致。

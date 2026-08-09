@@ -7,7 +7,6 @@ import { getLayoutState } from '../state/LayoutState';
 import { t, kv } from '../i18n/I18nService';
 import { showToast } from '../utils/Toast';
 import {
-  QUICK_INPUT_ROWS,
   applyModifierState,
   shouldResetModifiers,
   uuid,
@@ -18,7 +17,10 @@ import {
   buildTerminalCommandSequence,
   BASIC_COMMANDS,
   BasicCommand,
-  TerminalInputMode
+  TerminalInputMode,
+  DirectKeyPage,
+  DIRECT_KEY_PAGE_IDS,
+  compactDirectInputsForPage
 } from '../chat/TerminalInput';
 import { TerminalFontSizeService, getTerminalFontSizeState, TerminalFontSizeState } from '../services/TerminalFontSizeService';
 import { HdsNavDestination, HdsNavDestinationTitleMode, HdsNavigationTitleBarOptions, HdsNavigationMenuItemOptions } from '@kit.UIDesignKit';
@@ -94,6 +96,7 @@ struct TerminalPage {
   @Local findCaseSensitive: boolean = false; // 查找大小写敏感
   @Local inputMode: TerminalInputMode = 'command';  // 输入模式：command=命令框+Run / direct=原始键序列（对照上游默认 command）
   @Local commandDraft: string = '';        // command 模式命令框文本（对照上游 commandDraft）
+  @Local directKeyPage: DirectKeyPage = 'control';  // compact Direct 键盘当前页（对照上游 DirectKeyPage，默认 control）
 
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridge: TerminalHostBridge = new TerminalHostBridge();
@@ -535,6 +538,62 @@ struct TerminalPage {
     return false;
   }
 
+  // compact Direct 键盘：4 页 Tab（control/navigation/shell/symbols）+ 当前页 6 列 Grid 键位
+  //   （对照上游 COMPACT_DIRECT_INPUTS + DIRECT_KEY_PAGE_IDS，terminal.tsx:126/129；客户端恒 compact）。
+  //   单键走 DirectKeyCell（箭头键 SymbolGlyph / 修饰键高亮 / 其余 Text，与 QuickKeyRow 同风格）。
+  @Builder
+  private DirectKeyPad() {
+    Column({ space: 6 }) {
+      Row({ space: 0 }) {
+        ForEach(DIRECT_KEY_PAGE_IDS, (pg: DirectKeyPage) => {
+          Text(t(`terminal.direct.page.${pg}`))
+            .fontSize(fs(12))
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.directKeyPage === pg ? this.c.bubbleUserText : this.c.textSecondary)
+            .backgroundColor(this.directKeyPage === pg ? this.c.primary : this.c.surface)
+            .layoutWeight(1).height(30).textAlign(TextAlign.Center).borderRadius(6)
+            .margin({ left: 2, right: 2 })
+            .onClick(() => { this.directKeyPage = pg; })
+        }, (pg: DirectKeyPage) => pg)
+      }
+      .width('100%')
+      Grid() {
+        ForEach(compactDirectInputsForPage(this.directKeyPage), (k: QuickKey) => {
+          GridItem() {
+            this.DirectKeyCell(k)
+          }
+        }, (k: QuickKey) => k.label)
+      }
+      .columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr')
+      .columnsGap(4)
+      .rowsGap(4)
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  // compact Direct 键盘单键（GridItem 内容；箭头键走 SymbolGlyph，修饰键走高亮，其余 Text）。
+  @Builder
+  private DirectKeyCell(k: QuickKey) {
+    if (this.isArrowKey(k.label)) {
+      SymbolGlyph(this.arrowSymbol(k.label))
+        .fontSize(fs(14))
+        .fontColor([this.quickKeyActive(k) ? this.c.bubbleUserText : this.c.textPrimary])
+        .backgroundColor(this.quickKeyActive(k) ? this.c.primary : this.c.surface)
+        .height(38).width('100%').borderRadius(6)
+        .opacity(this.inputEnabled() ? 1 : 0.4)
+        .onClick(() => { this.onQuickKey(k); })
+    } else {
+      Text(k.label)
+        .fontSize(fs(13))
+        .fontColor(this.quickKeyActive(k) ? this.c.bubbleUserText : this.c.textPrimary)
+        .backgroundColor(this.quickKeyActive(k) ? this.c.primary : this.c.surface)
+        .height(38).width('100%').textAlign(TextAlign.Center).borderRadius(6)
+        .opacity(this.inputEnabled() ? 1 : 0.4)
+        .onClick(() => { this.onQuickKey(k); })
+    }
+  }
+
   // 查找栏（SearchAddon；仅 ready 态可用；鸿蒙增值，上游无）
   //   TextInput 实时 findNext / Aa 大小写切换 / ‹ › 翻页 / ✕ 关闭清高亮
   @Builder
@@ -674,9 +733,7 @@ struct TerminalPage {
         this.CommandMode()
       } else {
         this.ManualInput()
-        ForEach(QUICK_INPUT_ROWS, (row: QuickKey[]) => {
-          this.QuickKeyRow(row)
-        }, (row: QuickKey[], idx: number) => `qk-${idx}`)
+        this.DirectKeyPad()
       }
     }
     .width('100%')

@@ -40,7 +40,7 @@ export class RenderRow {
   session: SessionSummary | null = null;          // kind==='session'
   groupKey: string = '';                          // kind==='show-more'：所属目录组 key（directoryGroupKey）
   remaining: number = 0;                          // kind==='show-more'：组内剩余隐藏会话数
-  bucketKey: string = '';                         // kind==='pinned-bucket'：子桶 key（'working'|'pending'|'idle'）
+  bucketKey: string = '';                         // kind==='pinned-bucket'：子桶 key（'working'|'pending'）
   pinnedCount: number = 0;                        // kind==='pinned-header'(总计数) | 'pinned-bucket'(本桶计数)
   key: string = '';                                // ForEach 稳定 key
 }
@@ -234,44 +234,48 @@ export function isGroupCollapsed(
   return !hasActive;
 }
 
-// 「进行中」置顶分区子桶（对照上游 RUNNING_BUCKETS + runningSessions useMemo，SessionList.tsx:1101-1127）。
-//   bucketKey ∈ {'working','pending','idle'}；渲染层据 key 映射圆点色 + 标签 + pulse（纯展示，本类不持色）。
+// 「进行中」置顶分区子桶（对照上游 RUNNING_BUCKETS + runningSessions useMemo，SessionList.tsx:1108-1130）。
+//   bucketKey ∈ {'working','pending'}；渲染层据 key 映射圆点色 + 标签 + pulse（纯展示，本类不持色）。
+//   ★ #1366 后不再有 idle 桶：空闲 active 会话不进置顶分区，回落目录分组（见 isPinnedInProgressSession）。
 export class PinnedBucket {
-  key: string = '';                 // 'working' | 'pending' | 'idle'
+  key: string = '';                 // 'working' | 'pending'
   sessions: SessionSummary[] = [];  // 本桶活跃会话（已 updatedAt 降序）
 }
 
-// 子桶顺序（对照上游 RUNNING_BUCKETS.key 顺序 working→pending→idle）。
-export const PINNED_BUCKET_KEYS: string[] = ['working', 'pending', 'idle'];
+// 是否为「值得置顶」的进行中会话（对照上游 #1366 isPinnedInProgressSession，SessionList.tsx:52-58）：
+//   active 且（thinking / 有后台任务 / 有 pending 请求）才置顶；安静 active 会话（idle）不算，留在目录分组。
+export function isPinnedInProgressSession(s: SessionSummary): boolean {
+  if (!s.active) { return false; }
+  return s.thinking || s.backgroundTaskCount > 0 || s.pendingRequestsCount > 0;
+}
 
-// 活跃会话分桶（纯函数，对照上游 runningSessions useMemo）：
-//   仅 active 会话参与；working=thinking||backgroundTaskCount>0 / pending=pendingRequestsCount>0 / idle=其余；
+// 子桶顺序（对照上游 RUNNING_BUCKETS.key 顺序 working→pending；#1366 去 idle）。
+export const PINNED_BUCKET_KEYS: string[] = ['working', 'pending'];
+
+// 进行中会话分桶（纯函数，对照上游 runningSessions useMemo）：
+//   仅 isPinnedInProgressSession 的会话参与；working=thinking||backgroundTaskCount>0 / pending=pendingRequestsCount>0；
 //   各桶 updatedAt 降序；空桶不返回（对照上游 if (sessions.length===0) return null）。
+//   空闲 active 会话（既非 working 也非 pending）不进任何桶，由调用方保留在目录分组。
 export function computePinnedBuckets(sessions: SessionSummary[]): PinnedBucket[] {
   const working: SessionSummary[] = [];
   const pending: SessionSummary[] = [];
-  const idle: SessionSummary[] = [];
   for (let i = 0; i < sessions.length; i++) {
     const s: SessionSummary = sessions[i];
-    if (!s.active) { continue; }
+    if (!isPinnedInProgressSession(s)) { continue; }
     if (s.thinking || s.backgroundTaskCount > 0) {
       working.push(s);
-    } else if (s.pendingRequestsCount > 0) {
-      pending.push(s);
     } else {
-      idle.push(s);
+      pending.push(s);
     }
   }
   const byRecent = (a: SessionSummary, b: SessionSummary): number => b.updatedAt - a.updatedAt;
   working.sort(byRecent);
   pending.sort(byRecent);
-  idle.sort(byRecent);
   const result: PinnedBucket[] = [];
   for (let i = 0; i < PINNED_BUCKET_KEYS.length; i++) {
     const key: string = PINNED_BUCKET_KEYS[i];
-    let arr: SessionSummary[] = idle;
+    let arr: SessionSummary[] = pending;
     if (key === 'working') { arr = working; }
-    else if (key === 'pending') { arr = pending; }
     if (arr.length === 0) { continue; }
     const pb: PinnedBucket = new PinnedBucket();
     pb.key = key;
@@ -287,8 +291,9 @@ export function computePinnedBuckets(sessions: SessionSummary[]): PinnedBucket[]
 //     + show-more 按钮；本项目简化：不实现 required-row 强制包含，组内已 active+pending 优先排序故取前 N 自然覆盖活跃项）。
 //   expandedGroups（默认空 Set）：已点「展开更多」的目录组 key 集合（key = directoryGroupKey）。
 //   pinnedBuckets（默认空）：「进行中」置顶分区子桶（computePinnedBuckets 产出）；非空时在所有机器组之前
-//     先渲染 pinned-header + 各 bucket 头 + 会话项。活跃会话已在调用方从目录分组中剔除（filter !active），
-//     故 pinned 会话行用 `ps:` 前缀 key 与目录组 `s:` 行隔离（同 id 不撞）。对照上游 runningSessionTotal>0 渲染块。
+//     先渲染 pinned-header + 各 bucket 头 + 会话项。被 pin 的进行中会话（working/pending）已在调用方剔除
+//     （filter !isPinnedInProgressSession），空闲 active 会话留在目录分组；故 pinned 会话行用 `ps:` 前缀 key
+//     与目录组 `s:` 行隔离（同 id 不撞）。对照上游 runningSessionTotal>0 渲染块。
 //   pinCollapsed（默认 false）：置顶分区头折叠态；搜索中恒展开（对照上游 !runningSectionCollapsed || isFiltering）。
 //   默认参数保后向兼容：旧调用 flattenGroups(mgs, isSearching, override) 等价于不限流（previewLimit=0）+ 无置顶分区。
 export function flattenGroups(
