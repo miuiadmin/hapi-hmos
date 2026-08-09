@@ -24,8 +24,8 @@ build-profile.json5.bak
 __pycache__/
 *.pyc
 
-# 参考源码：官方 hapi（AGPL，两份版本快照 v0.25.4 + v0.18.4）/ chatcube（MIT）/ paseo（AGPL，二线参考）的本地对照 clone，自带独立 .git、共约 530M。
-#   非本项目源码，整体不入库（对照用；主参考 hapi-v0.25.4 固定 tag，换版本见 docs/官方仓库对照.md）。
+# 参考源码：官方 hapi（AGPL，多版本快照 v0.27.2/v0.25.4/v0.18.4）/ chatcube（MIT）/ paseo（AGPL，二线参考）的本地对照 clone，自带独立 .git、共约 700M。
+#   非本项目源码，整体不入库（对照用；主参考 hapi-v0.27.2 固定 tag，换版本见 docs/官方仓库对照.md）。
 参考源码/
 
 # 打包产物与锁

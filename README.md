@@ -206,7 +206,7 @@ hapi-hmos/
 | 仓库 | https://github.com/tiann/hapi |
 | Git URL | `https://github.com/tiann/hapi.git` |
 | npm 包 | [`@twsxtd/hapi`](https://www.npmjs.com/package/@twsxtd/hapi) |
-| **当前参考版本** | **`0.25.4`**（固定 tag `v0.25.4`） |
+| **当前参考版本** | **`0.27.2`**（固定 tag `v0.27.2`） |
 | License | **AGPL-3.0-only** |
 | 作者 | Kirill Dubovitskiy & weishu |
 
@@ -224,15 +224,15 @@ hapi-hmos/
 主参考 `参考源码/hapi-v0.25.4/` 是独立 git clone（不是 submodule），且**已固定在 tag `v0.25.4`**（detached HEAD，不随 `main` 漂移），保证对照口径稳定。需要追新版本时：
 
 ```bash
-cd 参考源码/hapi-v0.25.4
+cd 参考源码/hapi-v0.27.2
 git fetch origin --tags
 git tag --sort=-creatordate | head -5      # 看最新 tag
 git checkout <新tag>                        # 切到新稳定版（detached）
 git rev-parse HEAD                          # 取新 commit，回填到上表
-# 回填后建议把目录名 hapi-v0.25.4 → hapi-v<新版本>，并同步更新文档路径
+# 回填后建议把目录名 hapi-v0.27.2 → hapi-v<新版本>，并同步更新文档路径
 ```
 
-> **为什么 `参考源码/` 不入库**：它是上游（两份版本快照）+ chatcube 的本地对照 clone（含各自独立 `.git`），仅供阅读对照；普通目录比 submodule 更简单，精确锁定版本靠「文件夹名带版本号 + 记录 commit」。clone 本仓库后如需对照，自行 `git clone tiann/hapi && git checkout v0.25.4` 即可。
+> **为什么 `参考源码/` 不入库**：它是上游（多份版本快照）+ chatcube 的本地对照 clone（含各自独立 `.git`），仅供阅读对照；普通目录比 submodule 更简单，精确锁定版本靠「文件夹名带版本号 + 记录 commit」。clone 本仓库后如需对照，自行 `git clone tiann/hapi && git checkout v0.27.2` 即可。
 
 ## 文档导航
 
