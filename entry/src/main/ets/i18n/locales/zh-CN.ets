@@ -120,6 +120,21 @@ export const zhCN: Record<string, string> = {
   'settings.usage.loadError': '加载失败',
   'settings.usage.retry': '重试',
 
+  // 存储用量（owner 级，对照上游 storage.tsx #1383）
+  'settings.storage.title': '存储空间',
+  'settings.storage.description': 'Hub SQLite 数据库当前占用的磁盘空间。',
+  'settings.storage.chartTitle': '相对占比',
+  'settings.storage.chartEmpty': '暂无可绘制的磁盘占用。',
+  'settings.storage.database': '数据库',
+  'settings.storage.wal': '预写日志',
+  'settings.storage.shm': '共享内存',
+  'settings.storage.total': '总计',
+  'settings.storage.path': '路径',
+  'settings.storage.refresh': '刷新',
+  'settings.storage.refreshing': '正在刷新…',
+  'settings.storage.error': '无法加载存储用量',
+  'settings.storage.retry': '重试',
+
   // —— 登录页 ——
   'login.subtitle': '连接到你的 Hub',
   'login.hubUrl': 'Hub 地址',
@@ -688,6 +703,8 @@ export const zhCN: Record<string, string> = {
   'api.hubSettings.loadFailed': '加载 Hub 设置失败 ({code})',
   'api.hubSettings.updateFailed': '更新 Hub 设置失败 ({code})',
   'types.hubSettings.parseFailed': 'Hub 设置解析失败',
+  'api.storage.loadFailed': '加载存储用量失败 ({code})',
+  'types.storage.parseFailed': '存储用量解析失败',
   'api.browseDirFailed': '浏览目录失败 ({code})',
   'api.spawnFailed': '启动会话失败 ({code})',
   'api.loadSessionsFailed': '加载会话失败 ({code})',

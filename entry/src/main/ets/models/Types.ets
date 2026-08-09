@@ -1371,3 +1371,37 @@ export function parseHubSettingsResponse(json: string, httpError: string): HubSe
   r.sessionSummaryContract = pickBool(raw, 'sessionSummaryContract');
   return r;
 }
+
+// Sqlite 存储用量（GET /api/storage/sqlite，仅 hub owner）—— 对照 shared/src/apiTypes.ts
+//   SqliteStorageUsageResponse { path, databaseBytes, walBytes, shmBytes, totalBytes }。
+//   path: 数据库文件路径；database/wal/shm 三段字节；totalBytes 为 hub 汇总（可能与三段之和略有差异）。
+export class SqliteStorageUsageResult {
+  path: string = '';
+  databaseBytes: number = 0;
+  walBytes: number = 0;
+  shmBytes: number = 0;
+  totalBytes: number = 0;
+  error: string = '';   // '' = 成功；非 owner 403 / 网络 / 解析错
+}
+
+export function parseSqliteStorageUsageResponse(json: string, httpError: string): SqliteStorageUsageResult {
+  const r: SqliteStorageUsageResult = new SqliteStorageUsageResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.error = httpError !== '' ? httpError : t('types.storage.parseFailed');
+    return r;
+  }
+  const upstreamErr = pickStr(raw, 'error');
+  if (upstreamErr !== '') {
+    r.error = upstreamErr;
+    return r;
+  }
+  r.path = pickStr(raw, 'path');
+  r.databaseBytes = pickNum(raw, 'databaseBytes');
+  r.walBytes = pickNum(raw, 'walBytes');
+  r.shmBytes = pickNum(raw, 'shmBytes');
+  r.totalBytes = pickNum(raw, 'totalBytes');
+  return r;
+}

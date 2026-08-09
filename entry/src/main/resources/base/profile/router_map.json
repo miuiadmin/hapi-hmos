@@ -64,6 +64,11 @@
       "name": "UsagePage",
       "pageSourceFile": "src/main/ets/pages/settings/UsagePage.ets",
       "buildFunction": "UsagePageBuilder"
+    },
+    {
+      "name": "StoragePage",
+      "pageSourceFile": "src/main/ets/pages/settings/StoragePage.ets",
+      "buildFunction": "StoragePageBuilder"
     }
   ]
 }

@@ -119,6 +119,21 @@ export const en: Record<string, string> = {
   'settings.usage.loadError': 'Failed to load',
   'settings.usage.retry': 'Retry',
 
+  // Storage usage (owner-level, mirrors upstream storage.tsx #1383)
+  'settings.storage.title': 'Storage',
+  'settings.storage.description': 'Current on-disk size of the Hub SQLite database.',
+  'settings.storage.chartTitle': 'Relative share',
+  'settings.storage.chartEmpty': 'No on-disk size to chart yet.',
+  'settings.storage.database': 'Database',
+  'settings.storage.wal': 'Write-ahead log',
+  'settings.storage.shm': 'Shared memory',
+  'settings.storage.total': 'Total',
+  'settings.storage.path': 'Path',
+  'settings.storage.refresh': 'Refresh',
+  'settings.storage.refreshing': 'Refreshing…',
+  'settings.storage.error': 'Unable to load storage usage',
+  'settings.storage.retry': 'Retry',
+
   // —— Login ——
   'login.subtitle': 'Connect to your Hub',
   'login.hubUrl': 'Hub URL',
@@ -687,6 +702,8 @@ export const en: Record<string, string> = {
   'api.hubSettings.loadFailed': 'Failed to load Hub settings ({code})',
   'api.hubSettings.updateFailed': 'Failed to update Hub settings ({code})',
   'types.hubSettings.parseFailed': 'Failed to parse Hub settings',
+  'api.storage.loadFailed': 'Failed to load storage usage ({code})',
+  'types.storage.parseFailed': 'Failed to parse storage usage',
   'api.browseDirFailed': 'Failed to browse directory ({code})',
   'api.spawnFailed': 'Failed to start session ({code})',
   'api.loadSessionsFailed': 'Failed to load sessions ({code})',

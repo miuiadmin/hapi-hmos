@@ -105,6 +105,11 @@ struct SettingsPage {
         key: 'usage', title: t('settings.usage.title'), subtitle: '',
         symbol: $r('sys.symbol.hourglass'), morandi: 'yellow', target: 'UsagePage'
       };
+      const storage: SettingsEntry = {
+        key: 'storage', title: t('settings.storage.title'), subtitle: '',
+        symbol: $r('sys.symbol.externaldrive'), morandi: 'blue', target: 'StoragePage'
+      };
+      aboutItems.unshift(storage);
       aboutItems.unshift(usage);
     }
     const aboutGroup: SettingsGroup = {
