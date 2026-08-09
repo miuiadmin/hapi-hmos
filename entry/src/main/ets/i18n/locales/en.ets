@@ -519,10 +519,20 @@ export const en: Record<string, string> = {
   // —— Slash completion ——
   'slash.customCommand': 'Custom command',
 
-  // —— Generated image card ——
+  // —— Generated media card (image/audio/video/file, mirrors generatedInlineMedia) ——
   'genImage.caption': 'Generated image · {fileName}',
+  'genImage.audioCaption': 'Generated audio · {fileName}',
+  'genImage.videoCaption': 'Generated video · {fileName}',
+  'genImage.fileCaption': 'Generated file · {fileName}',
   'genImage.loadFailed': 'Failed to load',
-  'genImage.unavailable': 'Generated image is unavailable. {error}',
+  'genImage.unavailable': 'Generated media is unavailable. {error}',
+  'genImage.loadVideo': 'Load video',
+  'genImage.loadAudio': 'Load audio',
+  'genImage.prepareDownload': 'Prepare download',
+  'genImage.download': 'Download {fileName}',
+  'genImage.downloading': 'Downloading…',
+  'genImage.downloadFailed': 'Download failed',
+  'genImage.audioError': 'Audio could not be played',
 
   // —— Codex review card (mirrors upstream codexReview.*) ——
   'codexReview.title': 'Codex review',

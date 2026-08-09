@@ -24,16 +24,37 @@ export function hashKey(key: string): string {
   return unsigned.toString(16).padStart(8, '0');
 }
 
-// mimeType → 文件扩展名（小写归一）。未知/空 → 'png'（Image 按文件头嗅探，扩展名错也不影响渲染）。
+// mimeType → 文件扩展名（小写归一）。
+//   图片：png/jpg/gif/webp/bmp/svg，未知 image/* → png（Image 按文件头嗅探，扩展名错也不影响渲染）。
+//   音频：mp3/wav/m4a/ogg/aac/flac，未知 audio/* → mp3（否则音频被存成 .png，磁盘与播放器都错）。
+//   视频：mp4/mov/webm/mkv，未知 video/* → mp4。
+//   其余 → bin。
 export function extensionForMime(mimeType: string): string {
   const m: string = mimeType.toLowerCase();
+  // 图片
   if (m === 'image/png') { return 'png'; }
   if (m === 'image/jpeg' || m === 'image/jpg') { return 'jpg'; }
   if (m === 'image/gif') { return 'gif'; }
   if (m === 'image/webp') { return 'webp'; }
   if (m === 'image/bmp') { return 'bmp'; }
   if (m === 'image/svg+xml') { return 'svg'; }
-  return 'png';
+  // 音频
+  if (m === 'audio/mpeg' || m === 'audio/mp3' || m === 'audio/mp4a') { return 'mp3'; }
+  if (m === 'audio/wav' || m === 'audio/wave' || m === 'audio/x-wav') { return 'wav'; }
+  if (m === 'audio/mp4' || m === 'audio/m4a' || m === 'audio/x-m4a') { return 'm4a'; }
+  if (m === 'audio/ogg' || m === 'audio/ogg; codecs=opus') { return 'ogg'; }
+  if (m === 'audio/aac' || m === 'audio/aacp') { return 'aac'; }
+  if (m === 'audio/flac' || m === 'audio/x-flac') { return 'flac'; }
+  if (m.startsWith('audio/')) { return 'mp3'; }
+  // 视频
+  if (m === 'video/mp4' || m === 'video/x-m4v') { return 'mp4'; }
+  if (m === 'video/quicktime') { return 'mov'; }
+  if (m === 'video/webm') { return 'webm'; }
+  if (m === 'video/x-matroska') { return 'mkv'; }
+  if (m.startsWith('video/')) { return 'mp4'; }
+  // 图片兜底（未知 image/*）+ 通用二进制
+  if (m.startsWith('image/')) { return 'png'; }
+  return 'bin';
 }
 
 // 组文件名：<hash>.<ext>

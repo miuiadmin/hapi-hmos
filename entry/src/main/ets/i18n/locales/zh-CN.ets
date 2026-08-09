@@ -520,10 +520,20 @@ export const zhCN: Record<string, string> = {
   // —— 斜杠补全 ——
   'slash.customCommand': '自定义命令',
 
-  // —— 生成图片卡 ——
+  // —— 生成媒体卡（图片/音频/视频/文件，对照 generatedInlineMedia）——
   'genImage.caption': '生成图片 · {fileName}',
+  'genImage.audioCaption': '生成音频 · {fileName}',
+  'genImage.videoCaption': '生成视频 · {fileName}',
+  'genImage.fileCaption': '生成文件 · {fileName}',
   'genImage.loadFailed': '加载失败',
-  'genImage.unavailable': '无法加载生成图片。{error}',
+  'genImage.unavailable': '无法加载生成媒体。{error}',
+  'genImage.loadVideo': '加载视频',
+  'genImage.loadAudio': '加载音频',
+  'genImage.prepareDownload': '准备下载',
+  'genImage.download': '下载 {fileName}',
+  'genImage.downloading': '下载中…',
+  'genImage.downloadFailed': '下载失败',
+  'genImage.audioError': '音频无法播放',
 
   // —— Codex review 卡（对照上游 codexReview.*）——
   'codexReview.title': 'Codex review',
