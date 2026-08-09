@@ -55,6 +55,7 @@ struct Index {
   @Local searchQuery: string = '';              // 会话搜索查询（纯客户端过滤，对照 web SessionListSearch）
   @Local isRefreshing: boolean = false;          // 下拉刷新中（Refresh 容器 refreshing 双向绑定）
   @Local sessionFilter: 'all' | 'active' | 'archived' = 'all';   // 列表 Tab 筛选：archived = 非活跃（hapi 归档即 active=false）
+  @Local showUnreadOnly: boolean = false;                       // 未读透镜（transient，非持久；reload 清零；对照上游 #1400）
   @Local machines: Machine[] = [];                                              // 机器列表（机器组头 label 用；MACHINE_UPDATED 刷新）
   @Local collapsedOverride: Map<string, boolean> = new Map<string, boolean>();  // 用户显式折叠/展开态（true=折叠）
   @Local expandedGroups: Set<string> = new Set<string>();   // 用户显式展开的目录组 key（超出预览行数时点「展开更多」登记；reassign 触发 V2）
@@ -309,12 +310,29 @@ struct Index {
     }
     // 2. 搜索过滤
     const q: string = this.searchQuery.trim().toLowerCase();
-    if (q === '') { return scoped; }
-    const out: SessionSummary[] = [];
-    for (let i = 0; i < scoped.length; i++) {
-      if (this.sessionMatches(scoped[i], q)) { out.push(scoped[i]); }
+    let searched: SessionSummary[];
+    if (q === '') {
+      searched = scoped;
+    } else {
+      const out: SessionSummary[] = [];
+      for (let i = 0; i < scoped.length; i++) {
+        if (this.sessionMatches(scoped[i], q)) { out.push(scoped[i]); }
+      }
+      searched = out;
     }
-    return out;
+    // 3. 未读透镜（transient，非持久；对照上游 #1400 filterUnreadSessionsOnly：
+    //    只留 classifySessionStatus==='unread' 的会话——读完即从列表消失）。
+    if (this.showUnreadOnly) {
+      const seen: SessionSeenService = getSessionSeenService();
+      const u: SessionSummary[] = [];
+      for (let i = 0; i < searched.length; i++) {
+        if (classifySessionStatus(searched[i], seen.lastSeen(searched[i].id)) === 'unread') {
+          u.push(searched[i]);
+        }
+      }
+      return u;
+    }
+    return searched;
   }
 
   // 三级分组行：filteredSessions → 机器→目录分组 → 按折叠态展平为 RenderRow[]（单层 ForEach 渲染）。
@@ -411,12 +429,14 @@ struct Index {
   // 筛选 Tab 文案与图标（按 tab+搜索词；filteredSessions===0 时用）
   private emptyMessage(): string {
     if (this.searchQuery.trim() !== '') { return t('sessions.search.noResults'); }
+    if (this.showUnreadOnly) { return t('sessions.empty.unread'); }
     if (this.sessionFilter === 'active') { return t('sessions.empty.active'); }
     if (this.sessionFilter === 'archived') { return t('sessions.empty.archived'); }
     return t('sessions.search.noResults');
   }
   private emptyIcon(): Resource {
     if (this.searchQuery.trim() !== '') { return $r('sys.symbol.magnifyingglass'); }
+    if (this.showUnreadOnly) { return $r('sys.symbol.envelope_open'); }
     if (this.sessionFilter === 'active') { return $r('sys.symbol.message'); }
     if (this.sessionFilter === 'archived') { return $r('sys.symbol.archivebox'); }
     return $r('sys.symbol.magnifyingglass');
@@ -425,6 +445,17 @@ struct Index {
     let n: number = 0;
     for (let i = 0; i < this.sessions.length; i++) {
       if (this.sessions[i].active === active) { n = n + 1; }
+    }
+    return n;
+  }
+  // 未读会话计数（未读透镜 chip 的 badge；对照 statusKindAt 'unread' 判定）
+  private countUnread(): number {
+    const seen: SessionSeenService = getSessionSeenService();
+    let n: number = 0;
+    for (let i = 0; i < this.sessions.length; i++) {
+      if (classifySessionStatus(this.sessions[i], seen.lastSeen(this.sessions[i].id)) === 'unread') {
+        n = n + 1;
+      }
     }
     return n;
   }
@@ -459,12 +490,36 @@ struct Index {
     .border({ width: this.sessionFilter === mode ? 1 : 0, color: this.c.primary })
     .onClick(() => { this.sessionFilter = mode; })
   }
+  // 未读透镜 chip（独立于 all/active/archived 三选 Tab 的布尔透镜；对照上游 #1400 圆形 toggle 按钮）。
+  //   复用 FilterTab 胶囊语言：选中=主色浅底+描边+Medium 主色字+主色点；未选中=surface 底+二级字+tertiary 点。
+  //   前置小圆点呼应 SessionItem 未读指示器与上游 SessionAttentionIndicator 形状。
+  @Builder
+  private UnreadFilterChip() {
+    Row() {
+      Circle({ width: 6, height: 6 })
+        .fill(this.showUnreadOnly ? this.c.primary : this.c.textTertiary)
+        .margin({ right: 6 })
+      Text(`${t('sessions.unreadFilter.toggle')} ${this.countUnread()}`)
+        .fontSize(fs(13))
+        .fontWeight(this.showUnreadOnly ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.showUnreadOnly ? this.c.primary : this.c.textSecondary)
+    }
+    .height(28)
+    .padding({ left: 12, right: 12 })
+    .borderRadius(14)
+    .backgroundColor(this.showUnreadOnly
+      ? this.withAlpha(this.c.primary, getThemeState().isDark ? '14' : '1A')
+      : this.c.surface)
+    .border({ width: this.showUnreadOnly ? 1 : 0, color: this.c.primary })
+    .onClick(() => { this.showUnreadOnly = !this.showUnreadOnly; })
+  }
   @Builder
   private FilterTabs() {
     Row() {
       this.FilterTab(t('sessions.filter.all'), 'all', this.sessions.length)
       this.FilterTab(t('sessions.filter.active'), 'active', this.countByActive(true))
       this.FilterTab(t('sessions.filter.archived'), 'archived', this.countByActive(false))
+      this.UnreadFilterChip()
     }
     .width('100%')
     .margin({ top: 8 })
