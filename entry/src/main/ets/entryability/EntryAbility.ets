@@ -19,6 +19,7 @@ import { getSessionSeenService } from '../services/SessionAttention';
 import { TerminalFontSizeService } from '../services/TerminalFontSizeService';
 import { SyncStateService } from '../services/SyncStateService';
 import { HapticService } from '../services/HapticService';
+import { ReasoningCollapseService } from '../services/ReasoningCollapseService';
 import { DeviceNetworkService } from '../services/DeviceNetworkService';
 import { getJwtRefreshScheduler } from '../services/JwtRefreshScheduler';
 import { SelfUpdateManager } from '../services/SelfUpdateManager';
@@ -114,6 +115,8 @@ export default class EntryAbility extends UIAbility {
     await TerminalFontSizeService.init();
     // 触感反馈开关须在 loadContent 前从持久化读回（各交互 tap 即用正确 enabled，避默认开闪一下）
     await HapticService.init();
+    // 推理默认折叠开关须在 loadContent 前从持久化读回（ReasoningBubble 首帧即用正确折叠态，对照上游 #1385）
+    await ReasoningCollapseService.init();
     // 设备网络探测须在 loadContent 前注册（hasDefaultNet 初始探测 + netAvailable/netUnavailable 监听），
     //   ConnectionBanner 首帧即用正确在线态（避乐观默认在线→离线闪烁）
     await DeviceNetworkService.init();

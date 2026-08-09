@@ -44,6 +44,8 @@ export const zhCN: Record<string, string> = {
   'settings.fontSize.large': '大',
   'settings.enterToSend': '回车发送消息',
   'settings.haptics': '触感反馈',
+  'settings.chat.reasoningCollapsed': '思考默认折叠',
+  'settings.chat.reasoningCollapsed.desc': 'AI 思考内容默认保持折叠，流式输出期间也不会自动展开',
   'settings.chat.terminalToolDisplay': '终端工具卡片',
   'settings.chat.terminalToolDisplay.compact': '简洁（仅命令）',
   'settings.chat.terminalToolDisplay.detailed': '详细（显示输出预览）',

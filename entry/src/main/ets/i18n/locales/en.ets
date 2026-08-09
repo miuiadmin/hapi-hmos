@@ -43,6 +43,8 @@ export const en: Record<string, string> = {
   'settings.fontSize.large': 'Large',
   'settings.enterToSend': 'Press Enter to send',
   'settings.haptics': 'Haptics',
+  'settings.chat.reasoningCollapsed': 'Collapse reasoning by default',
+  'settings.chat.reasoningCollapsed.desc': 'Keep AI reasoning collapsed, including while streaming',
   'settings.chat.terminalToolDisplay': 'Terminal Tool Cards',
   'settings.chat.terminalToolDisplay.compact': 'Compact (command only)',
   'settings.chat.terminalToolDisplay.detailed': 'Detailed (show output preview)',

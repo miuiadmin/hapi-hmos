@@ -15,6 +15,7 @@ import { VALID_TERMINAL_FONT_SIZES } from '../../chat/TerminalFontSize';
 import { SessionPreviewLimitService } from '../../services/SessionPreviewLimitService';
 import { PinInProgressService } from '../../services/PinInProgressService';
 import { HapticService } from '../../services/HapticService';
+import { ReasoningCollapseService } from '../../services/ReasoningCollapseService';
 import {
   ChatSurfaceColorPreference,
   ChatSurfaceColorPreset,
@@ -48,6 +49,7 @@ struct ChatSettingsPage {
   private scroller: Scroller = new Scroller();
   private get titleBarStyle(): TitleBarStyleOptions { return hdsTitleBarStyle(this.c.bg); }
   private get hapticsEnabled(): boolean { return HapticService.currentEnabled; }
+  private get reasoningCollapsed(): boolean { return ReasoningCollapseService.currentCollapsed; }
   private get terminalToolMode(): TerminalToolDisplayMode { return TerminalToolDisplayService.currentMode; }
   private get terminalFontSize(): number { return TerminalFontSizeService.currentSize; }
   private get sessionPreviewLimit(): number { return SessionPreviewLimitService.currentLimit; }
@@ -67,6 +69,7 @@ struct ChatSettingsPage {
     getPreferencesService().putBoolean(PreferenceKeys.ENTER_TO_SEND, isOn).catch(() => {});
   }
   private setHapticsEnabled(isOn: boolean): void { HapticService.setEnabled(isOn); }
+  private setReasoningCollapsed(isOn: boolean): void { ReasoningCollapseService.setCollapsed(isOn); }
   private selectTerminalToolDisplay(mode: TerminalToolDisplayMode): void { TerminalToolDisplayService.setMode(mode); }
   private selectTerminalFontSize(size: number): void { TerminalFontSizeService.setSize(size); }
   private setPinInProgress(on: boolean): void { PinInProgressService.setEnabled(on); }
@@ -148,8 +151,16 @@ struct ChatSettingsPage {
           ListItem() {
             SettingCard({
               primaryText: t('settings.haptics'), suffixType: 'switch',
-              switchIsOn: this.hapticsEnabled, rowPosition: 'last',
+              switchIsOn: this.hapticsEnabled, rowPosition: 'middle',
               onSwitchChange: (v: boolean) => { this.setHapticsEnabled(v); }
+            })
+          }
+          ListItem() {
+            SettingCard({
+              primaryText: t('settings.chat.reasoningCollapsed'), suffixType: 'switch',
+              secondaryText: t('settings.chat.reasoningCollapsed.desc'),
+              switchIsOn: this.reasoningCollapsed, rowPosition: 'last',
+              onSwitchChange: (v: boolean) => { this.setReasoningCollapsed(v); }
             })
           }
         }

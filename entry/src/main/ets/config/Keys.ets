@@ -19,6 +19,7 @@ export class PreferenceKeys {
   static readonly SESSION_LAST_SEEN: string = 'hapi_session_last_seen';   // 会话「已看」时间戳 map（JSON {sid→updatedAt}；对照上游 web lib/sessionLastSeen.ts localStorage blob）
   static readonly TERMINAL_FONT_SIZE: string = 'hapi_terminal_font_size';   // 终端字号（离散 9/11/13/15/17，默认 13）
   static readonly HAPTICS_ENABLED: string = 'hapi_haptics_enabled';   // 触感反馈开关（'on'|'off'，默认 on：移动端发送/删除/长按/错误短震动）
+  static readonly REASONING_COLLAPSED_BY_DEFAULT: string = 'hapi_reasoning_collapsed_by_default';   // 推理默认折叠（bool，默认 false=保留流式自动展开；对照上游 #1385）
   static readonly ACTIVE_PRESET_ID: string = 'hapi_active_preset';   // 当前激活的预制服务器 id（''=手填未用预制；未来用户自定义预制用）
   static readonly SERVER_PRESETS: string = 'hapi_server_presets';   // 用户自定义预制服务器列表（JSON ServerPreset[]；厂测预制为编译期常量不入此键）
 

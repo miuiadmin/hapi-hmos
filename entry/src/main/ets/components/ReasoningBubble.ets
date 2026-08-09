@@ -1,6 +1,7 @@
 import { MarkdownText } from './MarkdownText';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { t } from '../i18n/I18nService';
+import { getReasoningCollapseState } from '../services/ReasoningCollapseService';
 
 // ReasoningBubble —— agent 思考过程块
 // 对照上游 web/src/components/assistant-ui/reasoning.tsx（ReasoningGroup 折叠容器 + Reasoning markdown 体）
@@ -23,11 +24,18 @@ export struct ReasoningBubble {
   // 主题（读 @Trace isDark 建立刷新依赖；切换即时重渲染）
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
 
+  // 是否展开体：手动展开，或流式中自动展开——但「推理默认折叠」开关开启时流式也不自动展开
+  //   （对照上游 #1385 useReasoningCollapse：reasoningCollapsed=true 时 nextOpen=!false 恒收起，含流式）。
+  //   读 @Trace collapsedByDefault 建立刷新依赖：设置页切换即时生效。
+  @Computed get shouldExpand(): boolean {
+    return this.expanded || (this.isStreaming && !getReasoningCollapseState().collapsedByDefault);
+  }
+
   build() {
     Column() {
       // header：箭头 + 标签 + 流式指示
       Row() {
-        SymbolGlyph(this.expanded || this.isStreaming ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
+        SymbolGlyph(this.shouldExpand ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
           .fontSize(fs(11))
           .fontColor([this.c.textTertiary])
           .margin({ right: 6 })
@@ -49,8 +57,8 @@ export struct ReasoningBubble {
         this.expanded = !this.expanded;
       })
 
-      // 展开体（含流式中）：markdown 正文，顶部分隔线
-      if (this.expanded || this.isStreaming) {
+      // 展开体（含流式中，除非「推理默认折叠」开启）：markdown 正文，顶部分隔线
+      if (this.shouldExpand) {
         Column() {
           // 流式增量：isStreaming 时 isInputEnded=false + incrementalAnalysis=true → CJMarkdown 增量重渲（防冻结根因）
           MarkdownText({
