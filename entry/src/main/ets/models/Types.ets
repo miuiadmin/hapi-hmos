@@ -281,7 +281,10 @@ export class SkillItem {
 export const AGENT_FLAVORS: string[] = ['claude', 'codex', 'copilot', 'cursor', 'gemini', 'grok', 'kimi', 'opencode', 'pi'];
 
 // Agent 显示名（下拉用；对照 shared/src/flavors.ts FLAVOR_LABELS，claude 沿用本项目「Claude Code」旧称）
+//   v0.27.2 新增 agy（Antigravity）：仅识别 + 显示名 + 权限模式，**不进 AGENT_FLAVORS 创建列表**
+//   （上游 agy 是 macOS-only PTY agent，平台门控；本端无法 spawn，故仅在显示/识别函数里兜底，避免已有 agy 会话崩）。
 export function agentDisplayName(flavor: string): string {
+  if (flavor === 'agy') { return 'Antigravity'; }
   if (flavor === 'claude') { return 'Claude Code'; }
   if (flavor === 'codex') { return 'Codex'; }
   if (flavor === 'copilot') { return 'Copilot'; }
@@ -351,11 +354,13 @@ export function sessionTypeDisplayName(st: string): string {
 // —— 会话内即时配置子集（对照 shared/src/modes.ts：各 flavor 的权限/协作/推理努力可选域）——
 //   permission-mode（/permission-mode 端点，全 flavor）：claude 4 / codex·gemini·kimi 4 / opencode 3 / cursor 6
 //     （default/plan/ask/debug/autoReview/yolo）/ copilot 4（同 codex 形 default/read-only/safe-yolo/yolo）
-//     / grok 4（default/auto/plan/bypassPermissions）/ pi 无（[]）。
+//     / grok 4（default/auto/plan/bypassPermissions）/ agy 2（request-review/always-proceed，v0.27.2 新增）
+//     / pi 无（[]）。
 export const CLAUDE_PERMISSION_MODES: string[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan'];
 export const CODEX_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo'];   // codex/gemini/kimi 共用
 export const COPILOT_PERMISSION_MODES: string[] = ['default', 'read-only', 'safe-yolo', 'yolo']; // copilot（同 codex 形，对照 COPILOT_PERMISSION_MODES）
 export const GROK_PERMISSION_MODES: string[] = ['default', 'auto', 'plan', 'bypassPermissions']; // grok（含 'auto' 自动放行模式）
+export const AGY_PERMISSION_MODES: string[] = ['request-review', 'always-proceed']; // agy（Antigravity，v0.27.2 新增）
 export const OPENCODE_PERMISSION_MODES: string[] = ['default', 'plan', 'yolo'];
 export const CURSOR_PERMISSION_MODES: string[] = ['default', 'plan', 'ask', 'debug', 'autoReview', 'yolo'];
 // collaboration-mode（/collaboration-mode 端点，仅 codex）：default/plan。
@@ -374,6 +379,7 @@ export function permissionModesForFlavor(flavor: string): string[] {
   if (flavor === 'grok') { return GROK_PERMISSION_MODES; }
   if (flavor === 'opencode') { return OPENCODE_PERMISSION_MODES; }
   if (flavor === 'cursor') { return CURSOR_PERMISSION_MODES; }
+  if (flavor === 'agy') { return AGY_PERMISSION_MODES; }   // agy（Antigravity，v0.27.2）：request-review/always-proceed
   if (flavor === 'pi') { return []; }   // pi 无运行时权限切换（上游恒 auto-approve）
   return CLAUDE_PERMISSION_MODES;   // claude + 未知回退
 }
@@ -389,6 +395,8 @@ export function permissionModeDisplayName(mode: string): string {
   if (mode === 'safe-yolo') { return t('types.permission.safeYolo'); }
   if (mode === 'yolo') { return t('types.permission.yolo'); }
   if (mode === 'auto') { return t('types.permission.auto'); }   // grok 自动放行模式
+  if (mode === 'request-review') { return t('types.permission.requestReview'); }   // agy（v0.27.2）
+  if (mode === 'always-proceed') { return t('types.permission.alwaysProceed'); }   // agy（v0.27.2）
   return mode;
 }
 export function collaborationModeDisplayName(mode: string): string {

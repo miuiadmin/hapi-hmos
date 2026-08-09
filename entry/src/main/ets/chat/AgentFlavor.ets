@@ -12,14 +12,21 @@ export interface FlavorBadge {
   bgHex: string;
 }
 
-// 6 已知 flavor（对照上游 FLAVOR_BADGES，顺序一致）
+// 10 已知 flavor（对照上游 modes.ts AGENT_FLAVORS 全集 v0.27.2：agy/claude/codex/copilot/cursor/
+//   gemini/grok/kimi/opencode/pi）。上游 AgentFlavorIcon 用 @lobehub SVG logo；本层简化为双字母色块徽章。
+//   上游颜色为各品牌色（claude 琥珀/codex 近黑/cursor 青/gemini 蓝/kimi 紫/opencode 绿）；
+//   agy/grok/copilot/pi 上游走 logo（无 2 字母徽章），本层取近似品牌色（注释注明为近似值）。
 export const FLAVOR_BADGES: Record<string, FlavorBadge> = {
+  'agy': { label: 'Ag', bgHex: '#4285F4' },     // Antigravity（Google 系，蓝；近似）
   'claude': { label: 'Cl', bgHex: '#d97706' },
   'codex': { label: 'Cx', bgHex: '#111827' },
+  'copilot': { label: 'Co', bgHex: '#24292f' }, // GitHub Copilot（近黑；近似）
   'cursor': { label: 'Cu', bgHex: '#0f766e' },
   'gemini': { label: 'Gm', bgHex: '#2563eb' },
+  'grok': { label: 'Gr', bgHex: '#1d9bf0' },    // Grok（X 系，蓝；近似）
   'kimi': { label: 'Km', bgHex: '#7c3aed' },
-  'opencode': { label: 'Op', bgHex: '#15803d' }
+  'opencode': { label: 'Op', bgHex: '#15803d' },
+  'pi': { label: 'Pi', bgHex: '#6366f1' }       // Pi（靛；近似）
 };
 
 // 未知 flavor 徽章：中性灰 + 白字（固定色，不随主题；上游用 CSS 变量）

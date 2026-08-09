@@ -89,7 +89,8 @@ export struct ComposerToolbar {
 
   // 权限 chip 是否高亮（bypass 系=警告色调，对照旧 StatusBar 用 toneColor(permissionModeTone)）
   private permissionActive(): boolean {
-    return this.permissionMode === 'bypassPermissions' || this.permissionMode === 'yolo' || this.permissionMode === 'safe-yolo';
+    return this.permissionMode === 'bypassPermissions' || this.permissionMode === 'yolo'
+      || this.permissionMode === 'safe-yolo' || this.permissionMode === 'always-proceed';
   }
 
   build() {

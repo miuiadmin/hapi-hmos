@@ -17,17 +17,20 @@ function permissionModesForFlavor(flavor: string): string[] {
   }
   if (flavor === 'opencode') { return ['default', 'plan', 'yolo']; }
   if (flavor === 'cursor') { return ['default', 'plan', 'ask', 'yolo']; }
+  if (flavor === 'grok') { return ['default', 'auto', 'plan', 'bypassPermissions']; }
+  if (flavor === 'agy') { return ['request-review', 'always-proceed']; }   // v0.27.2 Antigravity
   return ['default', 'acceptEdits', 'bypassPermissions', 'plan'];   // claude + 未知回退
 }
 
-// 权限模式 → 语义色调（对照 modes.ts:61-70 PERMISSION_MODE_TONES）。
-//   plan/ask→info、acceptEdits/read-only/safe-yolo→warning、bypassPermissions/yolo→danger、default/未知→neutral。
+// 权限模式 → 语义色调（对照 modes.ts PERMISSION_MODE_TONES v0.27.2）。
+//   plan/ask→info、acceptEdits/auto/autoReview/read-only/safe-yolo/request-review→warning·neutral、
+//   bypassPermissions/yolo/always-proceed→danger、default/未知→neutral。
 export function permissionModeTone(mode: string): string {
   if (mode === 'plan' || mode === 'ask' || mode === 'debug') { return 'info'; }
   if (mode === 'acceptEdits' || mode === 'auto' || mode === 'autoReview'
     || mode === 'read-only' || mode === 'safe-yolo') { return 'warning'; }
-  if (mode === 'bypassPermissions' || mode === 'yolo') { return 'danger'; }
-  return 'neutral';   // default + 未知
+  if (mode === 'bypassPermissions' || mode === 'yolo' || mode === 'always-proceed') { return 'danger'; }
+  return 'neutral';   // default / request-review / 未知
 }
 
 // flavor 是否允许该权限模式（对照 modes.ts:127-129 isPermissionModeAllowedForFlavor）。
