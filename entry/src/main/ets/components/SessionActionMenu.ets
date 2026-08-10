@@ -1,6 +1,7 @@
 import { getHubClient } from '../api/HubClient';
 import { getGeneratedImageCache } from '../services/GeneratedImageCache';
 import { HapticService } from '../services/HapticService';
+import { getSessionSeenService } from '../services/SessionAttention';
 import { fs, paletteOf, PaletteColors, getThemeState } from '../theme/ThemeService';
 import { showToast } from '../utils/Toast';
 import { t, kv } from '../i18n/I18nService';
@@ -32,6 +33,10 @@ export struct SessionActionMenu {
   // 对话页顶栏瘦身下沉：导出整段对话 / 打开对话大纲（仅 ChatPage 传 true）
   @Param showExport: boolean = false;
   @Param showOutline: boolean = false;
+  // 该会话是否有未读（控制「标记已读」行显隐；Index 按 classifySessionStatus 判定传入）
+  @Param hasUnread: boolean = false;
+  // 该会话最新 updatedAt（markRead 的 seenAt 源；标记到此 = 该会话全部已读）
+  @Param lastUpdatedAt: number = 0;
 
   // 成功回调（父决定后续动作）
   @Event onRenamed: (newName: string) => void = (newName: string) => {};
@@ -86,6 +91,17 @@ export struct SessionActionMenu {
       showToast(ok ? t('sessionMenu.switchedRemote') : t('sessionMenu.switchRemoteFailed'));
     } catch (e) {
       showToast(t('sessionMenu.switchRemoteFailed'));
+    }
+  }
+
+  // 标记已读：本地 markSeen 到最新 updatedAt（清未读）。
+  //   ★跨端已读无服务端中介（hub 不存已读状态），网页端已读无法自动同步 → 此为客户端手动补偿。
+  private markRead(): void {
+    this.onClose();
+    if (this.sessionId !== '' && this.lastUpdatedAt > 0) {
+      getSessionSeenService().markSeen(this.sessionId, this.lastUpdatedAt);
+      HapticService.tap('success');
+      showToast(t('sessionMenu.markedRead'));
     }
   }
 
@@ -262,6 +278,16 @@ export struct SessionActionMenu {
           .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
           .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
           .onClick(() => { this.onClose(); this.onOutline(); })
+        }
+
+        // 标记已读（仅有未读时显；本地清除假未读，免进会话）
+        if (this.hasUnread) {
+          Row() {
+            Text(t('sessionMenu.markRead')).fontSize(fs(15)).fontColor(this.c.textPrimary).layoutWeight(1)
+          }
+          .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+          .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+          .onClick(() => { this.markRead(); })
         }
 
         Row() {

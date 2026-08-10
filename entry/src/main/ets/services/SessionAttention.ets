@@ -57,6 +57,7 @@ export function classifySessionAttention(
 export class SessionSeenService {
   private seen: Map<string, number> = new Map();
   private hydrated: boolean = false;
+  private baselineDone: boolean = false;   // 首屏已读基线是否已建立（持久；对照上游 sessionLastSeen BASELINE_KEY，防重复初始化）
   @Trace revision: number = 0;
 
   // 启动期调一次（EntryAbility.bootstrap，loadContent 前）：读盘灌内存 Map。空/损坏 JSON → 空 Map（容错不阻塞首屏）。
@@ -81,6 +82,9 @@ export class SessionSeenService {
           }
         }
       }
+      // 首屏已读基线标志（持久；对照上游 sessionLastSeen BASELINE_KEY，防重复初始化）
+      const baselineRaw: string = await getPreferencesService().getString(PreferenceKeys.SESSION_LAST_SEEN_BASELINE, '');
+      this.baselineDone = baselineRaw === '1';
     } catch (_e) {
       // 损坏 JSON 或 Preferences 异常：留空 Map，不阻塞启动
     }
@@ -94,6 +98,39 @@ export class SessionSeenService {
     const prev: number = this.lastSeen(sessionId);
     if (seenAt > prev) {
       this.seen.set(sessionId, seenAt);
+      this.revision = this.revision + 1;
+      this.persist();
+    }
+  }
+
+  // 首屏已读基线（对照上游 initializeSessionLastSeen）：首次拉到会话列表时，把所有【未记录】会话的
+  //   updatedAt 记为已读水位——避免全新客户端（首装/清缓存/换设备）把历史会话全判未读（首屏全绿点）。
+  //   幂等：baselineDone 持久标志保证一生只跑一次；仅补未记录的（??= 语义，不动已有水位）。
+  establishBaseline(sessions: SessionSummary[]): void {
+    if (this.baselineDone) {
+      return;
+    }
+    this.baselineDone = true;
+    let changed: boolean = false;
+    for (let i = 0; i < sessions.length; i++) {
+      const s: SessionSummary = sessions[i];
+      if (s.id !== '' && !this.seen.has(s.id)) {
+        this.seen.set(s.id, s.updatedAt);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.revision = this.revision + 1;
+      this.persist();
+    }
+    // baselineDone 标志无条件写盘（即使 sessions 空/无新增也要标记已初始化，防下次重跑）
+    getPreferencesService().putString(PreferenceKeys.SESSION_LAST_SEEN_BASELINE, '1').catch((): void => {});
+  }
+
+  // 删除会话时清残留已读水位（卫生；上游未做，我们更干净）。sid 是 UUID 不复用 → 即便不清也无误判，
+  //   仅避免 Preferences blob 随历史会话无限膨胀。删除存在项才 bump revision + 落盘。
+  forget(sessionId: string): void {
+    if (sessionId !== '' && this.seen.delete(sessionId)) {
       this.revision = this.revision + 1;
       this.persist();
     }

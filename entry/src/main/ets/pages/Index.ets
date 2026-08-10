@@ -144,6 +144,8 @@ struct Index {
         //   ForEach 同 key 保留项随之字段级重渲染（修「列表冻结，须重启 App 才更新」根因）。
         //   新增入列 / 删除丢弃；返回新数组引用供 sessionRows getter 重算分组。
         this.sessions = mergeSessionArrays(this.sessions, list);
+        // 首屏已读基线：首次拉到列表时把历史会话记为已读水位（防首装/清缓存后全绿点；幂等，一生一次）
+        getSessionSeenService().establishBaseline(list);
       }
     } catch (e) {
       if (seq === this.loadSeq) {
@@ -990,11 +992,19 @@ struct Index {
             sessionId: this.actionTarget !== null ? this.actionTarget.id : '',
             title: this.actionTarget !== null ? this.actionTarget.title : '',
             active: this.actionTarget !== null ? this.actionTarget.active : true,
+            hasUnread: this.actionTarget !== null
+              && classifySessionStatus(this.actionTarget, getSessionSeenService().lastSeen(this.actionTarget.id)) === 'unread',
+            lastUpdatedAt: this.actionTarget !== null ? this.actionTarget.updatedAt : 0,
             open: this.actionMenuOpen,
             onClose: () => { this.actionMenuOpen = false; },
             onRenamed: (_name: string) => { this.loadSessions(); },
             onArchived: () => { this.loadSessions(); },
-            onDeleted: () => { this.loadSessions(); }
+            onDeleted: () => {
+              if (this.actionTarget !== null) {
+                getSessionSeenService().forget(this.actionTarget.id);
+              }
+              this.loadSessions();
+            }
           })
         }
         .width('100%')

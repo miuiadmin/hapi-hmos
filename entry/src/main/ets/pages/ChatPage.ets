@@ -982,6 +982,7 @@ struct ChatPage {
       const ok = await getHubClient().deleteSession(this.sessionId);
       if (ok) {
         getGeneratedImageCache().clearSession(this.sessionId);
+        getSessionSeenService().forget(this.sessionId);
         showToast(t('sessionMenu.deleted'));
         HapticService.tap('delete');
         if (this.navPathStack !== null) {
