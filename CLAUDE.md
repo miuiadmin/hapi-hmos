@@ -4,12 +4,12 @@
 
 ## 项目是什么
 
-`hapi-hmos` 是官方 [Hapi](https://github.com/tiann/hapi) 的**鸿蒙原生客户端**。用 ArkTS + ArkUI 重写官方的 React Web/PWA 前端，对接**同一个 Hub 后端**（协议不变）。`参考源码/` 下有官方仓库的只读 clone：**当前主参考 `hapi-v0.27.2/`（固定 tag `v0.27.2`）**、历史快照 `hapi-v0.25.4/`（上一版主参考）/ `hapi-v0.18.4/`（仅对比），用于移植对照。
+`hapi-hmos` 是官方 [Hapi](https://github.com/tiann/hapi) 的**鸿蒙原生客户端**。用 ArkTS + ArkUI 重写官方的 React Web/PWA 前端，对接**同一个 Hub 后端**（协议不变）。`参考源码/` 下有官方仓库的只读 clone：**当前主参考 `hapi-v0.27.3/`（固定 tag `v0.27.3`）**、历史快照 `hapi-v0.25.4/`（上一版主参考）/ `hapi-v0.18.4/`（仅对比），用于移植对照。
 
 ## 仓库布局
 
 ```
-参考源码/hapi-v0.27.2/   # 官方上游当前主参考（只读，勿改），固定 tag v0.27.2。结构见其 AGENTS.md
+参考源码/hapi-v0.27.3/   # 官方上游当前主参考（只读，勿改），固定 tag v0.27.3。结构见其 AGENTS.md
 参考源码/hapi-v0.25.4/   # 官方上游上一版主参考（只读，仅 diff 对照），基线 v0.25.4
 参考源码/hapi-v0.18.4/   # 官方上游历史快照（只读，仅对比），基线 v0.18.4
 参考源码/chatcube/       # 业务/UX/UI 样式一线参考（ArkTS 原生 AI 聊天，只读快照，MIT）
@@ -69,9 +69,9 @@ hvigorw --mode module -p module=entry@default assembleHap
 
 ## 参考源码使用规则
 
-- `参考源码/hapi-v0.27.2/`（当前主参考）为**只读**：只读、对照，不要修改上游文件
-- 同步上游：主参考固定在 tag `v0.27.2`（detached HEAD），不随 `main` 漂移；换版本见 [docs/官方仓库对照.md](docs/官方仓库对照.md)「同步上游」，更新后回填 README / 对照文档的版本与 commit 字段
-- 实现 ArkTS 功能前，先读官方对应实现（**以 `参考源码/hapi-v0.27.2/` 为准**，路径见对照表），保持语义一致
+- `参考源码/hapi-v0.27.3/`（当前主参考）为**只读**：只读、对照，不要修改上游文件
+- 同步上游：主参考固定在 tag `v0.27.3`（detached HEAD），不随 `main` 漂移；换版本见 [docs/官方仓库对照.md](docs/官方仓库对照.md)「同步上游」，更新后回填 README / 对照文档的版本与 commit 字段
+- 实现 ArkTS 功能前，先读官方对应实现（**以 `参考源码/hapi-v0.27.3/` 为准**，路径见对照表），保持语义一致
 
 ## 鸿蒙实现参考
 
@@ -81,7 +81,7 @@ hvigorw --mode module -p module=entry@default assembleHap
 |---|---|---|
 | **chatcube**（Cube Chat） | 🥇 主要 | **UI 样式（颜色 / 主题 / 字体 / 圆角 / 间距 / 阴影 / 动效 / 组件视觉）**、布局、流式对话、对话、会话管理（业务 / 架构 / UX 全方位） |
 | **berry3**（Berry Browser） | 🔧 语法/避坑/底层 | **ArkTS 语法 + 避坑文档库**（遇坑先查）+ 底层代码（系统能力） |
-| `参考源码/hapi-v0.27.2` | 语义 | 功能行为、Hub 协议、数据结构（当前主参考，v0.27.2） |
+| `参考源码/hapi-v0.27.3` | 语义 | 功能行为、Hub 协议、数据结构（当前主参考，v0.27.3） |
 | **paseo**（Paseo） | 🥈 二线 | chatcube 未覆盖的 **agent 编排业务范式**（多 agent 并行 / worktree / 工具调用编排）+ **daemon-client 架构设计**（协议版本兼容 / 状态机 / 终端性能）。RN + TS，**不参考 UI 样式与 ArkTS 语法** |
 
 - **位置**：chatcube → `参考源码/chatcube`（GitHub: LongLiveY96/chatcube）；berry3 → `~/Documents/harmony/project/berry3`（GitHub: miuiadmin/berry-browser）；paseo → `参考源码/paseo`（GitHub: getpaseo/paseo，AGPL-3.0，二线参考）
@@ -94,7 +94,7 @@ hvigorw --mode module -p module=entry@default assembleHap
 
 ## 关键思考
 
-1. **对照优先**：不确定行为时，先读 `参考源码/hapi-v0.27.2/` 对应文件，再写 ArkTS
+1. **对照优先**：不确定行为时，先读 `参考源码/hapi-v0.27.3/` 对应文件，再写 ArkTS
 2. **协议不变**：不要改动与 Hub 的交互协议；行为对齐 Web 端
 3. **根因修复**：修根因，不打补丁
 4. **冲突 / 不确定**：简短列选项问，选更安全的路

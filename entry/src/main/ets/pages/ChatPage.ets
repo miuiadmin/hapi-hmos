@@ -121,6 +121,8 @@ struct ChatPage {
   // 会话生命周期（⋯ 下拉：重命名/归档/删除 + 文件/终端/语音/导出/大纲/配置；ChatPage 自洽，不再依赖 SessionActionMenu 组件）
   @Local sessionTitle: string = '';              // 标题栏显示标题（aboutToAppear 取种子，重命名/SSE 更新）
   @Local isActive: boolean = true;               // 会话活跃态（归档/删除二选一：active→归档，否则→删除）
+  @Local sessionPinned: boolean = false;         // 项目级置顶（v0.27.3 #1115；⋯ 菜单三态入口）
+  @Local sessionGlobalPinned: boolean = false;   // 全局置顶（跨项目；⋯ 菜单三态入口）
   @Local teamState: TeamState | null = null;     // 会话内多 agent 团队态（agent 自治上报；非 null 时消息列表上方渲染 TeamPanel）
   @Local todos: TodoItem[] = [];                 // 会话内待办清单（agent TodoWrite 上报；非空时消息列表上方渲染 TodoPanel）
   @Local model: string = '';                     // 会话 model（ContextStatusBar 算预算上限用；首屏/SSE 播种）
@@ -923,6 +925,35 @@ struct ChatPage {
     }
   }
 
+  // 设置置顶模式（v0.27.3 #1115；对照上游 SessionHeader.handleSetPinMode → setPinMode）：
+  //   mode ∈ {'none','project','global'}；⋯ 菜单两行入口各自三态翻转。成功本地回写 @Local（菜单文案/图标即时翻转）
+  //   + Index 列表靠重进/SSE 刷新；失败 toast（对照上游 pinFailed）。
+  //   ★本地回写须镜像 hub 单选语义（setSessionPinMode 同一 UPDATE：pinned 与 globalPinned 互斥清零）：
+  //     project 置上时 global 清零、global 置上时 project 清零，否则脏态致菜单双「取消置顶」+ none 误清两 pin。
+  private async setPinMode(mode: string): Promise<void> {
+    if (this.sessionActing || this.sessionId === '') {
+      return;
+    }
+    this.sessionActing = true;
+    try {
+      const ok = await getHubClient().setSessionPin(this.sessionId, mode);
+      if (ok) {
+        this.sessionPinned = mode === 'project';
+        this.sessionGlobalPinned = mode === 'global';
+        // hub 对 pin 不广播 session-updated SSE（sessionCache.setSessionPinMode 只写 store），
+        // 对照 web onSuccess→invalidateQueries(['sessions'])：bump 通知 Index 静默重拉列表。
+        SyncStateService.bumpSessionList();
+        showToast(mode === 'none' ? t('sessionMenu.unpinned') : t('sessionMenu.pinned'));
+      } else {
+        showToast(t('sessionMenu.pinFailed'));
+      }
+    } catch (e) {
+      showToast(t('sessionMenu.pinFailed'));
+    } finally {
+      this.sessionActing = false;
+    }
+  }
+
   // 归档二次确认（危险操作，confirm 红字）
   private confirmArchive(): void {
     this.getUIContext().showAlertDialog({
@@ -1204,6 +1235,8 @@ struct ChatPage {
     this.setAgentState(parseAgentState(session.agentStateRaw));
     this.isActive = session.active;
     this.isThinking = session.thinking;
+    this.sessionPinned = session.pinned;
+    this.sessionGlobalPinned = session.globalPinned;
     this.teamState = session.teamState;
     this.todos = session.todos;
     this.model = session.model;
@@ -1465,6 +1498,31 @@ struct ChatPage {
       }
     } catch (e) {
       showToast(t('chat.cancelFailed'));
+    }
+  }
+
+  // Steer 可用门控（对照上游 SessionChat canSteer = agentFlavor==='pi' && session.thinking && !controlledByUser）：
+  //   仅 pi 会话、正在生成、且输入权在 agent 手中（controlledByUser=false）时，排队消息才可「立即插入当前回合」。
+  private canSteerQueued(): boolean {
+    if (this.flavor !== 'pi' || !this.isThinking) { return false; }
+    return this.agentState === null || !this.agentState.controlledByUser;
+  }
+
+  // Steer 排队消息（v0.27.3 #1480；对照上游 useSteerQueuedMessage，非乐观）：  //   POST /messages/:id/steer → steered（CLI 确认，messages-consumed SSE 会翻 sent 移出排队条，不本地移除）
+  //   / invoked（竞态：CLI 已消费，返回权威消息行 → merge 入 thread，补偿错过的 SSE）
+  //   / failed → toast（行保留可重试）。
+  private async steerQueued(m: ChatMessage): Promise<void> {
+    if (m.isOptimistic || m.id === '') { return; }
+    try {
+      const result = await getHubClient().steerMessage(this.sessionId, m.id);
+      if (result.failed) {
+        showToast(t('chat.steerFailed'));
+      } else if (result.invokedMessage !== null) {
+        this.setMessages(mergeMessage(this.messages, result.invokedMessage));
+      }
+      // steered：等 messages-consumed SSE 翻 sent（与上游同款非乐观语义，勿本地移除）
+    } catch (e) {
+      showToast(t('chat.steerFailed'));
     }
   }
 
@@ -3144,6 +3202,24 @@ struct ChatPage {
     };
     menus.push(renameItem);
 
+    // 置顶两行（v0.27.3 #1115；对照上游 SessionActionMenu onSetPinMode 两行三态翻转）
+    const pinProjectItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: this.sessionPinned ? t('sessionMenu.unpinProject') : t('sessionMenu.pinProject'),
+        icon: this.titleBarMenuIcon(this.sessionPinned ? $r('sys.symbol.pin_fill') : $r('sys.symbol.pin')),
+        action: () => { this.setPinMode(this.sessionPinned ? 'none' : 'project'); }
+      }
+    };
+    menus.push(pinProjectItem);
+    const pinGlobalItem: HdsNavigationMenuItemOptions = {
+      content: {
+        label: this.sessionGlobalPinned ? t('sessionMenu.unpinGlobal') : t('sessionMenu.pinGlobal'),
+        icon: this.titleBarMenuIcon(this.sessionGlobalPinned ? $r('sys.symbol.pin_fill') : $r('sys.symbol.pin')),
+        action: () => { this.setPinMode(this.sessionGlobalPinned ? 'none' : 'global'); }
+      }
+    };
+    menus.push(pinGlobalItem);
+
     if (this.isActive) {
       const switchItem: HdsNavigationMenuItemOptions = {
         content: {
@@ -3456,8 +3532,11 @@ struct ChatPage {
         if (this.queuedMessages.length > 0) {
           QueuedMessagesBar({
             queued: this.queuedMessages,
+            // Steer 门控（对照上游 canSteer = pi flavor && thinking && !controlledByUser）
+            canSteer: this.canSteerQueued(),
             onEdit: (m: ChatMessage): void => { this.editQueued(m); },
-            onCancel: (m: ChatMessage): void => { this.cancelQueued(m); }
+            onCancel: (m: ChatMessage): void => { this.cancelQueued(m); },
+            onSteer: (m: ChatMessage): void => { this.steerQueued(m); }
           })
         }
 

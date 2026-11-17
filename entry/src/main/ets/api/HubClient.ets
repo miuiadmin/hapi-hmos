@@ -2,7 +2,7 @@ import { http } from '@kit.NetworkKit';
 import { getConnectionService } from '../services/ConnectionService';
 import { AuthRequest, AuthUser } from '../models/Auth';
 import { SessionSummary, parseSessionsResponse, Session, parseSessionDetail, RenameSessionRequest, Machine, DirEntry, ListDirectoryRequest, MachinePathsExistsRequest, parseMachinesResponse, parseListDirectoryResponse, parseSpawnResponse, parseCodexModelsResponse, parseOpencodeModelsResponse, ModelOption, parseResumeSessionResponse, parseSlashCommandsResponse, ServerSlashCommand, parseSkillsResponse, SkillItem, FileSearchItem, parseFileSearchResponse, CommandResponse, parseCommandResponse, FileReadResponse, parseFileReadResponse, SessionDirEntry, parseSessionDirectoryResponse, AttachmentMetadata, UploadFileResult, parseUploadFileResponse, VoiceTokenResult, VoiceItem, VoiceTelemetryEvent, parseVoiceTokenResponse, parseVoicesResponse, UsageSummaryResponse, parseUsageSummaryResponse, HubSettingsResult, parseHubSettingsResponse, SqliteStorageUsageResult, parseSqliteStorageUsageResponse, TranscriptionCredentialStatus, parseTranscriptionCredentialsResponse } from '../models/Types';
-import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse } from '../models/Message';
+import { ChatMessage, MessagesPage, parseMessagesPageResponse, CancelMessageResult, parseCancelMessageResponse, SteerResult, parseSteerResponse } from '../models/Message';
 import { resolveBaseUrl as normalizeBaseUrl, ApproveOptions, buildApproveBody, buildDenyBody, buildSpawnBody, categorizeAuthFailure } from './HubClientUtils';
 import { t, kv } from '../i18n/I18nService';
 
@@ -476,6 +476,21 @@ export class HubClient {
     return parseCancelMessageResponse(resp.data);
   }
 
+  // Steer 排队消息（POST /api/sessions/:id/messages/:messageId/steer，上游 #1480 / v0.27.3 新增）：
+  //   把一条排队消息送进【运行中】的 turn（Pi 原生 steer）。对照 web useSteerQueuedMessage——
+  //   非乐观：steered 后行移除靠 messages-consumed SSE 回推；invoked=竞态（CLI 已消费，返回权威行）；
+  //   failed=失败（行保持排队可重试）。网络层失败（statusCode 0）→ failed=true 的空结果。
+  async steerMessage(sessionId: string, messageId: string): Promise<SteerResult> {
+    const resp = await this.request(http.RequestMethod.POST,
+      `/api/sessions/${sessionId}/messages/${messageId}/steer`, EMPTY_BODY, 'jwt');
+    if (resp.statusCode === 0) {
+      const netFail: SteerResult = new SteerResult();
+      netFail.failed = true;
+      return netFail;
+    }
+    return parseSteerResponse(resp.data);
+  }
+
   // 中止会话运行（POST /api/sessions/:id/abort，对照 web abortSession）——「停止生成」
   async abortSession(sessionId: string): Promise<boolean> {
     const resp = await this.request(http.RequestMethod.POST,
@@ -554,6 +569,17 @@ export class HubClient {
     body.name = name;
     const resp = await this.request('PATCH' as http.RequestMethod,
       `/api/sessions/${sessionId}`, body, 'jwt');
+    return resp.success;
+  }
+
+  // 置顶会话三态切换（PUT /api/sessions/:id/pin body { mode } → { ok:true }，上游 #1115 / v0.27.3 新增）。
+  //   mode：'none'=取消 | 'project'=项目级置顶(pinned) | 'global'=全局置顶(globalPinned，列表专区分顶)。
+  //   成功后 hub 列表排序变化经 SSE session-updated / 重拉体现。
+  async setSessionPin(sessionId: string, mode: string): Promise<boolean> {
+    const body: Record<string, Object> = {};
+    body['mode'] = mode;
+    const resp = await this.request(http.RequestMethod.PUT,
+      `/api/sessions/${sessionId}/pin`, body, 'jwt');
     return resp.success;
   }
 

@@ -45,6 +45,8 @@ export class SessionSummary {
   @Trace effort: string = '';
   @Trace todoCompleted: number = 0;
   @Trace todoTotal: number = 0;
+  @Trace pinned: boolean = false;          // 项目级置顶（对照上游 #1115 SessionSummary.pinned；上游 optional ?? false）
+  @Trace globalPinned: boolean = false;    // 全局置顶（跨项目；列表专区分组置顶）
 
   // 标题：name 优先，否则 path 末段，否则 id
   get title(): string {
@@ -79,6 +81,8 @@ export class SessionSummary {
     this.effort = o.effort;
     this.todoCompleted = o.todoCompleted;
     this.todoTotal = o.todoTotal;
+    this.pinned = o.pinned;
+    this.globalPinned = o.globalPinned;
     if (o.metadata !== null) {
       if (this.metadata !== null) {
         this.metadata.copyFrom(o.metadata);
@@ -196,6 +200,8 @@ export class Session {
   active: boolean = false;
   activeAt: number = 0;
   thinking: boolean = false;
+  pinned: boolean = false;                   // 项目级置顶（v0.27.3 #1115；详情响应 Session.pinned，对照 sessionCache.ts:184）
+  globalPinned: boolean = false;             // 全局置顶（跨项目；列表专区分区 + 菜单三态入口）
   model: string = '';                       // nullable → ''
   effort: string = '';                       // claude 努力度（/effort 端点；nullable → ''）
   modelReasoningEffort: string = '';         // codex 推理努力（/model-reasoning-effort 端点；nullable → ''）
@@ -450,6 +456,8 @@ export function parseSessionDetail(json: string): Session {
   s.active = pickBool(raw, 'active');
   s.activeAt = pickNum(raw, 'activeAt');
   s.thinking = pickBool(raw, 'thinking');
+  s.pinned = pickBool(raw, 'pinned');
+  s.globalPinned = pickBool(raw, 'globalPinned');
   s.model = pickStr(raw, 'model');
   s.effort = pickStr(raw, 'effort');
   s.modelReasoningEffort = pickStr(raw, 'modelReasoningEffort');
@@ -541,6 +549,8 @@ export function parseSessionSummary(raw: Record<string, Object>): SessionSummary
   s.model = pickStr(raw, 'model');
   s.effort = pickStr(raw, 'effort');
   s.futureScheduledMessageCount = pickNum(raw, 'futureScheduledMessageCount');
+  s.pinned = pickBool(raw, 'pinned');
+  s.globalPinned = pickBool(raw, 'globalPinned');
 
   const metaRaw = pickObj(raw, 'metadata');
   if (metaRaw !== null) {

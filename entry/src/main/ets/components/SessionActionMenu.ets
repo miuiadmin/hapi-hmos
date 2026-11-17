@@ -37,6 +37,9 @@ export struct SessionActionMenu {
   @Param hasUnread: boolean = false;
   // 该会话最新 updatedAt（markRead 的 seenAt 源；标记到此 = 该会话全部已读）
   @Param lastUpdatedAt: number = 0;
+  // 置顶状态（v0.27.3 #1115：项目置顶 / 全局置顶两行三态入口；父传目标快照）
+  @Param sessionPinned: boolean = false;
+  @Param sessionGlobalPinned: boolean = false;
 
   // 成功回调（父决定后续动作）
   @Event onRenamed: (newName: string) => void = (newName: string) => {};
@@ -51,6 +54,8 @@ export struct SessionActionMenu {
   @Event onOutline: () => void = () => {};
   // 动作面板关闭回写（滑掉/蒙层/选了重命名/归档/删除）
   @Event onClose: () => void = () => {};
+  // 置顶状态变更成功回调（父决定后续：列表 loadSessions 等；对照上游 onSetPinMode）
+  @Event onPinChanged: () => void = () => {};
 
   // 重命名面板（组件内部态；从动作面板内 transitions 进出，不暴露父）
   @Local showRename: boolean = false;
@@ -91,6 +96,29 @@ export struct SessionActionMenu {
       showToast(ok ? t('sessionMenu.switchedRemote') : t('sessionMenu.switchRemoteFailed'));
     } catch (e) {
       showToast(t('sessionMenu.switchRemoteFailed'));
+    }
+  }
+
+  // 设置置顶模式（v0.27.3 #1115；对照上游 handleSetPinMode + SessionHeader.handleSetPinMode）：
+  //   mode ∈ {'none','project','global'}；两行入口各自三态翻转（已置顶→取消，未置顶→置顶）。
+  //   成功 onPinChanged()（父重拉列表）；失败 toast（对照上游 pinFailed）。图标 filled 随当前态。
+  private async setPinMode(mode: string): Promise<void> {
+    if (this.isActing || this.sessionId === '') {
+      return;
+    }
+    this.isActing = true;
+    try {
+      const ok = await getHubClient().setSessionPin(this.sessionId, mode);
+      if (ok) {
+        this.onPinChanged();
+        showToast(mode === 'none' ? t('sessionMenu.unpinned') : t('sessionMenu.pinned'));
+      } else {
+        showToast(t('sessionMenu.pinFailed'));
+      }
+    } catch (e) {
+      showToast(t('sessionMenu.pinFailed'));
+    } finally {
+      this.isActing = false;
     }
   }
 
@@ -296,6 +324,33 @@ export struct SessionActionMenu {
         .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
         .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
         .onClick(() => { this.startRename(); })
+
+        // 置顶两行（v0.27.3 #1115；对照上游 onSetPinMode 两行：pin 图标 filled 随态 + 三态翻转文案）
+        Row({ space: 10 }) {
+          SymbolGlyph(this.sessionPinned ? $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
+            .fontSize(fs(16))
+            .fontColor([this.c.textTertiary])
+          Text(this.sessionPinned ? t('sessionMenu.unpinProject') : t('sessionMenu.pinProject'))
+            .fontSize(fs(15))
+            .fontColor(this.c.textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onClose(); this.setPinMode(this.sessionPinned ? 'none' : 'project'); })
+
+        Row({ space: 10 }) {
+          SymbolGlyph(this.sessionGlobalPinned ? $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
+            .fontSize(fs(16))
+            .fontColor([this.c.textTertiary])
+          Text(this.sessionGlobalPinned ? t('sessionMenu.unpinGlobal') : t('sessionMenu.pinGlobal'))
+            .fontSize(fs(15))
+            .fontColor(this.c.textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%').height(48).padding({ left: 14, right: 14 }).borderRadius(12)
+        .backgroundColor(this.c.surface).margin({ bottom: 8 }).alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onClose(); this.setPinMode(this.sessionGlobalPinned ? 'none' : 'global'); })
 
         if (this.active) {
           Row() {

@@ -195,7 +195,7 @@ hapi-hmos/
 | Repo | https://github.com/tiann/hapi |
 | Git URL | `https://github.com/tiann/hapi.git` |
 | npm package | [`@twsxtd/hapi`](https://www.npmjs.com/package/@twsxtd/hapi) |
-| **Current reference version** | **`0.27.2`** (pinned to tag `v0.27.2`) |
+| **Current reference version** | **`0.27.3`** (pinned to tag `v0.27.3`) |
 | License | **AGPL-3.0-only** |
 | Authors | Kirill Dubovitskiy & weishu |
 
@@ -213,15 +213,15 @@ hapi-hmos/
 The primary reference `参考源码/hapi-v0.25.4/` is a standalone git clone (not a submodule), **pinned to tag `v0.25.4`** (detached HEAD, so it doesn't drift with `main`) to keep the porting reference stable. To move to a newer version:
 
 ```bash
-cd 参考源码/hapi-v0.27.2
+cd 参考源码/hapi-v0.27.3
 git fetch origin --tags
 git tag --sort=-creatordate | head -5      # see the latest tags
 git checkout <new-tag>                      # switch to the new stable release (detached)
 git rev-parse HEAD                          # take the new commit, fill it into the table above
-# after updating, rename the folder hapi-v0.27.2 → hapi-v<new-version> and update doc paths
+# after updating, rename the folder hapi-v0.27.3 → hapi-v<new-version> and update doc paths
 ```
 
-> **Why `参考源码/` isn't committed**: it holds local reference clones of upstream (multiple version snapshots) + chatcube (each with its own `.git`), kept only for reading; a plain directory is simpler than a submodule, and version pinning is tracked by "versioned folder name + recorded commit". If you clone this repo and want the reference, just `git clone tiann/hapi && git checkout v0.27.2` yourself.
+> **Why `参考源码/` isn't committed**: it holds local reference clones of upstream (multiple version snapshots) + chatcube (each with its own `.git`), kept only for reading; a plain directory is simpler than a submodule, and version pinning is tracked by "versioned folder name + recorded commit". If you clone this repo and want the reference, just `git clone tiann/hapi && git checkout v0.27.3` yourself.
 
 ## Docs
 

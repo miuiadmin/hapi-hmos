@@ -5,6 +5,9 @@
 //   - syncing：横幅显隐（SyncingBanner 读 @Trace）。
 //   - resyncSeq：重同步序号（Index/ChatPage @Monitor('sync.resyncSeq') → reload → endSync）。
 //   EntryAbility.onForeground 在 shouldResync 门控后调 beginSync（syncing=true + resyncSeq++ + 10s 自动清除）。
+//   - sessionListSeq：会话列表静默刷新序号（对照 web pin mutation onSuccess→invalidateQueries(['sessions'])）。
+//     hub 对 pin 变更不广播 session-updated SSE（sessionCache.setSessionPinMode 只写 store+refresh 内存），
+//     ChatPage 置顶成功后 bump → Index @Monitor 重拉列表；不带 syncing 横幅（低频轻量刷新）。
 //
 //   10s setTimeout：beginSync 起 arm，endSync/再次 beginSync clearTimeout 防泄漏（避多 timer 叠加）。
 //   纯门控函数 shouldResync 在 chat/SyncResync.ets（无 @kit，LocalUnit 可测）；本服务仅 @kit.ArkUI + setTimeout。
@@ -18,6 +21,8 @@ const SYNC_AUTO_CLEAR_MS: number = 10000;
 export class SyncState {
   @Trace syncing: boolean = false;
   @Trace resyncSeq: number = 0;
+  // 会话列表静默刷新序号（详见类头注释；pin 变更无 SSE，跨页通知 Index 重拉）
+  @Trace sessionListSeq: number = 0;
 }
 
 let _state: SyncState | null = null;
@@ -47,6 +52,13 @@ export class SyncStateService {
   static endSync(): void {
     getSyncState().syncing = false;
     if (_autoClearId !== -1) { clearTimeout(_autoClearId); _autoClearId = -1; }
+  }
+
+  // 会话列表静默刷新（对照 web invalidateQueries(['sessions'])）：sessionListSeq++，
+  //   Index @Monitor('sync.sessionListSeq') 重拉列表。与 beginSync 不同：不显横幅、不 arm 定时器。
+  static bumpSessionList(): void {
+    const s: SyncState = getSyncState();
+    s.sessionListSeq = s.sessionListSeq + 1;
   }
 
   static get isSyncing(): boolean { return getSyncState().syncing; }

@@ -344,6 +344,40 @@ export function parseCancelMessageResponse(json: string): CancelMessageResult {
   return r;
 }
 
+// Steer 排队消息响应（对照 shared SteerQueuedMessageResponse：steered | invoked | failed 三态，上游 #1480）。
+//   steered：CLI 已接受 steer，行移除靠 messages-consumed SSE 回推；invoked：竞态——CLI 已消费该消息，
+//   返回权威行（应并入 thread / 对齐本地排队态）；failed：失败（行保持排队可重试）。
+export class SteerResult {
+  steered: boolean = false;
+  invokedMessage: ChatMessage | null = null;   // invoked 分支的权威消息
+  failed: boolean = false;
+  error: string = '';
+}
+
+export function parseSteerResponse(json: string): SteerResult {
+  const r: SteerResult = new SteerResult();
+  let raw: Record<string, Object>;
+  try {
+    raw = JSON.parse(json) as Record<string, Object>;
+  } catch (e) {
+    r.failed = true;
+    return r;
+  }
+  const status: string = pickStr(raw, 'status');
+  if (status === 'steered') {
+    r.steered = true;
+  } else if (status === 'invoked') {
+    const msgRaw: Record<string, Object> | null = pickObj(raw, 'message');
+    if (msgRaw !== null) {
+      r.invokedMessage = parseMessage(msgRaw);
+    }
+  } else {
+    r.failed = true;
+    r.error = pickStr(raw, 'error');
+  }
+  return r;
+}
+
 // 从对象尽力提取文本（Anthropic 风格 content 数组的 text 块 / 直接 text 字段 / 嵌套 message）
 function extractTextFromObj(obj: Record<string, Object>): string {
   const directText = obj['text'];

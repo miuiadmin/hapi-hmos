@@ -28,11 +28,12 @@ export class MachineGroup {
   totalSessions: number = 0;
 }
 
-// 渲染行（展平后单层 ForEach 用；kind 区分六态）
+// 渲染行（展平后单层 ForEach 用；kind 区分七态）
 //   'pinned-header' = 「进行中」置顶分区头（可折叠，仅 pinInProgressSessions 开时出现；对照上游 running-section 头）。
 //   'pinned-bucket' = 置顶分区内某子桶头（working/pending/idle 圆点 + 标签 + 计数）。
+//   'gpinned-header' = 「置顶会话」全局置顶分区头（可折叠，最顶；对照上游 pinned-section 头，v0.27.3 #1115）。
 //   'show-more' = 目录组会话数超 previewLimit 且未展开时的「展开更多 (N)」行（对照上游 show-more 按钮）。
-export type RenderRowKind = 'machine' | 'directory' | 'session' | 'show-more' | 'pinned-header' | 'pinned-bucket';
+export type RenderRowKind = 'machine' | 'directory' | 'session' | 'show-more' | 'pinned-header' | 'pinned-bucket' | 'gpinned-header';
 export class RenderRow {
   kind: RenderRowKind = 'session';
   machineGroup: MachineGroup | null = null;       // kind==='machine'
@@ -41,7 +42,8 @@ export class RenderRow {
   groupKey: string = '';                          // kind==='show-more'：所属目录组 key（directoryGroupKey）
   remaining: number = 0;                          // kind==='show-more'：组内剩余隐藏会话数
   bucketKey: string = '';                         // kind==='pinned-bucket'：子桶 key（'working'|'pending'）
-  pinnedCount: number = 0;                        // kind==='pinned-header'(总计数) | 'pinned-bucket'(本桶计数)
+  pinnedCount: number = 0;                        // kind==='pinned-header'/'gpinned-header'(总计数) | 'pinned-bucket'(本桶计数)
+  dividerAbove: boolean = false;                  // kind==='session'：组内「置顶 | 非置顶」交界 hairline（对照上游 shouldShowPinnedDivider）
   key: string = '';                                // ForEach 稳定 key
 }
 
@@ -93,10 +95,12 @@ function sessionSortRank(s: SessionSummary): number {
   return 2;
 }
 
-// 组内会话排序：rank 升序，同 rank updatedAt 降序（返回新数组，不污染入参）。
+// 组内会话排序：pinned 优先，再 rank 升序，同 rank updatedAt 降序（返回新数组，不污染入参）。
+//   pinned-first 对照上游 v0.27.3 SessionList.tsx:294（#1115：项目置顶会话钉在目录组顶部）。
 export function sortSessionsWithinGroup(sessions: SessionSummary[]): SessionSummary[] {
   const arr: SessionSummary[] = sessions.slice();
   arr.sort((x: SessionSummary, y: SessionSummary): number => {
+    if (x.pinned !== y.pinned) { return x.pinned ? -1 : 1; }   // 置顶在前
     const rx: number = sessionSortRank(x);
     const ry: number = sessionSortRank(y);
     if (rx !== ry) { return rx - ry; }
@@ -109,6 +113,14 @@ export function sortSessionsWithinGroup(sessions: SessionSummary[]): SessionSumm
 export function directoryGroupHasActive(g: DirectoryGroup): boolean {
   for (let i = 0; i < g.sessions.length; i++) {
     if (g.sessions[i].active) { return true; }
+  }
+  return false;
+}
+
+// 目录组是否有置顶会话（对照上游 hasPinnedSession = sessions.some(s => s.pinned)）。
+export function directoryGroupHasPinned(g: DirectoryGroup): boolean {
+  for (let i = 0; i < g.sessions.length; i++) {
+    if (g.sessions[i].pinned) { return true; }
   }
   return false;
 }
@@ -130,6 +142,14 @@ export function machineGroupHasActive(mg: MachineGroup): boolean {
   return false;
 }
 
+// 机器组是否有置顶会话（对照上游 groupByMachine 聚合 hasPinnedSession）。
+export function machineGroupHasPinned(mg: MachineGroup): boolean {
+  for (let i = 0; i < mg.groups.length; i++) {
+    if (directoryGroupHasPinned(mg.groups[i])) { return true; }
+  }
+  return false;
+}
+
 // 机器组最新 updatedAt。
 function machineGroupLatestUpdatedAt(mg: MachineGroup): number {
   let latest: number = 0;
@@ -140,10 +160,13 @@ function machineGroupLatestUpdatedAt(mg: MachineGroup): number {
   return latest;
 }
 
-// 目录组排序：有活跃优先，同档 latestUpdatedAt 降序（对照上游 177-182；返回新数组）。
+// 目录组排序：有置顶优先，再有活跃优先，同档 latestUpdatedAt 降序（对照上游 320-327；返回新数组）。
 export function sortDirectoryGroups(groups: DirectoryGroup[]): DirectoryGroup[] {
   const arr: DirectoryGroup[] = groups.slice();
   arr.sort((x: DirectoryGroup, y: DirectoryGroup): number => {
+    const px: boolean = directoryGroupHasPinned(x);
+    const py: boolean = directoryGroupHasPinned(y);
+    if (px !== py) { return px ? -1 : 1; }         // 有置顶在前（#1115）
     const ax: boolean = directoryGroupHasActive(x);
     const ay: boolean = directoryGroupHasActive(y);
     if (ax !== ay) { return ax ? -1 : 1; }   // 活跃在前
@@ -152,10 +175,13 @@ export function sortDirectoryGroups(groups: DirectoryGroup[]): DirectoryGroup[] 
   return arr;
 }
 
-// 机器组排序：同策略（对照上游 232-235）。
+// 机器组排序：同策略（对照上游 groupByMachine 384-388）。
 export function sortMachineGroups(machines: MachineGroup[]): MachineGroup[] {
   const arr: MachineGroup[] = machines.slice();
   arr.sort((x: MachineGroup, y: MachineGroup): number => {
+    const px: boolean = machineGroupHasPinned(x);
+    const py: boolean = machineGroupHasPinned(y);
+    if (px !== py) { return px ? -1 : 1; }         // 有置顶在前（#1115）
     const ax: boolean = machineGroupHasActive(x);
     const ay: boolean = machineGroupHasActive(y);
     if (ax !== ay) { return ax ? -1 : 1; }
@@ -244,6 +270,8 @@ export class PinnedBucket {
 
 // 是否为「值得置顶」的进行中会话（对照上游 #1366 isPinnedInProgressSession，SessionList.tsx:52-58）：
 //   active 且（thinking / 有后台任务 / 有 pending 请求）才置顶；安静 active 会话（idle）不算，留在目录分组。
+//   ★v0.27.3 #1115：已置顶（pinned/globalPinned）的会话不进「进行中」桶（上游 runningSessions useMemo
+//     先 filter 掉 globalPinned || pinned），由调用方在 computePinnedBuckets 之前剔除。
 export function isPinnedInProgressSession(s: SessionSummary): boolean {
   if (!s.active) { return false; }
   return s.thinking || s.backgroundTaskCount > 0 || s.pendingRequestsCount > 0;
@@ -285,6 +313,18 @@ export function computePinnedBuckets(sessions: SessionSummary[]): PinnedBucket[]
   return result;
 }
 
+// 全局置顶会话（对照上游 globalPinnedSessions useMemo，SessionList.tsx:1245-1249）：
+//   filter(globalPinned).sort(updatedAt 降序) → 列表最顶独立「置顶会话」分区（跨机器跨目录，扁平单层）。
+//   调用方须把这些会话从目录分组输入剔除（上游 groups useMemo 里 filter(session => !session.globalPinned)）。
+export function selectGlobalPinnedSessions(sessions: SessionSummary[]): SessionSummary[] {
+  const out: SessionSummary[] = [];
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].globalPinned) { out.push(sessions[i]); }
+  }
+  out.sort((a: SessionSummary, b: SessionSummary): number => b.updatedAt - a.updatedAt);
+  return out;
+}
+
 // 展平为 RenderRow[]（按折叠态展开/收起；机器头 → [目录头 → 会话项…]…）。
 //   previewLimit（默认 0=不限流）：目录组会话数 > previewLimit 且该组未在 expandedGroups 展开时，仅取前
 //     previewLimit 个会话 + 追加一行 'show-more'（remaining=超出数）。展开或搜索中 → 全显（对照上游 getVisibleSessionPreview
@@ -295,6 +335,10 @@ export function computePinnedBuckets(sessions: SessionSummary[]): PinnedBucket[]
 //     （filter !isPinnedInProgressSession），空闲 active 会话留在目录分组；故 pinned 会话行用 `ps:` 前缀 key
 //     与目录组 `s:` 行隔离（同 id 不撞）。对照上游 runningSessionTotal>0 渲染块。
 //   pinCollapsed（默认 false）：置顶分区头折叠态；搜索中恒展开（对照上游 !runningSectionCollapsed || isFiltering）。
+//   globalPinned（默认空）：「置顶会话」全局置顶分区（selectGlobalPinnedSessions 产出）；非空时在一切分区
+//     （含「进行中」分区）之前渲染 gpinned-header + 会话项（对照上游 pinned-section 块，v0.27.3 #1115）。
+//     会话行用 `gs:` 前缀 key 与目录组 `s:` / 进行中 `ps:` 行隔离（同 id 不撞）。折叠态搜索中恒展开
+//     （对照上游 !pinnedSectionCollapsed || isFiltering）。
 //   默认参数保后向兼容：旧调用 flattenGroups(mgs, isSearching, override) 等价于不限流（previewLimit=0）+ 无置顶分区。
 export function flattenGroups(
   mgs: MachineGroup[],
@@ -303,9 +347,29 @@ export function flattenGroups(
   previewLimit: number = 0,
   expandedGroups: Set<string> = new Set<string>(),
   pinnedBuckets: PinnedBucket[] = [],
-  pinCollapsed: boolean = false
+  pinCollapsed: boolean = false,
+  globalPinned: SessionSummary[] = [],
+  globalPinnedCollapsed: boolean = false
 ): RenderRow[] {
   const rows: RenderRow[] = [];
+  // 「置顶会话」全局置顶分区（最顶；对照上游 SessionList.tsx:1767-1812 pinned-section 块）
+  if (globalPinned.length > 0) {
+    const hRow: RenderRow = new RenderRow();
+    hRow.kind = 'gpinned-header';
+    hRow.pinnedCount = globalPinned.length;
+    hRow.key = 'gpinned:header';
+    rows.push(hRow);
+    if (!globalPinnedCollapsed || isSearching) {
+      for (let j = 0; j < globalPinned.length; j++) {
+        const s: SessionSummary = globalPinned[j];
+        const sRow: RenderRow = new RenderRow();
+        sRow.kind = 'session';
+        sRow.session = s;
+        sRow.key = `gs:${s.id}`;    // 全局置顶分区会话行（与 s:/ps: 行隔离，避同 id key 冲突）
+        rows.push(sRow);
+      }
+    }
+  }
   // 「进行中」置顶分区（仅 pinnedBuckets 非空时；对照上游 SessionList.tsx:1482-1542 running-section 块）
   if (pinnedBuckets.length > 0) {
     let total: number = 0;
@@ -369,6 +433,11 @@ export function flattenGroups(
         const sRow: RenderRow = new RenderRow();
         sRow.kind = 'session';
         sRow.session = s;
+        // 组内「置顶 | 非置顶」交界 hairline（对照上游 shouldShowPinnedDivider：
+        //   前一项置顶 && 当前项非置顶 → 上方画分隔线；k===0 免（首项上方是组头））
+        if (k > 0 && dg.sessions[k - 1].pinned && !s.pinned) {
+          sRow.dividerAbove = true;
+        }
         sRow.key = `s:${s.id}`;
         rows.push(sRow);
       }

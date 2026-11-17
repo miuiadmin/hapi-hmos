@@ -17,9 +17,13 @@ import { t, kv } from '../i18n/I18nService';
 @ComponentV2
 export struct QueuedMessagesBar {
   @Param queued: ChatMessage[] = [];           // 已排序的排队消息（isQueued）
+  // Steer 可用（对照上游 canSteer：pi flavor && session.thinking && !controlledByUser；父级算好传入）。
+  //   v0.27.3 #1480：排队消息可「立即插入当前回合」（deliver into active turn）。
+  @Param canSteer: boolean = false;
   @Event onEdit: (m: ChatMessage) => void = (m: ChatMessage): void => {};
   @Event onCancel: (m: ChatMessage) => void = (m: ChatMessage): void => {};
-  @Local pressedKey: string = '';              // 按压态：`${id}#edit` / `${id}#cancel`（仅含点中按钮）
+  @Event onSteer: (m: ChatMessage) => void = (m: ChatMessage): void => {};
+  @Local pressedKey: string = '';              // 按压态：`${id}#edit` / `${id}#cancel` / `${id}#steer`（仅含点中按钮）
 
   private get c(): PaletteColors { return paletteOf(getThemeState().isDark); }
   private get isDark(): boolean { return getThemeState().isDark; }
@@ -70,6 +74,12 @@ export struct QueuedMessagesBar {
     return !m.isOptimistic && m.id !== '';
   }
 
+  // Steer 行级可用（对照上游 canSteerRow = canSteer && scheduledAt==null && canCancel：
+  //   hub 拒绝 future-scheduled 行的 steer；乐观行无服务端 id 同样不可）
+  private canSteerRow(m: ChatMessage): boolean {
+    return this.canSteer && m.scheduledAt <= 0 && this.canCancel(m);
+  }
+
   build() {
     Column({ space: 6 }) {
       // 头：排队计数（对照 web「Queued」label + 计数）
@@ -107,6 +117,11 @@ export struct QueuedMessagesBar {
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
 
+          // Steer（立即插入当前回合；仅 canSteerRow 行显，对照上游 SteerIcon 闪电按钮）
+          if (this.canSteerRow(m)) {
+            this.QueueActionButton(m, 'steer', false)
+          }
+
           // 编辑（回填 composer + 恢复定时 + 移除本行）—— 系统符号 square_and_pencil（HMOS 已验证字形）
           this.QueueActionButton(m, 'edit', false)
 
@@ -126,12 +141,16 @@ export struct QueuedMessagesBar {
     .shadow({ radius: 12, color: this.panelShadow(), offsetX: 0, offsetY: 3 })
   }
 
-  // 行内方块按钮（编辑 / 取消）：squircle r9 + 按压态（surfaceSelected 底 + scale 0.9），
+  // 行内方块按钮（Steer / 编辑 / 取消）：squircle r9 + 按压态（surfaceSelected 底 + scale 0.9），
   //   对照 composer ModelButton 按压范式；glyph/颜色按 kind 内联（$r 不作 @Builder 入参，避冻结坑）。
   @Builder
   QueueActionButton(m: ChatMessage, kind: string, disabled: boolean): void {
     Row() {
-      if (kind === 'edit') {
+      if (kind === 'steer') {
+        SymbolGlyph($r('sys.symbol.bolt'))
+          .fontSize(fs(15))
+          .fontColor([this.panelTextSecondary()])
+      } else if (kind === 'edit') {
         SymbolGlyph($r('sys.symbol.square_and_pencil'))
           .fontSize(fs(15))
           .fontColor([this.panelTextSecondary()])
@@ -159,7 +178,13 @@ export struct QueuedMessagesBar {
     })
     .onClick(() => {
       if (disabled) { return; }
-      if (kind === 'edit') { this.onEdit(m); } else { this.onCancel(m); }
+      if (kind === 'steer') {
+        this.onSteer(m);
+      } else if (kind === 'edit') {
+        this.onEdit(m);
+      } else {
+        this.onCancel(m);
+      }
     })
   }
 }

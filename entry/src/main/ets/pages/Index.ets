@@ -15,6 +15,7 @@ import {
   flattenGroups,
   computePinnedBuckets,
   isPinnedInProgressSession,
+  selectGlobalPinnedSessions,
   isGroupCollapsed,
   machineGroupHasActive,
   directoryGroupHasActive,
@@ -61,6 +62,7 @@ struct Index {
   @Local collapsedOverride: Map<string, boolean> = new Map<string, boolean>();  // 用户显式折叠/展开态（true=折叠）
   @Local expandedGroups: Set<string> = new Set<string>();   // 用户显式展开的目录组 key（超出预览行数时点「展开更多」登记；reassign 触发 V2）
   @Local pinSectionCollapsed: boolean = false;              // 「进行中」置顶分区折叠态（pinInProgressSessions 开时；搜索中恒展开）
+  @Local globalPinnedCollapsed: boolean = false;            // 「置顶会话」全局置顶分区折叠态（对照上游 pinnedSectionCollapsed；搜索中恒展开）
   // @Local 持有同步态单例 → 作为 @Monitor('sync.resyncSeq') 的可观测根（前台返回 >30s beginSync → resyncSeq++ → reload）
   @Local sync: SyncState = getSyncState();
 
@@ -346,15 +348,33 @@ struct Index {
     const limit: number = getSessionPreviewLimitState().limit;
     // 读 @Trace enabled（PinInProgressService 单例）：设置页切换「置顶进行中」即重算（对照 web pinInProgressSessions）。
     const pinEnabled: boolean = getPinInProgressState().enabled;
+    // 全局置顶分区（对照上游 globalPinnedSessions useMemo）：无论 pinEnabled 都渲染（显式置顶 > 设置开关）。
+    const globalPinned: SessionSummary[] = selectGlobalPinnedSessions(this.filteredSessions);
     let pinned: PinnedBucket[] = [];
     let groupSource: SessionSummary[] = this.filteredSessions;
-    if (pinEnabled) {
-      // 进行中会话（working/pending）抽到置顶分区；目录分组收其余（含空闲 active，对照上游 #1366
-      //   filter !isPinnedInProgressSession —— 安静 active 会话不再被置顶，回落各自目录分组）。
-      pinned = computePinnedBuckets(this.filteredSessions);
-      const rest: SessionSummary[] = [];
+    // ① 全局置顶会话从一切后续分区剔除（上游 groups useMemo filter !globalPinned）
+    if (globalPinned.length > 0) {
+      const nonGp: SessionSummary[] = [];
       for (let i = 0; i < this.filteredSessions.length; i++) {
-        if (!isPinnedInProgressSession(this.filteredSessions[i])) { rest.push(this.filteredSessions[i]); }
+        if (!this.filteredSessions[i].globalPinned) { nonGp.push(this.filteredSessions[i]); }
+      }
+      groupSource = nonGp;
+    }
+    if (pinEnabled) {
+      // ② 进行中会话（working/pending）抽到置顶分区；★已置顶（pinned/globalPinned）的会话不进进行中桶
+      //   （对照上游 runningSessions useMemo 里 globalPinned || pinned continue）——globalPinned 已在 ① 剔除，
+      //   此处再剔 project-pinned。
+      const nonPinnedSrc: SessionSummary[] = [];
+      for (let i = 0; i < groupSource.length; i++) {
+        if (!groupSource[i].pinned) { nonPinnedSrc.push(groupSource[i]); }
+      }
+      pinned = computePinnedBuckets(nonPinnedSrc);
+      // 目录分组剔除「未置顶的进行中会话」（对照上游 groups filter：!session.pinned && isPinnedInProgressSession
+      //   → 已置顶的进行中会话留在目录组置顶排首，不进「进行中」桶也不消失）。
+      const rest: SessionSummary[] = [];
+      for (let i = 0; i < groupSource.length; i++) {
+        const s: SessionSummary = groupSource[i];
+        if (s.pinned || !isPinnedInProgressSession(s)) { rest.push(s); }
       }
       groupSource = rest;
     }
@@ -365,7 +385,9 @@ struct Index {
       limit,
       this.expandedGroups,
       pinned,
-      this.pinSectionCollapsed
+      this.pinSectionCollapsed,
+      globalPinned,
+      this.globalPinnedCollapsed
     );
   }
 
@@ -373,6 +395,12 @@ struct Index {
   @Monitor('sync.resyncSeq')
   onResync(monitor: IMonitor): void {
     this.loadSessions().then((): void => { SyncStateService.endSync(); });
+  }
+
+  // 会话列表静默刷新（ChatPage 置顶成功 bump；hub 对 pin 无 SSE，对照 web invalidateQueries(['sessions'])）。
+  @Monitor('sync.sessionListSeq')
+  onSessionListBumped(monitor: IMonitor): void {
+    this.loadSessions();
   }
 
   // 「展开更多」：登记目录组 key 到 expandedGroups 并 reassign 触发 V2 重渲染（flattenGroups 见已展开则全显）。
@@ -696,7 +724,33 @@ struct Index {
     .justifyContent(FlexAlign.Center)
   }
 
-  // 机器组头行（chevron + pc 图标 + label + 总数；点击折叠/展开，对照上游 SessionList 机器分组头）。
+  // 「置顶会话」全局置顶分区头（chevron + pin 图标 + 标题 + 计数；点击折叠/展开，对照上游 pinned-section 头，v0.27.3 #1115）。
+  //   与「进行中」分区并列但更顶：显式置顶（用户手动钉）优先级高于进行中（自动抽桶）。
+  @Builder
+  private GPinnedHeader(row: RenderRow) {
+    Row({ space: 6 }) {
+      SymbolGlyph(this.globalPinnedCollapsed && !this.isSearching() ? $r('sys.symbol.chevron_right') : $r('sys.symbol.chevron_down'))
+        .fontSize(fs(11))
+        .fontColor([this.c.textTertiary])
+      SymbolGlyph($r('sys.symbol.pin'))
+        .fontSize(fs(12))
+        .fontColor([this.c.textTertiary])
+      Text(t('sessions.pinnedSection'))
+        .fontSize(fs(13))
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.c.textPrimary)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(`(${row.pinnedCount})`)
+        .fontSize(fs(12))
+        .fontColor(this.c.textTertiary)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 6 })
+    .alignItems(VerticalAlign.Center)
+  }
+
   // 「进行中」置顶分区头（chevron + 绿点 + 标题 + 计数；点击折叠/展开，对照上游 running-section 头）。
   //   绿点=success（活跃指示；上游 animate-pulse，本项目静态点免列表回收动画坑）。
   @Builder
@@ -949,12 +1003,24 @@ struct Index {
                       this.DirectoryHeader(row.directoryGroup as DirectoryGroup)
                     } else if (row.kind === 'show-more') {
                       this.ShowMoreRow(row)
+                    } else if (row.kind === 'gpinned-header') {
+                      this.GPinnedHeader(row)
                     } else if (row.kind === 'pinned-header') {
                       this.PinnedHeader(row)
                     } else if (row.kind === 'pinned-bucket') {
                       this.PinnedBucketRow(row)
                     } else {
-                      this.SessionItem(row.session as SessionSummary)
+                      Column() {
+                        // 组内「置顶 | 非置顶」交界 hairline（对照上游 shouldShowPinnedDivider）
+                        if (row.dividerAbove) {
+                          Divider()
+                            .strokeWidth(0.5)
+                            .color(this.c.border)
+                            .margin({ left: 10, right: 10 })
+                        }
+                        this.SessionItem(row.session as SessionSummary)
+                      }
+                      .width('100%')
                     }
                   }
                   .onClick(() => {
@@ -964,6 +1030,11 @@ struct Index {
                       this.toggleDirectory(row.directoryGroup as DirectoryGroup);
                     } else if (row.kind === 'show-more') {
                       this.expandGroup(row.groupKey);
+                    } else if (row.kind === 'gpinned-header') {
+                      // 搜索中恒展开（对照上游 !pinnedSectionCollapsed || isFiltering），不响应折叠
+                      if (!this.isSearching()) {
+                        this.globalPinnedCollapsed = !this.globalPinnedCollapsed;
+                      }
                     } else if (row.kind === 'pinned-header') {
                       // 搜索中恒展开（对照上游 !runningSectionCollapsed || isFiltering），不响应折叠
                       if (!this.isSearching()) {
@@ -992,6 +1063,8 @@ struct Index {
             sessionId: this.actionTarget !== null ? this.actionTarget.id : '',
             title: this.actionTarget !== null ? this.actionTarget.title : '',
             active: this.actionTarget !== null ? this.actionTarget.active : true,
+            sessionPinned: this.actionTarget !== null && this.actionTarget.pinned,
+            sessionGlobalPinned: this.actionTarget !== null && this.actionTarget.globalPinned,
             hasUnread: this.actionTarget !== null
               && classifySessionStatus(this.actionTarget, getSessionSeenService().lastSeen(this.actionTarget.id)) === 'unread',
             lastUpdatedAt: this.actionTarget !== null ? this.actionTarget.updatedAt : 0,
@@ -999,6 +1072,7 @@ struct Index {
             onClose: () => { this.actionMenuOpen = false; },
             onRenamed: (_name: string) => { this.loadSessions(); },
             onArchived: () => { this.loadSessions(); },
+            onPinChanged: () => { this.loadSessions(); },
             onDeleted: () => {
               if (this.actionTarget !== null) {
                 getSessionSeenService().forget(this.actionTarget.id);
